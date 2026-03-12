@@ -4,11 +4,16 @@
 
 This document describes the intended repository structure for Ocnoer.
 
-The repo does not yet contain the application scaffold. This file defines the target layout that development should converge toward.
+Milestone 1 has established the base application scaffold and target top-level directories.
 
 ## Current State
 
-Today, the repository primarily contains documentation plus worldbuilding reference files inside `/lore`.
+The repository now contains:
+
+- documentation in `/docs`
+- worldbuilding reference files in `/lore`
+- Next.js App Router bootstrap in `/app`
+- shared code folders: `/components`, `/lib`, `/prisma`, `/public`
 
 Current lore material includes:
 
@@ -72,7 +77,6 @@ Examples:
 ├── app/
 │   ├── (player)/
 │   ├── (admin)/
-│   ├── api/
 │   ├── layout.tsx
 │   └── page.tsx
 ├── components/
@@ -82,8 +86,6 @@ Examples:
 ├── public/
 └── package.json
 ```
-
-This structure is a target state, not a statement that all folders already exist.
 
 ## Intended Responsibilities
 
@@ -161,4 +163,4 @@ Use `public/` only for true static assets. User-authored scene media should live
 
 ## Alignment Note
 
-The repository now matches the intended lore placement. Future structural work should focus on adding the application folders, not relocating reference materials again.
+The repository now matches the Milestone 1 structural baseline.

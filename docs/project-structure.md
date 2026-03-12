@@ -8,15 +8,15 @@ The repo does not yet contain the application scaffold. This file defines the ta
 
 ## Current State
 
-Today, the repository primarily contains story-source and worldbuilding files at the root, plus an empty `/lore` directory reserved for long-term organization.
+Today, the repository primarily contains documentation plus worldbuilding reference files inside `/lore`.
 
-Current root material includes:
+Current lore material includes:
 
-- `story-structure.md`
-- `story-summary.md`
-- `world-overview.md`
-- `appendix.md`
-- `world-map.jpg`
+- `lore/story-structure.md`
+- `lore/story-summary.md`
+- `lore/world-overview.md`
+- `lore/appendix.md`
+- `lore/world-map.jpg`
 
 ## Canonical Content Separation
 
@@ -159,6 +159,6 @@ Use `public/` only for true static assets. User-authored scene media should live
 - Prefer shared domain utilities over duplicated logic between route areas.
 - Treat `/docs` as implementation guidance and `/lore` as narrative context.
 
-## Migration Note
+## Alignment Note
 
-The current root-level story files should eventually be consolidated into `/lore` so the repository matches the documented structure. That organization step is separate from the application build itself.
+The repository now matches the intended lore placement. Future structural work should focus on adding the application folders, not relocating reference materials again.

@@ -69,15 +69,15 @@ This is the current stack, not a permanent final stack. The project may add tool
 
 At the moment, the repository contains planning material and story-world references rather than a working app.
 
-Current source material includes:
+Current lore material includes:
 
-- `story-structure.md`
-- `story-summary.md`
-- `world-overview.md`
-- `appendix.md`
-- `world-map.jpg`
+- `lore/story-structure.md`
+- `lore/story-summary.md`
+- `lore/world-overview.md`
+- `lore/appendix.md`
+- `lore/world-map.jpg`
 
-The intended long-term canonical home for worldbuilding material is `/lore`. That directory already exists, but the current root-level story files have not been consolidated there yet.
+Worldbuilding material now lives under `/lore`, which should remain the canonical home for narrative reference files.
 
 ## Documentation Map
 

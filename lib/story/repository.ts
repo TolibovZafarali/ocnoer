@@ -37,6 +37,128 @@ export async function getAdminStoryGraph() {
   };
 }
 
+export type ReaderEntry = {
+  id: string;
+  kind: DialogueKind;
+  orderIndex: number;
+  text: string;
+  promptLabel: string | null;
+  character: {
+    id: string;
+    name: string;
+    slug: string;
+    defaultPortraitPath: string | null;
+  } | null;
+};
+
+export type ResolvedSceneMedia = {
+  backgroundImagePath: string | null;
+  backgroundMusicPath: string | null;
+};
+
+export type ReaderScene = {
+  id: string;
+  title: string | null;
+  orderIndex: number;
+  media: ResolvedSceneMedia;
+  entries: ReaderEntry[];
+};
+
+export type ReaderChapter = {
+  id: string;
+  title: string;
+  slug: string;
+  orderIndex: number;
+  scenes: ReaderScene[];
+};
+
+function resolveSceneMedia(scene: {
+  backgroundImagePath: string | null;
+  backgroundMusicPath: string | null;
+  assets: Array<{
+    type: AssetType;
+    storagePath: string;
+  }>;
+}): ResolvedSceneMedia {
+  const backgroundImageAsset = scene.assets.find(
+    (asset) => asset.type === AssetType.background_image
+  );
+  const backgroundMusicAsset = scene.assets.find(
+    (asset) => asset.type === AssetType.background_music
+  );
+
+  return {
+    backgroundImagePath:
+      scene.backgroundImagePath ?? backgroundImageAsset?.storagePath ?? null,
+    backgroundMusicPath:
+      scene.backgroundMusicPath ?? backgroundMusicAsset?.storagePath ?? null
+  };
+}
+
+export async function getFirstPlayableChapter(): Promise<ReaderChapter | null> {
+  const chapter = await prisma.chapter.findFirst({
+    where: {
+      isPublished: true
+    },
+    orderBy: {
+      orderIndex: "asc"
+    },
+    include: {
+      scenes: {
+        orderBy: { orderIndex: "asc" },
+        include: {
+          assets: {
+            where: {
+              type: {
+                in: [AssetType.background_image, AssetType.background_music]
+              }
+            },
+            orderBy: { createdAt: "asc" }
+          },
+          dialogueEntries: {
+            orderBy: { orderIndex: "asc" },
+            include: {
+              character: {
+                select: {
+                  id: true,
+                  name: true,
+                  slug: true,
+                  defaultPortraitPath: true
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  if (!chapter) {
+    return null;
+  }
+
+  return {
+    id: chapter.id,
+    title: chapter.title,
+    slug: chapter.slug,
+    orderIndex: chapter.orderIndex,
+    scenes: chapter.scenes.map((scene) => ({
+      id: scene.id,
+      title: scene.title,
+      orderIndex: scene.orderIndex,
+      media: resolveSceneMedia(scene),
+      entries: scene.dialogueEntries.map((entry) => ({
+        id: entry.id,
+        kind: entry.kind,
+        orderIndex: entry.orderIndex,
+        text: entry.text,
+        promptLabel: entry.promptLabel,
+        character: entry.character
+      }))
+    }))
+  };
+}
+
 export async function createChapter(input: {
   title: string;
   slug: string;

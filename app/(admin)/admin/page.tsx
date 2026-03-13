@@ -24,7 +24,11 @@ import {
   updateSceneAssetAction
 } from "@/app/(admin)/admin/actions";
 import { Button } from "@/components/ui/button";
-import { StoryEnums, getAdminStoryGraph } from "@/lib/story/repository";
+import {
+  StoryEnums,
+  getAdminPlayerResponses,
+  getAdminStoryGraph
+} from "@/lib/story/repository";
 
 function SectionCard(props: {
   title: string;
@@ -83,13 +87,20 @@ function FormGrid(props: { children: ReactNode }) {
 }
 
 export default async function AdminPage() {
-  const story = await getAdminStoryGraph();
+  const [story, responses] = await Promise.all([
+    getAdminStoryGraph(),
+    getAdminPlayerResponses()
+  ]);
   const scenes = story.chapters.flatMap((chapter) =>
     chapter.scenes.map((scene) => ({
       id: scene.id,
       label: `${chapter.title} / Scene ${scene.orderIndex}${scene.title ? ` - ${scene.title}` : ""}`
     }))
   );
+  const dateFormatter = new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short"
+  });
 
   return (
     <main className="mx-auto w-full max-w-7xl space-y-6 px-6 py-8">
@@ -694,6 +705,47 @@ export default async function AdminPage() {
             )
           )}
         </div>
+      </SectionCard>
+
+      <SectionCard
+        title="Player Responses"
+        description="Review free-text responses submitted during player prompt moments."
+      >
+        {responses.length === 0 ? (
+          <p className="text-sm text-slate-600">No player responses submitted yet.</p>
+        ) : (
+          <div className="space-y-3">
+            {responses.map((response) => (
+              <article
+                className="rounded-lg border border-slate-200 bg-slate-50 p-4"
+                key={response.id}
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-slate-900">
+                    {response.user.email}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {dateFormatter.format(response.createdAt)}
+                  </p>
+                </div>
+                <p className="mt-2 text-xs uppercase tracking-wide text-slate-500">
+                  Chapter {response.chapter.orderIndex}: {response.chapter.title} /
+                  {" "}Scene {response.scene.orderIndex}
+                  {response.scene.title ? ` - ${response.scene.title}` : ""}
+                </p>
+                <p className="mt-2 text-sm font-medium text-slate-700">
+                  {response.dialogueEntry.promptLabel ?? "Player prompt"}
+                </p>
+                <p className="mt-1 text-sm text-slate-600">
+                  {response.dialogueEntry.text}
+                </p>
+                <p className="mt-3 rounded-md border border-slate-200 bg-white p-3 text-sm text-slate-900">
+                  {response.responseText}
+                </p>
+              </article>
+            ))}
+          </div>
+        )}
       </SectionCard>
 
       <SectionCard

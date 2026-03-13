@@ -81,6 +81,21 @@ export function getCurrentEntry(
   return scene.entries[state.entryIndex] ?? null;
 }
 
+export function canAdvanceFromEntry(
+  entry: ReaderEntry | null,
+  submittedPromptEntryIds: ReadonlySet<string>
+) {
+  if (!entry) {
+    return true;
+  }
+
+  if (entry.kind !== DialogueKind.player_prompt) {
+    return true;
+  }
+
+  return submittedPromptEntryIds.has(entry.id);
+}
+
 export function advanceReaderProgress(
   chapter: ReaderChapter,
   state: ReaderProgressState

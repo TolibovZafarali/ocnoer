@@ -1,4 +1,4 @@
-import { AssetType, DialogueKind, type Prisma } from "@prisma/client";
+import { AssetType, DialogueKind, Role, type Prisma } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { validateDialogueRules } from "@/lib/story/validation";
@@ -432,6 +432,215 @@ export async function deleteSceneAsset(sceneAssetId: string) {
     });
   } catch {
     throw new StoryRepositoryError("Unable to delete scene asset.");
+  }
+}
+
+type PlayerUserRecord = {
+  id: string;
+  email: string;
+  role: Role;
+};
+
+async function resolveOrUpsertPlayerUserByEmailInTx(
+  tx: StoryTransactionClient,
+  email: string
+): Promise<PlayerUserRecord> {
+  const normalizedEmail = email.trim().toLowerCase();
+
+  if (!normalizedEmail) {
+    throw new StoryRepositoryError("Player email is required.");
+  }
+
+  const existingUser = await tx.user.findUnique({
+    where: { email: normalizedEmail },
+    select: {
+      id: true,
+      email: true,
+      role: true
+    }
+  });
+
+  if (existingUser) {
+    if (existingUser.role !== Role.player) {
+      throw new StoryRepositoryError(
+        "Signed-in account is not configured for player response capture."
+      );
+    }
+
+    return existingUser;
+  }
+
+  return tx.user.create({
+    data: {
+      email: normalizedEmail,
+      role: Role.player
+    },
+    select: {
+      id: true,
+      email: true,
+      role: true
+    }
+  });
+}
+
+export async function resolveOrUpsertPlayerUserByEmail(email: string) {
+  try {
+    return await prisma.$transaction((tx) =>
+      resolveOrUpsertPlayerUserByEmailInTx(tx, email)
+    );
+  } catch (error) {
+    if (error instanceof StoryRepositoryError) {
+      throw error;
+    }
+
+    throw new StoryRepositoryError("Unable to resolve player account.");
+  }
+}
+
+export async function createPlayerResponse(input: {
+  dialogueEntryId: string;
+  sceneId: string;
+  chapterId: string;
+  userId: string;
+  responseText: string;
+}) {
+  try {
+    return await prisma.playerResponse.create({
+      data: input
+    });
+  } catch {
+    throw new StoryRepositoryError("Unable to save player response.");
+  }
+}
+
+export async function createPlayerPromptResponse(input: {
+  dialogueEntryId: string;
+  sceneId: string;
+  chapterId: string;
+  userEmail: string;
+  responseText: string;
+}) {
+  const responseText = input.responseText.trim();
+
+  if (!responseText) {
+    throw new StoryRepositoryError("Response text cannot be empty.");
+  }
+
+  try {
+    return await prisma.$transaction(async (tx) => {
+      const promptEntry = await tx.dialogueEntry.findUnique({
+        where: { id: input.dialogueEntryId },
+        select: {
+          id: true,
+          kind: true,
+          sceneId: true,
+          scene: {
+            select: {
+              chapterId: true
+            }
+          }
+        }
+      });
+
+      if (
+        !promptEntry ||
+        promptEntry.kind !== DialogueKind.player_prompt ||
+        promptEntry.sceneId !== input.sceneId ||
+        promptEntry.scene.chapterId !== input.chapterId
+      ) {
+        throw new StoryRepositoryError(
+          "Prompt context is invalid or no longer available."
+        );
+      }
+
+      const user = await resolveOrUpsertPlayerUserByEmailInTx(
+        tx,
+        input.userEmail
+      );
+
+      return tx.playerResponse.create({
+        data: {
+          dialogueEntryId: promptEntry.id,
+          sceneId: promptEntry.sceneId,
+          chapterId: promptEntry.scene.chapterId,
+          userId: user.id,
+          responseText
+        }
+      });
+    });
+  } catch (error) {
+    if (error instanceof StoryRepositoryError) {
+      throw error;
+    }
+
+    throw new StoryRepositoryError("Unable to save player response.");
+  }
+}
+
+export type AdminPlayerResponse = {
+  id: string;
+  responseText: string;
+  createdAt: Date;
+  user: {
+    email: string;
+  };
+  chapter: {
+    id: string;
+    title: string;
+    orderIndex: number;
+  };
+  scene: {
+    id: string;
+    title: string | null;
+    orderIndex: number;
+  };
+  dialogueEntry: {
+    id: string;
+    text: string;
+    promptLabel: string | null;
+  };
+};
+
+export async function getAdminPlayerResponses(
+  limit = 50
+): Promise<AdminPlayerResponse[]> {
+  const safeLimit = Math.max(1, Math.min(limit, 200));
+
+  try {
+    return await prisma.playerResponse.findMany({
+      orderBy: { createdAt: "desc" },
+      take: safeLimit,
+      include: {
+        user: {
+          select: {
+            email: true
+          }
+        },
+        chapter: {
+          select: {
+            id: true,
+            title: true,
+            orderIndex: true
+          }
+        },
+        scene: {
+          select: {
+            id: true,
+            title: true,
+            orderIndex: true
+          }
+        },
+        dialogueEntry: {
+          select: {
+            id: true,
+            text: true,
+            promptLabel: true
+          }
+        }
+      }
+    });
+  } catch {
+    throw new StoryRepositoryError("Unable to load player responses.");
   }
 }
 

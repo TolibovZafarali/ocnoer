@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   advanceReaderProgress,
+  canAdvanceFromEntry,
   createInitialReaderProgress,
   resolveEntryPresentation,
   toPublicMediaUrl
@@ -154,6 +155,22 @@ describe("advanceReaderProgress", () => {
       entryIndex: 0,
       isChapterComplete: true
     });
+  });
+});
+
+describe("canAdvanceFromEntry", () => {
+  it("allows advancing when entry is missing or non-prompt", () => {
+    expect(canAdvanceFromEntry(null, new Set())).toBe(true);
+    expect(
+      canAdvanceFromEntry(makeEntry({ kind: DialogueKind.narrator }), new Set())
+    ).toBe(true);
+  });
+
+  it("blocks prompt entries until submission id is present", () => {
+    const entry = makeEntry({ id: "prompt-1", kind: DialogueKind.player_prompt });
+
+    expect(canAdvanceFromEntry(entry, new Set())).toBe(false);
+    expect(canAdvanceFromEntry(entry, new Set(["prompt-1"]))).toBe(true);
   });
 });
 

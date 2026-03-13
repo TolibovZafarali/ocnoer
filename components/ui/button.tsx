@@ -10,7 +10,9 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default: "bg-slate-900 text-slate-50 shadow hover:bg-slate-900/90",
-        outline: "border border-slate-200 bg-white shadow-sm hover:bg-slate-100"
+        outline:
+          "border border-slate-200 bg-white shadow-sm hover:bg-slate-100",
+        destructive: "bg-rose-600 text-white shadow hover:bg-rose-700"
       },
       size: {
         default: "h-9 px-4 py-2",

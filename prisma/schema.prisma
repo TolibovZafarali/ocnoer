@@ -7,4 +7,125 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// Milestone 1 placeholder: models will be added in Milestone 3.
+enum Role {
+  admin
+  player
+}
+
+enum DialogueKind {
+  narrator
+  speech
+  thought
+  player_prompt
+}
+
+enum AssetType {
+  background_image
+  background_music
+  portrait
+  other
+}
+
+model User {
+  id        String           @id @default(cuid())
+  email     String           @unique
+  role      Role
+  createdAt DateTime         @default(now())
+  updatedAt DateTime         @updatedAt
+  responses PlayerResponse[]
+}
+
+model Character {
+  id                  String          @id @default(cuid())
+  name                String
+  slug                String          @unique
+  bio                 String?
+  notes               String?
+  defaultPortraitPath String?
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+  dialogueEntries     DialogueEntry[]
+}
+
+model Chapter {
+  id            String           @id @default(cuid())
+  title         String
+  slug          String           @unique
+  orderIndex    Int              @unique
+  isPublished   Boolean          @default(false)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  scenes        Scene[]
+  playerReplies PlayerResponse[]
+}
+
+model Scene {
+  id                  String           @id @default(cuid())
+  chapterId           String
+  title               String?
+  orderIndex          Int
+  backgroundImagePath String?
+  backgroundMusicPath String?
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  chapter             Chapter          @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  dialogueEntries     DialogueEntry[]
+  assets              SceneAsset[]
+  playerReplies       PlayerResponse[]
+
+  @@unique([chapterId, orderIndex])
+  @@index([chapterId])
+}
+
+model DialogueEntry {
+  id           String           @id @default(cuid())
+  sceneId      String
+  kind         DialogueKind
+  orderIndex   Int
+  text         String
+  promptLabel  String?
+  characterId  String?
+  createdAt    DateTime         @default(now())
+  updatedAt    DateTime         @updatedAt
+  scene        Scene            @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  character    Character?       @relation(fields: [characterId], references: [id], onDelete: SetNull)
+  responses    PlayerResponse[]
+
+  @@unique([sceneId, orderIndex])
+  @@index([sceneId])
+  @@index([characterId])
+}
+
+model SceneAsset {
+  id         String    @id @default(cuid())
+  sceneId    String
+  type       AssetType
+  storagePath String
+  altText    String?
+  label      String?
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
+  scene      Scene     @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+
+  @@index([sceneId])
+  @@index([type])
+}
+
+model PlayerResponse {
+  id              String        @id @default(cuid())
+  dialogueEntryId String
+  sceneId         String
+  chapterId       String
+  userId          String
+  responseText    String
+  createdAt       DateTime      @default(now())
+  dialogueEntry   DialogueEntry @relation(fields: [dialogueEntryId], references: [id], onDelete: Cascade)
+  scene           Scene         @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  chapter         Chapter       @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([dialogueEntryId])
+  @@index([sceneId])
+  @@index([chapterId])
+  @@index([userId])
+}

@@ -9,15 +9,16 @@ The MVP is narrative-first and mostly linear, centered on chapter, scene, and di
 
 ## Current Status
 
-Milestone 1 bootstrap is now in place:
+Milestone 2 authentication and role boundaries are now in place:
 
 - Next.js App Router scaffold
 - TypeScript + Tailwind CSS baseline
 - shadcn/ui-compatible setup (`components.json`, `@/` aliases, `cn` utility, UI button)
-- MVP route surfaces:
-  - `/`
-  - `/play`
-  - `/admin`
+- Supabase password auth integration
+- password-only sign-in flow at `/sign-in` with fixed account identity detection
+- role-protected route surfaces:
+  - `/admin` (`admin` role only)
+  - `/play` (`player` role only)
 - Prisma bootstrap schema for PostgreSQL
 
 ## Local Setup
@@ -53,6 +54,14 @@ Defined in `.env.example`:
 - `NEXT_PUBLIC_SUPABASE_URL`: Supabase project URL (public)
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Supabase anon key for client-side auth/data calls (public)
 - `SUPABASE_SERVICE_ROLE_KEY`: Supabase privileged key for trusted server operations (server-only)
+- `ADMIN_LOGIN_EMAIL`: fixed admin account email used for password-only sign-in
+- `PLAYER_LOGIN_EMAIL`: fixed player account email used for password-only sign-in
+
+## Auth Role Contract
+
+- Role is read from `app_metadata.role` in Supabase Auth.
+- Valid values are only `admin` and `player`.
+- Missing or invalid role metadata forces sign-out and redirects to `/sign-in`.
 
 ## Documentation Map
 

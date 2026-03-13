@@ -59,6 +59,16 @@ Success criteria:
 - player can sign in and access player routes
 - cross-role access is blocked
 
+Implementation notes for current milestone:
+
+- sign-in entrypoint is `/sign-in`
+- login is password-only with fixed account identities from env:
+  - `ADMIN_LOGIN_EMAIL`
+  - `PLAYER_LOGIN_EMAIL`
+- role is sourced from Supabase Auth `app_metadata.role`
+- only `admin` and `player` are valid roles
+- invalid or missing roles must force sign-out and redirect to sign-in
+
 ### 3. Design The Data Model
 
 Model the story system before building the UI in depth.

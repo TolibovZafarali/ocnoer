@@ -1,25 +1,34 @@
 "use server";
 
-import { AssetType, DialogueKind } from "@prisma/client";
+import { DialogueKind } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 
 import { requireRole } from "@/lib/auth/guards";
 import {
+  StoryEnums,
   createChapter,
   createCharacter,
+  createCharacterPortrait,
   createDialogueEntry,
+  createHouse,
+  createMediaAsset,
   createScene,
-  createSceneAsset,
   deleteChapter,
   deleteCharacter,
+  deleteCharacterPortrait,
   deleteDialogueEntry,
+  deleteHouse,
+  deleteMediaAsset,
   deleteScene,
-  deleteSceneAsset,
+  deleteSceneCharacterAppearance,
   updateChapter,
   updateCharacter,
+  updateCharacterPortrait,
   updateDialogueEntry,
+  updateHouse,
+  updateMediaAsset,
   updateScene,
-  updateSceneAsset
+  upsertSceneCharacterAppearance
 } from "@/lib/story/repository";
 import {
   parseIntegerField,
@@ -92,13 +101,7 @@ export async function createChapterAction(formData: FormData) {
   await enforceAdminAndRevalidate(async () => {
     await createChapter({
       title: getRequiredString(formData, "title", "Chapter title"),
-      slug: getRequiredString(formData, "slug", "Chapter slug"),
-      orderIndex: getRequiredInteger(
-        formData,
-        "orderIndex",
-        "Chapter order index"
-      ),
-      isPublished: formData.get("isPublished") === "on"
+      imageAssetId: getRequiredString(formData, "imageAssetId", "Chapter image asset")
     });
   });
 }
@@ -108,13 +111,7 @@ export async function updateChapterAction(formData: FormData) {
     await updateChapter({
       chapterId: getRequiredString(formData, "chapterId", "Chapter id"),
       title: getRequiredString(formData, "title", "Chapter title"),
-      slug: getRequiredString(formData, "slug", "Chapter slug"),
-      orderIndex: getRequiredInteger(
-        formData,
-        "orderIndex",
-        "Chapter order index"
-      ),
-      isPublished: formData.get("isPublished") === "on"
+      imageAssetId: getRequiredString(formData, "imageAssetId", "Chapter image asset")
     });
   });
 }
@@ -135,8 +132,12 @@ export async function createSceneAction(formData: FormData) {
         "orderIndex",
         "Scene order index"
       ),
-      backgroundImagePath: getOptionalString(formData, "backgroundImagePath"),
-      backgroundMusicPath: getOptionalString(formData, "backgroundMusicPath")
+      backgroundImageAssetId: getRequiredString(
+        formData,
+        "backgroundImageAssetId",
+        "Scene background image"
+      ),
+      backgroundMusicAssetId: getOptionalString(formData, "backgroundMusicAssetId")
     });
   });
 }
@@ -152,8 +153,12 @@ export async function updateSceneAction(formData: FormData) {
         "orderIndex",
         "Scene order index"
       ),
-      backgroundImagePath: getOptionalString(formData, "backgroundImagePath"),
-      backgroundMusicPath: getOptionalString(formData, "backgroundMusicPath")
+      backgroundImageAssetId: getRequiredString(
+        formData,
+        "backgroundImageAssetId",
+        "Scene background image"
+      ),
+      backgroundMusicAssetId: getOptionalString(formData, "backgroundMusicAssetId")
     });
   });
 }
@@ -164,14 +169,38 @@ export async function deleteSceneAction(formData: FormData) {
   });
 }
 
+export async function createHouseAction(formData: FormData) {
+  await enforceAdminAndRevalidate(async () => {
+    await createHouse({
+      name: getRequiredString(formData, "name", "House name"),
+      notes: getOptionalString(formData, "notes")
+    });
+  });
+}
+
+export async function updateHouseAction(formData: FormData) {
+  await enforceAdminAndRevalidate(async () => {
+    await updateHouse({
+      houseId: getRequiredString(formData, "houseId", "House id"),
+      name: getRequiredString(formData, "name", "House name"),
+      notes: getOptionalString(formData, "notes")
+    });
+  });
+}
+
+export async function deleteHouseAction(formData: FormData) {
+  await enforceAdminAndRevalidate(async () => {
+    await deleteHouse(getRequiredString(formData, "houseId", "House id"));
+  });
+}
+
 export async function createCharacterAction(formData: FormData) {
   await enforceAdminAndRevalidate(async () => {
     await createCharacter({
       name: getRequiredString(formData, "name", "Character name"),
-      slug: getRequiredString(formData, "slug", "Character slug"),
+      houseId: getRequiredString(formData, "houseId", "House id"),
       bio: getOptionalString(formData, "bio"),
-      notes: getOptionalString(formData, "notes"),
-      defaultPortraitPath: getOptionalString(formData, "defaultPortraitPath")
+      notes: getOptionalString(formData, "notes")
     });
   });
 }
@@ -181,10 +210,9 @@ export async function updateCharacterAction(formData: FormData) {
     await updateCharacter({
       characterId: getRequiredString(formData, "characterId", "Character id"),
       name: getRequiredString(formData, "name", "Character name"),
-      slug: getRequiredString(formData, "slug", "Character slug"),
+      houseId: getRequiredString(formData, "houseId", "House id"),
       bio: getOptionalString(formData, "bio"),
-      notes: getOptionalString(formData, "notes"),
-      defaultPortraitPath: getOptionalString(formData, "defaultPortraitPath")
+      notes: getOptionalString(formData, "notes")
     });
   });
 }
@@ -194,6 +222,56 @@ export async function deleteCharacterAction(formData: FormData) {
     await deleteCharacter(
       getRequiredString(formData, "characterId", "Character id")
     );
+  });
+}
+
+export async function createCharacterPortraitAction(formData: FormData) {
+  await enforceAdminAndRevalidate(async () => {
+    await createCharacterPortrait({
+      characterId: getRequiredString(formData, "characterId", "Character id"),
+      storagePath: getRequiredString(formData, "storagePath", "Portrait storage path"),
+      label: getOptionalString(formData, "label"),
+      sortOrder: getRequiredInteger(formData, "sortOrder", "Portrait order")
+    });
+  });
+}
+
+export async function updateCharacterPortraitAction(formData: FormData) {
+  await enforceAdminAndRevalidate(async () => {
+    await updateCharacterPortrait({
+      portraitId: getRequiredString(formData, "portraitId", "Portrait id"),
+      characterId: getRequiredString(formData, "characterId", "Character id"),
+      storagePath: getRequiredString(formData, "storagePath", "Portrait storage path"),
+      label: getOptionalString(formData, "label"),
+      sortOrder: getRequiredInteger(formData, "sortOrder", "Portrait order")
+    });
+  });
+}
+
+export async function deleteCharacterPortraitAction(formData: FormData) {
+  await enforceAdminAndRevalidate(async () => {
+    await deleteCharacterPortrait(
+      getRequiredString(formData, "portraitId", "Portrait id")
+    );
+  });
+}
+
+export async function upsertSceneCharacterAppearanceAction(formData: FormData) {
+  await enforceAdminAndRevalidate(async () => {
+    await upsertSceneCharacterAppearance({
+      sceneId: getRequiredString(formData, "sceneId", "Scene id"),
+      characterId: getRequiredString(formData, "characterId", "Character id"),
+      portraitId: getOptionalString(formData, "portraitId")
+    });
+  });
+}
+
+export async function deleteSceneCharacterAppearanceAction(formData: FormData) {
+  await enforceAdminAndRevalidate(async () => {
+    await deleteSceneCharacterAppearance({
+      sceneId: getRequiredString(formData, "sceneId", "Scene id"),
+      characterId: getRequiredString(formData, "characterId", "Character id")
+    });
   });
 }
 
@@ -254,15 +332,14 @@ export async function deleteDialogueEntryAction(formData: FormData) {
   });
 }
 
-export async function createSceneAssetAction(formData: FormData) {
+export async function createMediaAssetAction(formData: FormData) {
   await enforceAdminAndRevalidate(async () => {
-    await createSceneAsset({
-      sceneId: getRequiredString(formData, "sceneId", "Scene id"),
+    await createMediaAsset({
       type: getRequiredEnum(
         formData,
         "type",
-        "Asset type",
-        Object.values(AssetType)
+        "Media asset type",
+        StoryEnums.mediaAssetTypes
       ),
       storagePath: getRequiredString(formData, "storagePath", "Storage path"),
       altText: getOptionalString(formData, "altText"),
@@ -271,20 +348,15 @@ export async function createSceneAssetAction(formData: FormData) {
   });
 }
 
-export async function updateSceneAssetAction(formData: FormData) {
+export async function updateMediaAssetAction(formData: FormData) {
   await enforceAdminAndRevalidate(async () => {
-    await updateSceneAsset({
-      sceneAssetId: getRequiredString(
-        formData,
-        "sceneAssetId",
-        "Scene asset id"
-      ),
-      sceneId: getRequiredString(formData, "sceneId", "Scene id"),
+    await updateMediaAsset({
+      mediaAssetId: getRequiredString(formData, "mediaAssetId", "Media asset id"),
       type: getRequiredEnum(
         formData,
         "type",
-        "Asset type",
-        Object.values(AssetType)
+        "Media asset type",
+        StoryEnums.mediaAssetTypes
       ),
       storagePath: getRequiredString(formData, "storagePath", "Storage path"),
       altText: getOptionalString(formData, "altText"),
@@ -293,10 +365,10 @@ export async function updateSceneAssetAction(formData: FormData) {
   });
 }
 
-export async function deleteSceneAssetAction(formData: FormData) {
+export async function deleteMediaAssetAction(formData: FormData) {
   await enforceAdminAndRevalidate(async () => {
-    await deleteSceneAsset(
-      getRequiredString(formData, "sceneAssetId", "Scene asset id")
+    await deleteMediaAsset(
+      getRequiredString(formData, "mediaAssetId", "Media asset id")
     );
   });
 }

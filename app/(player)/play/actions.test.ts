@@ -1,7 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const requireRoleMock = vi.fn(async () => undefined);
-const getUserMock = vi.fn(async () => ({
+const getUserMock = vi.fn<
+  () => Promise<{ data: { user: { email: string | null } } }>
+>(async () => ({
   data: {
     user: {
       email: "player@example.com"
@@ -115,7 +117,7 @@ describe("submitPlayerPromptResponseAction", () => {
           email: null
         }
       }
-    } as { data: { user: { email: string | null } } });
+    });
     const { submitPlayerPromptResponseAction } = await import(
       "@/app/(player)/play/actions"
     );

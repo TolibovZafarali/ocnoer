@@ -1,4 +1,4 @@
-import { AssetType, DialogueKind } from "@prisma/client";
+import { DialogueKind } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const findFirstMock = vi.fn();
@@ -16,30 +16,43 @@ describe("getFirstPlayableChapter", () => {
     vi.clearAllMocks();
   });
 
-  it("queries the first published chapter with ordered scenes and dialogue", async () => {
+  it("queries the first chapter with scene media assets and character portraits", async () => {
     findFirstMock.mockResolvedValueOnce(null);
     const { getFirstPlayableChapter } = await import("@/lib/story/repository");
 
     await getFirstPlayableChapter();
 
     expect(findFirstMock).toHaveBeenCalledWith({
-      where: {
-        isPublished: true
-      },
       orderBy: {
         orderIndex: "asc"
       },
       include: {
+        imageAsset: {
+          select: {
+            storagePath: true
+          }
+        },
         scenes: {
           orderBy: { orderIndex: "asc" },
           include: {
-            assets: {
-              where: {
-                type: {
-                  in: [AssetType.background_image, AssetType.background_music]
+            backgroundImageAsset: {
+              select: {
+                storagePath: true
+              }
+            },
+            backgroundMusicAsset: {
+              select: {
+                storagePath: true
+              }
+            },
+            characterAppearances: {
+              include: {
+                portrait: {
+                  select: {
+                    storagePath: true
+                  }
                 }
-              },
-              orderBy: { createdAt: "asc" }
+              }
             },
             dialogueEntries: {
               orderBy: { orderIndex: "asc" },
@@ -49,7 +62,13 @@ describe("getFirstPlayableChapter", () => {
                     id: true,
                     name: true,
                     slug: true,
-                    defaultPortraitPath: true
+                    portraits: {
+                      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+                      take: 1,
+                      select: {
+                        storagePath: true
+                      }
+                    }
                   }
                 }
               }
@@ -60,34 +79,39 @@ describe("getFirstPlayableChapter", () => {
     });
   });
 
-  it("returns null when no published chapter exists", async () => {
+  it("returns null when no chapter exists", async () => {
     findFirstMock.mockResolvedValueOnce(null);
     const { getFirstPlayableChapter } = await import("@/lib/story/repository");
 
     await expect(getFirstPlayableChapter()).resolves.toBeNull();
   });
 
-  it("prefers scene media fields and falls back to scene assets", async () => {
+  it("resolves scene media and scene-bound character portrait", async () => {
     findFirstMock.mockResolvedValueOnce({
       id: "chapter-1",
       title: "Chapter 1",
       slug: "chapter-1",
       orderIndex: 1,
+      imageAsset: {
+        storagePath: "chapters/ch1.jpg"
+      },
       scenes: [
         {
           id: "scene-1",
           title: "Scene 1",
           orderIndex: 1,
-          backgroundImagePath: "scenes/ch1/primary.jpg",
-          backgroundMusicPath: null,
-          assets: [
+          backgroundImageAsset: {
+            storagePath: "scenes/ch1/primary.jpg"
+          },
+          backgroundMusicAsset: {
+            storagePath: "music/ch1/theme.mp3"
+          },
+          characterAppearances: [
             {
-              type: AssetType.background_image,
-              storagePath: "scenes/ch1/fallback.jpg"
-            },
-            {
-              type: AssetType.background_music,
-              storagePath: "music/ch1/fallback.mp3"
+              characterId: "char-1",
+              portrait: {
+                storagePath: "portraits/ocnoer/angry.png"
+              }
             }
           ],
           dialogueEntries: [
@@ -101,7 +125,11 @@ describe("getFirstPlayableChapter", () => {
                 id: "char-1",
                 name: "Ocnoer",
                 slug: "ocnoer",
-                defaultPortraitPath: "portraits/ocnoer/default.png"
+                portraits: [
+                  {
+                    storagePath: "portraits/ocnoer/default.png"
+                  }
+                ]
               }
             }
           ]
@@ -116,6 +144,7 @@ describe("getFirstPlayableChapter", () => {
       title: "Chapter 1",
       slug: "chapter-1",
       orderIndex: 1,
+      imagePath: "chapters/ch1.jpg",
       scenes: [
         {
           id: "scene-1",
@@ -123,7 +152,7 @@ describe("getFirstPlayableChapter", () => {
           orderIndex: 1,
           media: {
             backgroundImagePath: "scenes/ch1/primary.jpg",
-            backgroundMusicPath: "music/ch1/fallback.mp3"
+            backgroundMusicPath: "music/ch1/theme.mp3"
           },
           entries: [
             {
@@ -136,7 +165,7 @@ describe("getFirstPlayableChapter", () => {
                 id: "char-1",
                 name: "Ocnoer",
                 slug: "ocnoer",
-                defaultPortraitPath: "portraits/ocnoer/default.png"
+                portraitPath: "portraits/ocnoer/angry.png"
               }
             }
           ]

@@ -115,7 +115,7 @@ export function PlayerStoryReader({ chapter, supabaseUrl }: PlayerStoryReaderPro
       <section className="rounded-xl border border-slate-200 bg-white/90 p-6 text-slate-900 shadow-sm">
         <h2 className="text-xl font-semibold">No scenes in this chapter yet</h2>
         <p className="mt-2 text-sm text-slate-700">
-          The first published chapter has no authored scenes.
+          The first chapter has no authored scenes.
         </p>
       </section>
     );
@@ -164,12 +164,12 @@ export function PlayerStoryReader({ chapter, supabaseUrl }: PlayerStoryReaderPro
 
         <div className="flex flex-1 items-end justify-between gap-4 py-6">
           <div className="hidden w-40 md:block">
-            {entry?.character?.defaultPortraitPath &&
+            {entry?.character?.portraitPath &&
             resolveEntryPresentation(entry).portraitSide === "left" ? (
               <img
                 alt={entry.character.name}
                 className="h-56 w-40 rounded-lg object-cover object-top shadow-md"
-                src={toPublicMediaUrl(supabaseUrl, entry.character.defaultPortraitPath) ?? ""}
+                src={toPublicMediaUrl(supabaseUrl, entry.character.portraitPath) ?? ""}
               />
             ) : null}
           </div>
@@ -189,7 +189,7 @@ export function PlayerStoryReader({ chapter, supabaseUrl }: PlayerStoryReaderPro
                     Chapter complete
                   </p>
                   <p className="mt-3 text-lg leading-relaxed text-slate-100">
-                    You reached the end of this published chapter.
+                    You reached the end of this chapter.
                   </p>
                 </>
               ) : !entry ? (
@@ -272,12 +272,12 @@ export function PlayerStoryReader({ chapter, supabaseUrl }: PlayerStoryReaderPro
           </AnimatePresence>
 
           <div className="hidden w-40 md:block">
-            {entry?.character?.defaultPortraitPath &&
+            {entry?.character?.portraitPath &&
             resolveEntryPresentation(entry).portraitSide === "right" ? (
               <img
                 alt={entry.character.name}
                 className="ml-auto h-56 w-40 rounded-lg object-cover object-top shadow-md"
-                src={toPublicMediaUrl(supabaseUrl, entry.character.defaultPortraitPath) ?? ""}
+                src={toPublicMediaUrl(supabaseUrl, entry.character.portraitPath) ?? ""}
               />
             ) : null}
           </div>

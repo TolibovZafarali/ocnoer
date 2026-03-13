@@ -1,16 +1,24 @@
-const { PrismaClient, AssetType, DialogueKind, Role } = require("@prisma/client");
+const {
+  PrismaClient,
+  DialogueKind,
+  MediaAssetType,
+  Role
+} = require("@prisma/client");
 
 const prisma = new PrismaClient();
 
 async function main() {
   await prisma.playerResponse.deleteMany();
-  await prisma.sceneAsset.deleteMany();
+  await prisma.sceneCharacterAppearance.deleteMany();
   await prisma.dialogueEntry.deleteMany();
   await prisma.scene.deleteMany();
   await prisma.chapter.deleteMany();
+  await prisma.characterPortrait.deleteMany();
   await prisma.character.deleteMany();
+  await prisma.house.deleteMany();
+  await prisma.mediaAsset.deleteMany();
 
-  const adminUser = await prisma.user.upsert({
+  await prisma.user.upsert({
     where: { email: "admin@example.com" },
     update: { role: Role.admin },
     create: {
@@ -28,12 +36,20 @@ async function main() {
     }
   });
 
+  const house = await prisma.house.create({
+    data: {
+      name: "House Valamere",
+      slug: "house-valamere",
+      notes: "Core household for early story chapters."
+    }
+  });
+
   const ocnoer = await prisma.character.create({
     data: {
       name: "Ocnoer",
       slug: "ocnoer",
-      bio: "Primary point-of-view character.",
-      defaultPortraitPath: "portraits/ocnoer/default.png"
+      houseId: house.id,
+      bio: "Primary point-of-view character."
     }
   });
 
@@ -41,8 +57,51 @@ async function main() {
     data: {
       name: "Alvyn Rivers",
       slug: "alvyn-rivers",
-      bio: "Conversation partner for player prompt moments.",
-      defaultPortraitPath: "portraits/alvyn/default.png"
+      houseId: house.id,
+      bio: "Conversation partner for player prompt moments."
+    }
+  });
+
+  const ocnoerPortrait = await prisma.characterPortrait.create({
+    data: {
+      characterId: ocnoer.id,
+      storagePath: "portraits/ocnoer/default.png",
+      label: "Default",
+      sortOrder: 0
+    }
+  });
+
+  await prisma.characterPortrait.create({
+    data: {
+      characterId: alvyn.id,
+      storagePath: "portraits/alvyn/default.png",
+      label: "Default",
+      sortOrder: 0
+    }
+  });
+
+  const chapterImageAsset = await prisma.mediaAsset.create({
+    data: {
+      type: MediaAssetType.background_image,
+      storagePath: "chapters/ch1/cover.jpg",
+      label: "Chapter 1 cover"
+    }
+  });
+
+  const sceneBackgroundAsset = await prisma.mediaAsset.create({
+    data: {
+      type: MediaAssetType.background_image,
+      storagePath: "scenes/ch1/dockside-dawn.jpg",
+      label: "Dockside dawn",
+      altText: "Harbor at sunrise"
+    }
+  });
+
+  const sceneMusicAsset = await prisma.mediaAsset.create({
+    data: {
+      type: MediaAssetType.background_music,
+      storagePath: "music/ch1/quiet-tide.mp3",
+      label: "Quiet tide"
     }
   });
 
@@ -51,7 +110,7 @@ async function main() {
       title: "Chapter 1: First Echo",
       slug: "chapter-1-first-echo",
       orderIndex: 1,
-      isPublished: true
+      imageAssetId: chapterImageAsset.id
     }
   });
 
@@ -60,8 +119,16 @@ async function main() {
       chapterId: chapter.id,
       title: "Dockside Dawn",
       orderIndex: 1,
-      backgroundImagePath: "scenes/ch1/dockside-dawn.jpg",
-      backgroundMusicPath: "music/ch1/quiet-tide.mp3"
+      backgroundImageAssetId: sceneBackgroundAsset.id,
+      backgroundMusicAssetId: sceneMusicAsset.id
+    }
+  });
+
+  await prisma.sceneCharacterAppearance.create({
+    data: {
+      sceneId: scene.id,
+      characterId: ocnoer.id,
+      portraitId: ocnoerPortrait.id
     }
   });
 
@@ -104,24 +171,6 @@ async function main() {
     }
   });
 
-  await prisma.sceneAsset.createMany({
-    data: [
-      {
-        sceneId: scene.id,
-        type: AssetType.background_image,
-        storagePath: "scenes/ch1/dockside-dawn.jpg",
-        altText: "Harbor at sunrise",
-        label: "Scene background"
-      },
-      {
-        sceneId: scene.id,
-        type: AssetType.background_music,
-        storagePath: "music/ch1/quiet-tide.mp3",
-        label: "Scene BGM"
-      }
-    ]
-  });
-
   await prisma.playerResponse.create({
     data: {
       userId: playerUser.id,
@@ -132,7 +181,9 @@ async function main() {
     }
   });
 
-  console.log(`Seeded chapter ${chapter.slug} with scene ${scene.id} and dialogue ${narrator.id}.`);
+  console.log(
+    `Seeded chapter ${chapter.slug} with scene ${scene.id} and dialogue ${narrator.id}.`
+  );
 }
 
 main()

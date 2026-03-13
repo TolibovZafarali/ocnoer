@@ -27,6 +27,7 @@ const chapterFixture: ReaderChapter = {
   title: "Chapter 1",
   slug: "chapter-1",
   orderIndex: 1,
+  imagePath: "chapters/ch1.jpg",
   scenes: [
     {
       id: "scene-1",
@@ -46,7 +47,7 @@ const chapterFixture: ReaderChapter = {
             id: "char-1",
             name: "Ocnoer",
             slug: "ocnoer",
-            defaultPortraitPath: null
+            portraitPath: null
           }
         })
       ]
@@ -84,7 +85,7 @@ describe("resolveEntryPresentation", () => {
             id: "char-1",
             name: "Ocnoer",
             slug: "ocnoer",
-            defaultPortraitPath: "portraits/ocnoer/default.png"
+            portraitPath: "portraits/ocnoer/default.png"
           }
         })
       )
@@ -104,7 +105,7 @@ describe("resolveEntryPresentation", () => {
             id: "char-2",
             name: "Alvyn",
             slug: "alvyn-rivers",
-            defaultPortraitPath: "portraits/alvyn/default.png"
+            portraitPath: "portraits/alvyn/default.png"
           }
         })
       )

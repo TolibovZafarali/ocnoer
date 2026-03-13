@@ -19,11 +19,9 @@ enum DialogueKind {
   player_prompt
 }
 
-enum AssetType {
+enum MediaAssetType {
   background_image
   background_music
-  portrait
-  other
 }
 
 model User {
@@ -35,16 +33,61 @@ model User {
   responses PlayerResponse[]
 }
 
+model House {
+  id         String      @id @default(cuid())
+  name       String
+  slug       String      @unique
+  notes      String?
+  createdAt  DateTime    @default(now())
+  updatedAt  DateTime    @updatedAt
+  characters Character[]
+}
+
 model Character {
-  id                  String          @id @default(cuid())
-  name                String
-  slug                String          @unique
-  bio                 String?
-  notes               String?
-  defaultPortraitPath String?
-  createdAt           DateTime        @default(now())
-  updatedAt           DateTime        @updatedAt
-  dialogueEntries     DialogueEntry[]
+  id               String                     @id @default(cuid())
+  name             String
+  slug             String                     @unique
+  houseId          String
+  bio              String?
+  notes            String?
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+  house            House                      @relation(fields: [houseId], references: [id], onDelete: Restrict)
+  portraits        CharacterPortrait[]
+  dialogueEntries  DialogueEntry[]
+  sceneAppearances SceneCharacterAppearance[]
+
+  @@index([houseId])
+}
+
+model CharacterPortrait {
+  id               String                     @id @default(cuid())
+  characterId      String
+  storagePath      String
+  label            String?
+  sortOrder        Int                        @default(0)
+  createdAt        DateTime                   @default(now())
+  updatedAt        DateTime                   @updatedAt
+  character        Character                  @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  sceneAppearances SceneCharacterAppearance[]
+
+  @@index([characterId])
+  @@index([sortOrder])
+}
+
+model MediaAsset {
+  id                      String    @id @default(cuid())
+  type                    MediaAssetType
+  storagePath             String    @unique
+  altText                 String?
+  label                   String?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+  chapterImageFor         Chapter[] @relation("ChapterImageAsset")
+  sceneBackgroundImageFor Scene[]   @relation("SceneBackgroundImageAsset")
+  sceneBackgroundMusicFor Scene[]   @relation("SceneBackgroundMusicAsset")
+
+  @@index([type])
 }
 
 model Chapter {
@@ -52,29 +95,53 @@ model Chapter {
   title         String
   slug          String           @unique
   orderIndex    Int              @unique
-  isPublished   Boolean          @default(false)
+  imageAssetId  String
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
+  imageAsset    MediaAsset       @relation("ChapterImageAsset", fields: [imageAssetId], references: [id], onDelete: Restrict)
   scenes        Scene[]
   playerReplies PlayerResponse[]
+
+  @@index([imageAssetId])
 }
 
 model Scene {
-  id                  String           @id @default(cuid())
-  chapterId           String
-  title               String?
-  orderIndex          Int
-  backgroundImagePath String?
-  backgroundMusicPath String?
-  createdAt           DateTime         @default(now())
-  updatedAt           DateTime         @updatedAt
-  chapter             Chapter          @relation(fields: [chapterId], references: [id], onDelete: Cascade)
-  dialogueEntries     DialogueEntry[]
-  assets              SceneAsset[]
-  playerReplies       PlayerResponse[]
+  id                     String                     @id @default(cuid())
+  chapterId              String
+  title                  String?
+  orderIndex             Int
+  backgroundImageAssetId String
+  backgroundMusicAssetId String?
+  createdAt              DateTime                   @default(now())
+  updatedAt              DateTime                   @updatedAt
+  chapter                Chapter                    @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  backgroundImageAsset   MediaAsset                 @relation("SceneBackgroundImageAsset", fields: [backgroundImageAssetId], references: [id], onDelete: Restrict)
+  backgroundMusicAsset   MediaAsset?                @relation("SceneBackgroundMusicAsset", fields: [backgroundMusicAssetId], references: [id], onDelete: SetNull)
+  dialogueEntries        DialogueEntry[]
+  playerReplies          PlayerResponse[]
+  characterAppearances   SceneCharacterAppearance[]
 
   @@unique([chapterId, orderIndex])
   @@index([chapterId])
+  @@index([backgroundImageAssetId])
+  @@index([backgroundMusicAssetId])
+}
+
+model SceneCharacterAppearance {
+  id          String             @id @default(cuid())
+  sceneId     String
+  characterId String
+  portraitId  String?
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+  scene       Scene              @relation(fields: [sceneId], references: [id], onDelete: Cascade)
+  character   Character          @relation(fields: [characterId], references: [id], onDelete: Cascade)
+  portrait    CharacterPortrait? @relation(fields: [portraitId], references: [id], onDelete: SetNull)
+
+  @@unique([sceneId, characterId])
+  @@index([sceneId])
+  @@index([characterId])
+  @@index([portraitId])
 }
 
 model DialogueEntry {
@@ -94,21 +161,6 @@ model DialogueEntry {
   @@unique([sceneId, orderIndex])
   @@index([sceneId])
   @@index([characterId])
-}
-
-model SceneAsset {
-  id         String    @id @default(cuid())
-  sceneId    String
-  type       AssetType
-  storagePath String
-  altText    String?
-  label      String?
-  createdAt  DateTime  @default(now())
-  updatedAt  DateTime  @updatedAt
-  scene      Scene     @relation(fields: [sceneId], references: [id], onDelete: Cascade)
-
-  @@index([sceneId])
-  @@index([type])
 }
 
 model PlayerResponse {

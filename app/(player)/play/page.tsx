@@ -13,7 +13,7 @@ export default async function PlayerPlayPage() {
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-3xl font-semibold text-slate-900">Story Reader</h1>
-          <p className="mt-3 text-slate-700">Read the published story chapter in sequence.</p>
+          <p className="mt-3 text-slate-700">Read the first story chapter in sequence.</p>
         </div>
         <form action={signOutAction}>
           <Button type="submit" variant="outline">
@@ -27,9 +27,9 @@ export default async function PlayerPlayPage() {
           <PlayerStoryReader chapter={chapter} supabaseUrl={supabaseUrl} />
         ) : (
           <section className="rounded-xl border border-slate-200 bg-white p-6 text-slate-900 shadow-sm">
-            <h2 className="text-xl font-semibold">No published chapter available</h2>
+            <h2 className="text-xl font-semibold">No chapter available</h2>
             <p className="mt-2 text-sm text-slate-700">
-              Publish at least one chapter in admin to start the player reader.
+              Create at least one chapter in admin to start the player reader.
             </p>
           </section>
         )}

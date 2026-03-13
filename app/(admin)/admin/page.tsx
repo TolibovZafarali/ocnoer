@@ -1,3 +1,4 @@
+import Link from "next/link";
 import type {
   InputHTMLAttributes,
   ReactNode,
@@ -9,19 +10,27 @@ import { signOutAction } from "@/app/actions/auth";
 import {
   createChapterAction,
   createCharacterAction,
+  createCharacterPortraitAction,
   createDialogueEntryAction,
+  createHouseAction,
+  createMediaAssetAction,
   createSceneAction,
-  createSceneAssetAction,
   deleteChapterAction,
   deleteCharacterAction,
+  deleteCharacterPortraitAction,
   deleteDialogueEntryAction,
+  deleteHouseAction,
+  deleteMediaAssetAction,
   deleteSceneAction,
-  deleteSceneAssetAction,
+  deleteSceneCharacterAppearanceAction,
   updateChapterAction,
   updateCharacterAction,
+  updateCharacterPortraitAction,
   updateDialogueEntryAction,
+  updateHouseAction,
+  updateMediaAssetAction,
   updateSceneAction,
-  updateSceneAssetAction
+  upsertSceneCharacterAppearanceAction
 } from "@/app/(admin)/admin/actions";
 import { Button } from "@/components/ui/button";
 import {
@@ -86,17 +95,84 @@ function FormGrid(props: { children: ReactNode }) {
   return <div className="grid gap-3 md:grid-cols-2">{props.children}</div>;
 }
 
-export default async function AdminPage() {
+function TabLink(props: {
+  tab: "chapters" | "characters" | "scene-assets";
+  activeTab: string;
+  children: ReactNode;
+}) {
+  const active = props.activeTab === props.tab;
+
+  return (
+    <Link
+      className={[
+        "rounded-md px-3 py-2 text-sm font-medium",
+        active
+          ? "bg-slate-900 text-white"
+          : "border border-slate-300 bg-white text-slate-700"
+      ].join(" ")}
+      href={`/admin?tab=${props.tab}`}
+    >
+      {props.children}
+    </Link>
+  );
+}
+
+type AdminPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function getParam(
+  value: string | string[] | undefined,
+  fallback = ""
+): string {
+  if (Array.isArray(value)) {
+    return value[0] ?? fallback;
+  }
+
+  return value ?? fallback;
+}
+
+export default async function AdminPage({ searchParams }: AdminPageProps) {
+  const resolvedSearchParams = searchParams ? await searchParams : {};
   const [story, responses] = await Promise.all([
     getAdminStoryGraph(),
     getAdminPlayerResponses()
   ]);
-  const scenes = story.chapters.flatMap((chapter) =>
-    chapter.scenes.map((scene) => ({
-      id: scene.id,
-      label: `${chapter.title} / Scene ${scene.orderIndex}${scene.title ? ` - ${scene.title}` : ""}`
-    }))
+
+  const activeTab = getParam(resolvedSearchParams.tab, "chapters");
+  const selectedChapterId = getParam(
+    resolvedSearchParams.chapterId,
+    story.chapters[0]?.id ?? ""
   );
+  const selectedChapter =
+    story.chapters.find((chapter) => chapter.id === selectedChapterId) ??
+    story.chapters[0] ??
+    null;
+  const selectedSceneId = getParam(
+    resolvedSearchParams.sceneId,
+    selectedChapter?.scenes[0]?.id ?? ""
+  );
+  const selectedScene =
+    selectedChapter?.scenes.find((scene) => scene.id === selectedSceneId) ??
+    selectedChapter?.scenes[0] ??
+    null;
+
+  const sceneLabelMap = new Map(
+    story.chapters.flatMap((chapter) =>
+      chapter.scenes.map((scene) => [
+        scene.id,
+        `${chapter.title} / Scene ${scene.orderIndex}${scene.title ? ` - ${scene.title}` : ""}`
+      ])
+    )
+  );
+
+  const chapterImageAssets = story.mediaAssets.filter(
+    (asset) => asset.type === "background_image"
+  );
+  const musicAssets = story.mediaAssets.filter(
+    (asset) => asset.type === "background_music"
+  );
+
   const dateFormatter = new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
     timeStyle: "short"
@@ -110,8 +186,8 @@ export default async function AdminPage() {
             Admin Authoring
           </h1>
           <p className="mt-2 text-slate-700">
-            Manage chapters, scenes, dialogue, characters, and asset references
-            for Milestone 3.
+            Manage chapters, scenes, dialogue, houses, characters, portraits,
+            and reusable scene assets.
           </p>
         </div>
         <form action={signOutAction}>
@@ -121,781 +197,992 @@ export default async function AdminPage() {
         </form>
       </div>
 
-      <SectionCard
-        title="Create Chapter"
-        description="Add a new chapter in story order."
-      >
-        <form action={createChapterAction} className="space-y-3">
-          <FormGrid>
-            <div>
-              <Label htmlFor="chapter-title" text="Title" />
-              <Input id="chapter-title" name="title" required />
-            </div>
-            <div>
-              <Label htmlFor="chapter-slug" text="Slug" />
-              <Input id="chapter-slug" name="slug" required />
-            </div>
-            <div>
-              <Label htmlFor="chapter-order" text="Order Index" />
-              <Input
-                id="chapter-order"
-                name="orderIndex"
-                required
-                type="number"
-              />
-            </div>
-            <label className="mt-6 inline-flex items-center gap-2 text-sm text-slate-700">
-              <input
-                className="rounded border-slate-300"
-                name="isPublished"
-                type="checkbox"
-              />
-              Published
-            </label>
-          </FormGrid>
-          <Button type="submit">Create chapter</Button>
-        </form>
+      <div className="flex flex-wrap gap-2">
+        <TabLink activeTab={activeTab} tab="chapters">
+          Chapters
+        </TabLink>
+        <TabLink activeTab={activeTab} tab="characters">
+          Characters
+        </TabLink>
+        <TabLink activeTab={activeTab} tab="scene-assets">
+          Scene Assets
+        </TabLink>
+      </div>
 
-        <div className="space-y-3">
-          {story.chapters.map((chapter) => (
-            <form
-              action={updateChapterAction}
-              className="rounded-lg border border-slate-200 p-3"
-              key={chapter.id}
-            >
-              <input name="chapterId" type="hidden" value={chapter.id} />
+      {activeTab === "chapters" ? (
+        <>
+          <SectionCard
+            title="Create Chapter"
+            description="Chapters are ordered automatically by creation time."
+          >
+            <form action={createChapterAction} className="space-y-3">
               <FormGrid>
                 <div>
-                  <Label htmlFor={`chapter-${chapter.id}-title`} text="Title" />
-                  <Input
-                    id={`chapter-${chapter.id}-title`}
-                    name="title"
-                    required
-                    defaultValue={chapter.title}
-                  />
+                  <Label htmlFor="chapter-title" text="Title" />
+                  <Input id="chapter-title" name="title" required />
                 </div>
                 <div>
-                  <Label htmlFor={`chapter-${chapter.id}-slug`} text="Slug" />
-                  <Input
-                    id={`chapter-${chapter.id}-slug`}
-                    name="slug"
+                  <Label htmlFor="chapter-image" text="Chapter image asset" />
+                  <Select
+                    id="chapter-image"
+                    name="imageAssetId"
                     required
-                    defaultValue={chapter.slug}
-                  />
+                    defaultValue=""
+                  >
+                    <option disabled value="">
+                      Select image asset
+                    </option>
+                    {chapterImageAssets.map((asset) => (
+                      <option key={asset.id} value={asset.id}>
+                        {asset.label ?? asset.storagePath}
+                      </option>
+                    ))}
+                  </Select>
                 </div>
-                <div>
-                  <Label
-                    htmlFor={`chapter-${chapter.id}-order`}
-                    text="Order Index"
-                  />
-                  <Input
-                    id={`chapter-${chapter.id}-order`}
-                    name="orderIndex"
-                    required
-                    type="number"
-                    defaultValue={chapter.orderIndex}
-                  />
-                </div>
-                <label className="mt-6 inline-flex items-center gap-2 text-sm text-slate-700">
-                  <input
-                    className="rounded border-slate-300"
-                    name="isPublished"
-                    type="checkbox"
-                    defaultChecked={chapter.isPublished}
-                  />
-                  Published
-                </label>
               </FormGrid>
-              <div className="mt-3 flex gap-2">
-                <Button type="submit" variant="outline">
-                  Save chapter
-                </Button>
-              </div>
+              <Button type="submit">Create chapter</Button>
             </form>
-          ))}
+          </SectionCard>
 
-          {story.chapters.map((chapter) => (
-            <form
-              action={deleteChapterAction}
-              className="inline"
-              key={`${chapter.id}-delete`}
-            >
-              <input name="chapterId" type="hidden" value={chapter.id} />
-              <Button type="submit" variant="destructive">
-                Delete {chapter.title}
-              </Button>
-            </form>
-          ))}
-        </div>
-      </SectionCard>
-
-      <SectionCard
-        title="Characters"
-        description="Manage character identity and default portrait references."
-      >
-        <form action={createCharacterAction} className="space-y-3">
-          <FormGrid>
-            <div>
-              <Label htmlFor="character-name" text="Name" />
-              <Input id="character-name" name="name" required />
-            </div>
-            <div>
-              <Label htmlFor="character-slug" text="Slug" />
-              <Input id="character-slug" name="slug" required />
-            </div>
-            <div>
-              <Label
-                htmlFor="character-portrait"
-                text="Default portrait path"
-              />
-              <Input id="character-portrait" name="defaultPortraitPath" />
-            </div>
-            <div>
-              <Label htmlFor="character-bio" text="Bio" />
-              <TextArea id="character-bio" name="bio" rows={2} />
-            </div>
-          </FormGrid>
-          <div>
-            <Label htmlFor="character-notes" text="Notes" />
-            <TextArea id="character-notes" name="notes" rows={2} />
-          </div>
-          <Button type="submit">Create character</Button>
-        </form>
-
-        {story.characters.map((character) => (
-          <form
-            action={updateCharacterAction}
-            className="rounded-lg border border-slate-200 p-3"
-            key={character.id}
+          <SectionCard
+            title="Chapter Cards"
+            description="Oldest chapters are on the left."
           >
-            <input name="characterId" type="hidden" value={character.id} />
-            <FormGrid>
-              <div>
-                <Label htmlFor={`character-${character.id}-name`} text="Name" />
-                <Input
-                  id={`character-${character.id}-name`}
-                  name="name"
-                  required
-                  defaultValue={character.name}
-                />
-              </div>
-              <div>
-                <Label htmlFor={`character-${character.id}-slug`} text="Slug" />
-                <Input
-                  id={`character-${character.id}-slug`}
-                  name="slug"
-                  required
-                  defaultValue={character.slug}
-                />
-              </div>
-              <div>
-                <Label
-                  htmlFor={`character-${character.id}-portrait`}
-                  text="Default portrait path"
-                />
-                <Input
-                  id={`character-${character.id}-portrait`}
-                  name="defaultPortraitPath"
-                  defaultValue={character.defaultPortraitPath ?? ""}
-                />
-              </div>
-              <div>
-                <Label htmlFor={`character-${character.id}-bio`} text="Bio" />
-                <TextArea
-                  id={`character-${character.id}-bio`}
-                  name="bio"
-                  rows={2}
-                  defaultValue={character.bio ?? ""}
-                />
-              </div>
-            </FormGrid>
-            <div className="mt-3">
-              <Label htmlFor={`character-${character.id}-notes`} text="Notes" />
-              <TextArea
-                id={`character-${character.id}-notes`}
-                name="notes"
-                rows={2}
-                defaultValue={character.notes ?? ""}
-              />
-            </div>
-            <div className="mt-3 flex gap-2">
-              <Button type="submit" variant="outline">
-                Save character
-              </Button>
-            </div>
-          </form>
-        ))}
-
-        <div className="flex flex-wrap gap-2">
-          {story.characters.map((character) => (
-            <form action={deleteCharacterAction} key={`${character.id}-delete`}>
-              <input name="characterId" type="hidden" value={character.id} />
-              <Button type="submit" variant="destructive">
-                Delete {character.name}
-              </Button>
-            </form>
-          ))}
-        </div>
-      </SectionCard>
-
-      <SectionCard
-        title="Scenes"
-        description="Create and update ordered scenes inside chapters."
-      >
-        <form action={createSceneAction} className="space-y-3">
-          <FormGrid>
-            <div>
-              <Label htmlFor="scene-chapter" text="Chapter" />
-              <Select
-                id="scene-chapter"
-                name="chapterId"
-                required
-                defaultValue=""
-              >
-                <option disabled value="">
-                  Select chapter
-                </option>
+            <div className="overflow-x-auto pb-2">
+              <div className="flex min-w-max gap-3">
                 {story.chapters.map((chapter) => (
-                  <option key={chapter.id} value={chapter.id}>
-                    {chapter.title}
-                  </option>
+                  <Link
+                    className={[
+                      "w-64 rounded-lg border p-3",
+                      selectedChapter?.id === chapter.id
+                        ? "border-slate-900 bg-slate-100"
+                        : "border-slate-300 bg-white"
+                    ].join(" ")}
+                    href={`/admin?tab=chapters&chapterId=${chapter.id}`}
+                    key={chapter.id}
+                  >
+                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                      Chapter {chapter.orderIndex}
+                    </p>
+                    <p className="mt-1 font-semibold text-slate-900">{chapter.title}</p>
+                    <p className="mt-2 truncate text-xs text-slate-600">
+                      {chapter.imageAsset.label ?? chapter.imageAsset.storagePath}
+                    </p>
+                  </Link>
                 ))}
-              </Select>
+              </div>
             </div>
-            <div>
-              <Label htmlFor="scene-title" text="Scene title" />
-              <Input id="scene-title" name="title" />
-            </div>
-            <div>
-              <Label htmlFor="scene-order" text="Order Index" />
-              <Input
-                id="scene-order"
-                name="orderIndex"
-                required
-                type="number"
-              />
-            </div>
-            <div>
-              <Label htmlFor="scene-bg" text="Background image path" />
-              <Input id="scene-bg" name="backgroundImagePath" />
-            </div>
-          </FormGrid>
-          <div>
-            <Label htmlFor="scene-music" text="Background music path" />
-            <Input id="scene-music" name="backgroundMusicPath" />
-          </div>
-          <Button type="submit">Create scene</Button>
-        </form>
 
-        {story.chapters.map((chapter) => (
-          <div className="space-y-3" key={chapter.id}>
-            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-              {chapter.title}
-            </h3>
-            {chapter.scenes.map((scene) => (
-              <form
-                action={updateSceneAction}
-                className="rounded-lg border border-slate-200 p-3"
-                key={scene.id}
-              >
-                <input name="sceneId" type="hidden" value={scene.id} />
-                <FormGrid>
-                  <div>
-                    <Label
-                      htmlFor={`scene-${scene.id}-chapter`}
-                      text="Chapter"
-                    />
-                    <Select
-                      id={`scene-${scene.id}-chapter`}
-                      name="chapterId"
-                      defaultValue={scene.chapterId}
-                      required
-                    >
-                      {story.chapters.map((chapterOption) => (
-                        <option key={chapterOption.id} value={chapterOption.id}>
-                          {chapterOption.title}
-                        </option>
-                      ))}
-                    </Select>
-                  </div>
-                  <div>
-                    <Label
-                      htmlFor={`scene-${scene.id}-title`}
-                      text="Scene title"
-                    />
-                    <Input
-                      id={`scene-${scene.id}-title`}
-                      name="title"
-                      defaultValue={scene.title ?? ""}
-                    />
-                  </div>
-                  <div>
-                    <Label
-                      htmlFor={`scene-${scene.id}-order`}
-                      text="Order Index"
-                    />
-                    <Input
-                      id={`scene-${scene.id}-order`}
-                      name="orderIndex"
-                      type="number"
-                      required
-                      defaultValue={scene.orderIndex}
-                    />
-                  </div>
-                  <div>
-                    <Label
-                      htmlFor={`scene-${scene.id}-bg`}
-                      text="Background image path"
-                    />
-                    <Input
-                      id={`scene-${scene.id}-bg`}
-                      name="backgroundImagePath"
-                      defaultValue={scene.backgroundImagePath ?? ""}
-                    />
-                  </div>
-                </FormGrid>
-                <div className="mt-3">
-                  <Label
-                    htmlFor={`scene-${scene.id}-music`}
-                    text="Background music path"
-                  />
-                  <Input
-                    id={`scene-${scene.id}-music`}
-                    name="backgroundMusicPath"
-                    defaultValue={scene.backgroundMusicPath ?? ""}
-                  />
-                </div>
-                <div className="mt-3 flex gap-2">
-                  <Button type="submit" variant="outline">
-                    Save scene
-                  </Button>
-                </div>
-              </form>
-            ))}
-          </div>
-        ))}
-
-        <div className="flex flex-wrap gap-2">
-          {scenes.map((scene) => (
-            <form action={deleteSceneAction} key={`${scene.id}-delete`}>
-              <input name="sceneId" type="hidden" value={scene.id} />
-              <Button type="submit" variant="destructive">
-                Delete {scene.label}
-              </Button>
-            </form>
-          ))}
-        </div>
-      </SectionCard>
-
-      <SectionCard
-        title="Dialogue Entries"
-        description="Author ordered narrator/character/prompt entries per scene."
-      >
-        <form action={createDialogueEntryAction} className="space-y-3">
-          <FormGrid>
-            <div>
-              <Label htmlFor="dialogue-scene" text="Scene" />
-              <Select
-                id="dialogue-scene"
-                name="sceneId"
-                required
-                defaultValue=""
-              >
-                <option disabled value="">
-                  Select scene
-                </option>
-                {scenes.map((scene) => (
-                  <option key={scene.id} value={scene.id}>
-                    {scene.label}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="dialogue-kind" text="Kind" />
-              <Select
-                id="dialogue-kind"
-                name="kind"
-                required
-                defaultValue={StoryEnums.dialogueKinds[0]}
-              >
-                {StoryEnums.dialogueKinds.map((kind) => (
-                  <option key={kind} value={kind}>
-                    {kind}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="dialogue-order" text="Order Index" />
-              <Input
-                id="dialogue-order"
-                name="orderIndex"
-                type="number"
-                required
-              />
-            </div>
-            <div>
-              <Label htmlFor="dialogue-character" text="Character (optional)" />
-              <Select
-                id="dialogue-character"
-                name="characterId"
-                defaultValue=""
-              >
-                <option value="">None</option>
-                {story.characters.map((character) => (
-                  <option key={character.id} value={character.id}>
-                    {character.name}
-                  </option>
-                ))}
-              </Select>
-            </div>
-          </FormGrid>
-          <div>
-            <Label htmlFor="dialogue-text" text="Text" />
-            <TextArea id="dialogue-text" name="text" rows={3} required />
-          </div>
-          <div>
-            <Label
-              htmlFor="dialogue-prompt-label"
-              text="Prompt label (player prompt only)"
-            />
-            <Input id="dialogue-prompt-label" name="promptLabel" />
-          </div>
-          <Button type="submit">Create dialogue entry</Button>
-        </form>
-
-        {story.chapters.flatMap((chapter) =>
-          chapter.scenes.map((scene) => (
-            <div className="space-y-3" key={`${scene.id}-dialogues`}>
-              <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
-                {chapter.title} / Scene {scene.orderIndex}
-              </h3>
-              {scene.dialogueEntries.map((entry) => (
+            {selectedChapter ? (
+              <div className="space-y-3">
                 <form
-                  action={updateDialogueEntryAction}
+                  action={updateChapterAction}
                   className="rounded-lg border border-slate-200 p-3"
-                  key={entry.id}
                 >
-                  <input
-                    name="dialogueEntryId"
-                    type="hidden"
-                    value={entry.id}
-                  />
+                  <input name="chapterId" type="hidden" value={selectedChapter.id} />
                   <FormGrid>
                     <div>
                       <Label
-                        htmlFor={`dialogue-${entry.id}-scene`}
-                        text="Scene"
-                      />
-                      <Select
-                        id={`dialogue-${entry.id}-scene`}
-                        name="sceneId"
-                        defaultValue={scene.id}
-                        required
-                      >
-                        {scenes.map((sceneOption) => (
-                          <option key={sceneOption.id} value={sceneOption.id}>
-                            {sceneOption.label}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-                    <div>
-                      <Label
-                        htmlFor={`dialogue-${entry.id}-kind`}
-                        text="Kind"
-                      />
-                      <Select
-                        id={`dialogue-${entry.id}-kind`}
-                        name="kind"
-                        defaultValue={entry.kind}
-                        required
-                      >
-                        {StoryEnums.dialogueKinds.map((kind) => (
-                          <option key={kind} value={kind}>
-                            {kind}
-                          </option>
-                        ))}
-                      </Select>
-                    </div>
-                    <div>
-                      <Label
-                        htmlFor={`dialogue-${entry.id}-order`}
-                        text="Order Index"
+                        htmlFor={`chapter-${selectedChapter.id}-title`}
+                        text="Title"
                       />
                       <Input
-                        id={`dialogue-${entry.id}-order`}
-                        name="orderIndex"
-                        type="number"
+                        defaultValue={selectedChapter.title}
+                        id={`chapter-${selectedChapter.id}-title`}
+                        name="title"
                         required
-                        defaultValue={entry.orderIndex}
                       />
                     </div>
                     <div>
                       <Label
-                        htmlFor={`dialogue-${entry.id}-character`}
-                        text="Character (optional)"
+                        htmlFor={`chapter-${selectedChapter.id}-image`}
+                        text="Chapter image asset"
                       />
                       <Select
-                        id={`dialogue-${entry.id}-character`}
-                        name="characterId"
-                        defaultValue={entry.characterId ?? ""}
+                        defaultValue={selectedChapter.imageAssetId}
+                        id={`chapter-${selectedChapter.id}-image`}
+                        name="imageAssetId"
+                        required
                       >
-                        <option value="">None</option>
-                        {story.characters.map((character) => (
-                          <option key={character.id} value={character.id}>
-                            {character.name}
+                        {chapterImageAssets.map((asset) => (
+                          <option key={asset.id} value={asset.id}>
+                            {asset.label ?? asset.storagePath}
                           </option>
                         ))}
                       </Select>
                     </div>
                   </FormGrid>
-                  <div className="mt-3">
-                    <Label htmlFor={`dialogue-${entry.id}-text`} text="Text" />
-                    <TextArea
-                      id={`dialogue-${entry.id}-text`}
-                      name="text"
-                      rows={3}
-                      required
-                      defaultValue={entry.text}
-                    />
-                  </div>
-                  <div className="mt-3">
-                    <Label
-                      htmlFor={`dialogue-${entry.id}-prompt`}
-                      text="Prompt label"
-                    />
-                    <Input
-                      id={`dialogue-${entry.id}-prompt`}
-                      name="promptLabel"
-                      defaultValue={entry.promptLabel ?? ""}
-                    />
-                  </div>
                   <div className="mt-3 flex gap-2">
                     <Button type="submit" variant="outline">
-                      Save dialogue
+                      Save chapter
                     </Button>
                   </div>
                 </form>
-              ))}
-            </div>
-          ))
-        )}
 
-        <div className="flex flex-wrap gap-2">
-          {story.chapters.flatMap((chapter) =>
-            chapter.scenes.flatMap((scene) =>
-              scene.dialogueEntries.map((entry) => (
-                <form
-                  action={deleteDialogueEntryAction}
-                  key={`${entry.id}-delete`}
-                >
-                  <input
-                    name="dialogueEntryId"
-                    type="hidden"
-                    value={entry.id}
-                  />
+                <form action={deleteChapterAction}>
+                  <input name="chapterId" type="hidden" value={selectedChapter.id} />
                   <Button type="submit" variant="destructive">
-                    Delete entry {entry.orderIndex} (
-                    {scene.title ?? `Scene ${scene.orderIndex}`})
+                    Delete chapter
                   </Button>
                 </form>
-              ))
-            )
-          )}
-        </div>
-      </SectionCard>
+              </div>
+            ) : null}
+          </SectionCard>
 
-      <SectionCard
-        title="Player Responses"
-        description="Review free-text responses submitted during player prompt moments."
-      >
-        {responses.length === 0 ? (
-          <p className="text-sm text-slate-600">No player responses submitted yet.</p>
-        ) : (
-          <div className="space-y-3">
-            {responses.map((response) => (
-              <article
-                className="rounded-lg border border-slate-200 bg-slate-50 p-4"
-                key={response.id}
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-slate-900">
-                    {response.user.email}
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    {dateFormatter.format(response.createdAt)}
-                  </p>
-                </div>
-                <p className="mt-2 text-xs uppercase tracking-wide text-slate-500">
-                  Chapter {response.chapter.orderIndex}: {response.chapter.title} /
-                  {" "}Scene {response.scene.orderIndex}
-                  {response.scene.title ? ` - ${response.scene.title}` : ""}
-                </p>
-                <p className="mt-2 text-sm font-medium text-slate-700">
-                  {response.dialogueEntry.promptLabel ?? "Player prompt"}
-                </p>
-                <p className="mt-1 text-sm text-slate-600">
-                  {response.dialogueEntry.text}
-                </p>
-                <p className="mt-3 rounded-md border border-slate-200 bg-white p-3 text-sm text-slate-900">
-                  {response.responseText}
-                </p>
-              </article>
-            ))}
-          </div>
-        )}
-      </SectionCard>
-
-      <SectionCard
-        title="Scene Assets"
-        description="Attach metadata asset references to scenes."
-      >
-        <form action={createSceneAssetAction} className="space-y-3">
-          <FormGrid>
-            <div>
-              <Label htmlFor="asset-scene" text="Scene" />
-              <Select id="asset-scene" name="sceneId" required defaultValue="">
-                <option disabled value="">
-                  Select scene
-                </option>
-                {scenes.map((scene) => (
-                  <option key={scene.id} value={scene.id}>
-                    {scene.label}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="asset-type" text="Type" />
-              <Select
-                id="asset-type"
-                name="type"
-                required
-                defaultValue={StoryEnums.assetTypes[0]}
-              >
-                {StoryEnums.assetTypes.map((type) => (
-                  <option key={type} value={type}>
-                    {type}
-                  </option>
-                ))}
-              </Select>
-            </div>
-            <div>
-              <Label htmlFor="asset-storage" text="Storage path" />
-              <Input id="asset-storage" name="storagePath" required />
-            </div>
-            <div>
-              <Label htmlFor="asset-alt" text="Alt text" />
-              <Input id="asset-alt" name="altText" />
-            </div>
-          </FormGrid>
-          <div>
-            <Label htmlFor="asset-label" text="Label" />
-            <Input id="asset-label" name="label" />
-          </div>
-          <Button type="submit">Create scene asset</Button>
-        </form>
-
-        {story.chapters.flatMap((chapter) =>
-          chapter.scenes.map((scene) =>
-            scene.assets.map((asset) => (
-              <form
-                action={updateSceneAssetAction}
-                className="rounded-lg border border-slate-200 p-3"
-                key={asset.id}
-              >
-                <input name="sceneAssetId" type="hidden" value={asset.id} />
+          {selectedChapter ? (
+            <SectionCard
+              title="Scenes"
+              description="Create and maintain ordered scene cards for the selected chapter."
+            >
+              <form action={createSceneAction} className="space-y-3">
+                <input name="chapterId" type="hidden" value={selectedChapter.id} />
                 <FormGrid>
                   <div>
-                    <Label htmlFor={`asset-${asset.id}-scene`} text="Scene" />
-                    <Select
-                      id={`asset-${asset.id}-scene`}
-                      name="sceneId"
-                      defaultValue={scene.id}
-                      required
-                    >
-                      {scenes.map((sceneOption) => (
-                        <option key={sceneOption.id} value={sceneOption.id}>
-                          {sceneOption.label}
-                        </option>
-                      ))}
-                    </Select>
+                    <Label htmlFor="scene-title" text="Scene title" />
+                    <Input id="scene-title" name="title" />
                   </div>
                   <div>
-                    <Label htmlFor={`asset-${asset.id}-type`} text="Type" />
+                    <Label htmlFor="scene-order" text="Order index" />
+                    <Input id="scene-order" name="orderIndex" required type="number" />
+                  </div>
+                  <div>
+                    <Label
+                      htmlFor="scene-background-image"
+                      text="Background image asset"
+                    />
                     <Select
-                      id={`asset-${asset.id}-type`}
-                      name="type"
-                      defaultValue={asset.type}
+                      defaultValue=""
+                      id="scene-background-image"
+                      name="backgroundImageAssetId"
                       required
                     >
-                      {StoryEnums.assetTypes.map((type) => (
-                        <option key={type} value={type}>
-                          {type}
+                      <option disabled value="">
+                        Select image asset
+                      </option>
+                      {chapterImageAssets.map((asset) => (
+                        <option key={asset.id} value={asset.id}>
+                          {asset.label ?? asset.storagePath}
                         </option>
                       ))}
                     </Select>
                   </div>
                   <div>
                     <Label
-                      htmlFor={`asset-${asset.id}-path`}
-                      text="Storage path"
+                      htmlFor="scene-background-music"
+                      text="Background music asset (optional)"
                     />
-                    <Input
-                      id={`asset-${asset.id}-path`}
-                      name="storagePath"
+                    <Select
+                      defaultValue=""
+                      id="scene-background-music"
+                      name="backgroundMusicAssetId"
+                    >
+                      <option value="">None</option>
+                      {musicAssets.map((asset) => (
+                        <option key={asset.id} value={asset.id}>
+                          {asset.label ?? asset.storagePath}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                </FormGrid>
+                <Button type="submit">Create scene</Button>
+              </form>
+
+              <div className="grid gap-3 md:grid-cols-2">
+                {selectedChapter.scenes.map((scene) => (
+                  <Link
+                    className={[
+                      "rounded-lg border p-3",
+                      selectedScene?.id === scene.id
+                        ? "border-slate-900 bg-slate-100"
+                        : "border-slate-300 bg-white"
+                    ].join(" ")}
+                    href={`/admin?tab=chapters&chapterId=${selectedChapter.id}&sceneId=${scene.id}`}
+                    key={scene.id}
+                  >
+                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                      Scene {scene.orderIndex}
+                    </p>
+                    <p className="mt-1 font-semibold text-slate-900">
+                      {scene.title ?? "Untitled scene"}
+                    </p>
+                    <p className="mt-2 truncate text-xs text-slate-600">
+                      BG: {scene.backgroundImageAsset.label ?? scene.backgroundImageAsset.storagePath}
+                    </p>
+                  </Link>
+                ))}
+              </div>
+
+              {selectedScene ? (
+                <div className="space-y-3 rounded-lg border border-slate-200 p-3">
+                  <form action={updateSceneAction} className="space-y-3">
+                    <input name="sceneId" type="hidden" value={selectedScene.id} />
+                    <input
+                      name="chapterId"
+                      type="hidden"
+                      value={selectedChapter.id}
+                    />
+                    <FormGrid>
+                      <div>
+                        <Label
+                          htmlFor={`scene-${selectedScene.id}-title`}
+                          text="Scene title"
+                        />
+                        <Input
+                          defaultValue={selectedScene.title ?? ""}
+                          id={`scene-${selectedScene.id}-title`}
+                          name="title"
+                        />
+                      </div>
+                      <div>
+                        <Label
+                          htmlFor={`scene-${selectedScene.id}-order`}
+                          text="Order index"
+                        />
+                        <Input
+                          defaultValue={selectedScene.orderIndex}
+                          id={`scene-${selectedScene.id}-order`}
+                          name="orderIndex"
+                          required
+                          type="number"
+                        />
+                      </div>
+                      <div>
+                        <Label
+                          htmlFor={`scene-${selectedScene.id}-bg-image`}
+                          text="Background image asset"
+                        />
+                        <Select
+                          defaultValue={selectedScene.backgroundImageAssetId}
+                          id={`scene-${selectedScene.id}-bg-image`}
+                          name="backgroundImageAssetId"
+                          required
+                        >
+                          {chapterImageAssets.map((asset) => (
+                            <option key={asset.id} value={asset.id}>
+                              {asset.label ?? asset.storagePath}
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
+                      <div>
+                        <Label
+                          htmlFor={`scene-${selectedScene.id}-bg-music`}
+                          text="Background music asset"
+                        />
+                        <Select
+                          defaultValue={selectedScene.backgroundMusicAssetId ?? ""}
+                          id={`scene-${selectedScene.id}-bg-music`}
+                          name="backgroundMusicAssetId"
+                        >
+                          <option value="">None</option>
+                          {musicAssets.map((asset) => (
+                            <option key={asset.id} value={asset.id}>
+                              {asset.label ?? asset.storagePath}
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
+                    </FormGrid>
+                    <div className="flex gap-2">
+                      <Button type="submit" variant="outline">
+                        Save scene
+                      </Button>
+                    </div>
+                  </form>
+
+                  <form action={deleteSceneAction}>
+                    <input name="sceneId" type="hidden" value={selectedScene.id} />
+                    <Button type="submit" variant="destructive">
+                      Delete scene
+                    </Button>
+                  </form>
+                </div>
+              ) : null}
+            </SectionCard>
+          ) : null}
+
+          {selectedScene ? (
+            <SectionCard
+              title="Dialogue Timeline"
+              description="Author linear dialogue entries for the selected scene."
+            >
+              <form action={createDialogueEntryAction} className="space-y-3">
+                <input name="sceneId" type="hidden" value={selectedScene.id} />
+                <FormGrid>
+                  <div>
+                    <Label htmlFor="dialogue-kind" text="Kind" />
+                    <Select
+                      defaultValue={StoryEnums.dialogueKinds[0]}
+                      id="dialogue-kind"
+                      name="kind"
                       required
-                      defaultValue={asset.storagePath}
+                    >
+                      {StoryEnums.dialogueKinds.map((kind) => (
+                        <option key={kind} value={kind}>
+                          {kind}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="dialogue-order" text="Order index" />
+                    <Input
+                      id="dialogue-order"
+                      name="orderIndex"
+                      required
+                      type="number"
                     />
                   </div>
                   <div>
-                    <Label htmlFor={`asset-${asset.id}-alt`} text="Alt text" />
-                    <Input
-                      id={`asset-${asset.id}-alt`}
-                      name="altText"
-                      defaultValue={asset.altText ?? ""}
+                    <Label htmlFor="dialogue-character" text="Character (optional)" />
+                    <Select defaultValue="" id="dialogue-character" name="characterId">
+                      <option value="">None</option>
+                      {story.houses.flatMap((house) =>
+                        house.characters.map((character) => (
+                          <option key={character.id} value={character.id}>
+                            {house.name} / {character.name}
+                          </option>
+                        ))
+                      )}
+                    </Select>
+                  </div>
+                  <div>
+                    <Label
+                      htmlFor="dialogue-prompt-label"
+                      text="Prompt label (prompt kind only)"
                     />
+                    <Input id="dialogue-prompt-label" name="promptLabel" />
                   </div>
                 </FormGrid>
-                <div className="mt-3">
-                  <Label htmlFor={`asset-${asset.id}-label`} text="Label" />
-                  <Input
-                    id={`asset-${asset.id}-label`}
-                    name="label"
-                    defaultValue={asset.label ?? ""}
-                  />
+                <div>
+                  <Label htmlFor="dialogue-text" text="Text" />
+                  <TextArea id="dialogue-text" name="text" required rows={3} />
                 </div>
-                <div className="mt-3 flex gap-2">
-                  <Button type="submit" variant="outline">
-                    Save scene asset
-                  </Button>
-                </div>
+                <Button type="submit">Create dialogue entry</Button>
               </form>
-            ))
-          )
-        )}
 
-        <div className="flex flex-wrap gap-2">
-          {story.chapters.flatMap((chapter) =>
-            chapter.scenes.flatMap((scene) =>
-              scene.assets.map((asset) => (
-                <form
-                  action={deleteSceneAssetAction}
-                  key={`${asset.id}-delete`}
-                >
-                  <input name="sceneAssetId" type="hidden" value={asset.id} />
+              <div className="space-y-3">
+                {selectedScene.dialogueEntries.map((entry) => (
+                  <form
+                    action={updateDialogueEntryAction}
+                    className="rounded-lg border border-slate-200 p-3"
+                    key={entry.id}
+                  >
+                    <input name="dialogueEntryId" type="hidden" value={entry.id} />
+                    <input name="sceneId" type="hidden" value={selectedScene.id} />
+                    <FormGrid>
+                      <div>
+                        <Label htmlFor={`dialogue-${entry.id}-kind`} text="Kind" />
+                        <Select
+                          defaultValue={entry.kind}
+                          id={`dialogue-${entry.id}-kind`}
+                          name="kind"
+                          required
+                        >
+                          {StoryEnums.dialogueKinds.map((kind) => (
+                            <option key={kind} value={kind}>
+                              {kind}
+                            </option>
+                          ))}
+                        </Select>
+                      </div>
+                      <div>
+                        <Label
+                          htmlFor={`dialogue-${entry.id}-order`}
+                          text="Order index"
+                        />
+                        <Input
+                          defaultValue={entry.orderIndex}
+                          id={`dialogue-${entry.id}-order`}
+                          name="orderIndex"
+                          required
+                          type="number"
+                        />
+                      </div>
+                      <div>
+                        <Label
+                          htmlFor={`dialogue-${entry.id}-character`}
+                          text="Character (optional)"
+                        />
+                        <Select
+                          defaultValue={entry.characterId ?? ""}
+                          id={`dialogue-${entry.id}-character`}
+                          name="characterId"
+                        >
+                          <option value="">None</option>
+                          {story.houses.flatMap((house) =>
+                            house.characters.map((character) => (
+                              <option key={character.id} value={character.id}>
+                                {house.name} / {character.name}
+                              </option>
+                            ))
+                          )}
+                        </Select>
+                      </div>
+                      <div>
+                        <Label
+                          htmlFor={`dialogue-${entry.id}-prompt-label`}
+                          text="Prompt label"
+                        />
+                        <Input
+                          defaultValue={entry.promptLabel ?? ""}
+                          id={`dialogue-${entry.id}-prompt-label`}
+                          name="promptLabel"
+                        />
+                      </div>
+                    </FormGrid>
+                    <div className="mt-3">
+                      <Label htmlFor={`dialogue-${entry.id}-text`} text="Text" />
+                      <TextArea
+                        defaultValue={entry.text}
+                        id={`dialogue-${entry.id}-text`}
+                        name="text"
+                        required
+                        rows={3}
+                      />
+                    </div>
+                    <div className="mt-3 flex gap-2">
+                      <Button type="submit" variant="outline">
+                        Save entry
+                      </Button>
+                    </div>
+                  </form>
+                ))}
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                {selectedScene.dialogueEntries.map((entry) => (
+                  <form action={deleteDialogueEntryAction} key={`${entry.id}-delete`}>
+                    <input name="dialogueEntryId" type="hidden" value={entry.id} />
+                    <Button type="submit" variant="destructive">
+                      Delete entry #{entry.orderIndex}
+                    </Button>
+                  </form>
+                ))}
+              </div>
+            </SectionCard>
+          ) : null}
+
+          {selectedScene ? (
+            <SectionCard
+              title="Scene Character Appearances"
+              description="Choose portrait variant per character for this scene."
+            >
+              <form action={upsertSceneCharacterAppearanceAction} className="space-y-3">
+                <input name="sceneId" type="hidden" value={selectedScene.id} />
+                <FormGrid>
+                  <div>
+                    <Label htmlFor="appearance-character" text="Character" />
+                    <Select
+                      defaultValue=""
+                      id="appearance-character"
+                      name="characterId"
+                      required
+                    >
+                      <option disabled value="">
+                        Select character
+                      </option>
+                      {story.houses.flatMap((house) =>
+                        house.characters.map((character) => (
+                          <option key={character.id} value={character.id}>
+                            {house.name} / {character.name}
+                          </option>
+                        ))
+                      )}
+                    </Select>
+                  </div>
+                  <div>
+                    <Label htmlFor="appearance-portrait" text="Portrait (optional)" />
+                    <Select defaultValue="" id="appearance-portrait" name="portraitId">
+                      <option value="">Use character default portrait</option>
+                      {story.houses.flatMap((house) =>
+                        house.characters.flatMap((character) =>
+                          character.portraits.map((portrait) => (
+                            <option key={portrait.id} value={portrait.id}>
+                              {character.name} / {portrait.label ?? portrait.storagePath}
+                            </option>
+                          ))
+                        )
+                      )}
+                    </Select>
+                  </div>
+                </FormGrid>
+                <Button type="submit">Save appearance</Button>
+              </form>
+
+              <div className="space-y-2">
+                {selectedScene.characterAppearances.map((appearance) => (
+                  <div
+                    className="flex items-center justify-between rounded-md border border-slate-200 p-3"
+                    key={`${appearance.sceneId}-${appearance.characterId}`}
+                  >
+                    <p className="text-sm text-slate-700">
+                      {appearance.character.name}: {appearance.portrait?.label ?? appearance.portrait?.storagePath ?? "Default portrait"}
+                    </p>
+                    <form action={deleteSceneCharacterAppearanceAction}>
+                      <input name="sceneId" type="hidden" value={selectedScene.id} />
+                      <input
+                        name="characterId"
+                        type="hidden"
+                        value={appearance.characterId}
+                      />
+                      <Button size="sm" type="submit" variant="destructive">
+                        Delete
+                      </Button>
+                    </form>
+                  </div>
+                ))}
+              </div>
+            </SectionCard>
+          ) : null}
+
+          <SectionCard
+            title="Player Responses"
+            description="Recent prompt responses from the player."
+          >
+            {responses.length === 0 ? (
+              <p className="text-sm text-slate-600">No responses captured yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {responses.map((response) => (
+                  <article
+                    className="rounded-lg border border-slate-200 p-3"
+                    key={response.id}
+                  >
+                    <p className="text-xs uppercase tracking-wide text-slate-500">
+                      {dateFormatter.format(response.createdAt)}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-700">{response.user.email}</p>
+                    <p className="mt-1 text-sm font-medium text-slate-900">
+                      Chapter {response.chapter.orderIndex}: {response.chapter.title} /
+                      {" "}Scene {response.scene.orderIndex}
+                      {response.scene.title ? ` - ${response.scene.title}` : ""}
+                    </p>
+                    <p className="mt-2 text-sm text-slate-900">{response.responseText}</p>
+                    <p className="mt-2 text-xs text-slate-500">
+                      Prompt: {response.dialogueEntry.promptLabel ?? "(untitled)"}
+                    </p>
+                  </article>
+                ))}
+              </div>
+            )}
+          </SectionCard>
+        </>
+      ) : null}
+
+      {activeTab === "characters" ? (
+        <>
+          <SectionCard
+            title="Houses"
+            description="Manage houses that own reusable character rosters."
+          >
+            <form action={createHouseAction} className="space-y-3">
+              <FormGrid>
+                <div>
+                  <Label htmlFor="house-name" text="House name" />
+                  <Input id="house-name" name="name" required />
+                </div>
+                <div>
+                  <Label htmlFor="house-notes" text="Notes" />
+                  <TextArea id="house-notes" name="notes" rows={2} />
+                </div>
+              </FormGrid>
+              <Button type="submit">Create house</Button>
+            </form>
+
+            {story.houses.map((house) => (
+              <div className="rounded-lg border border-slate-200 p-3" key={house.id}>
+                <form action={updateHouseAction} className="space-y-3">
+                  <input name="houseId" type="hidden" value={house.id} />
+                  <FormGrid>
+                    <div>
+                      <Label htmlFor={`house-${house.id}-name`} text="House name" />
+                      <Input
+                        defaultValue={house.name}
+                        id={`house-${house.id}-name`}
+                        name="name"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor={`house-${house.id}-notes`} text="Notes" />
+                      <TextArea
+                        defaultValue={house.notes ?? ""}
+                        id={`house-${house.id}-notes`}
+                        name="notes"
+                        rows={2}
+                      />
+                    </div>
+                  </FormGrid>
+                  <div className="flex gap-2">
+                    <Button type="submit" variant="outline">
+                      Save house
+                    </Button>
+                  </div>
+                </form>
+                <form action={deleteHouseAction} className="mt-2">
+                  <input name="houseId" type="hidden" value={house.id} />
                   <Button type="submit" variant="destructive">
-                    Delete asset {asset.type} (
-                    {scene.title ?? `Scene ${scene.orderIndex}`})
+                    Delete house
                   </Button>
                 </form>
-              ))
-            )
-          )}
-        </div>
-      </SectionCard>
+              </div>
+            ))}
+          </SectionCard>
+
+          <SectionCard
+            title="Characters"
+            description="Characters are grouped by house and can have multiple portraits."
+          >
+            <form action={createCharacterAction} className="space-y-3">
+              <FormGrid>
+                <div>
+                  <Label htmlFor="character-name" text="Name" />
+                  <Input id="character-name" name="name" required />
+                </div>
+                <div>
+                  <Label htmlFor="character-house" text="House" />
+                  <Select id="character-house" name="houseId" required defaultValue="">
+                    <option disabled value="">
+                      Select house
+                    </option>
+                    {story.houses.map((house) => (
+                      <option key={house.id} value={house.id}>
+                        {house.name}
+                      </option>
+                    ))}
+                  </Select>
+                </div>
+                <div>
+                  <Label htmlFor="character-bio" text="Bio" />
+                  <TextArea id="character-bio" name="bio" rows={2} />
+                </div>
+                <div>
+                  <Label htmlFor="character-notes" text="Notes" />
+                  <TextArea id="character-notes" name="notes" rows={2} />
+                </div>
+              </FormGrid>
+              <Button type="submit">Create character</Button>
+            </form>
+
+            {story.houses.map((house) => (
+              <div className="space-y-3" key={house.id}>
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+                  {house.name}
+                </h3>
+                {house.characters.map((character) => (
+                  <div className="rounded-lg border border-slate-200 p-3" key={character.id}>
+                    <form action={updateCharacterAction} className="space-y-3">
+                      <input name="characterId" type="hidden" value={character.id} />
+                      <FormGrid>
+                        <div>
+                          <Label
+                            htmlFor={`character-${character.id}-name`}
+                            text="Name"
+                          />
+                          <Input
+                            defaultValue={character.name}
+                            id={`character-${character.id}-name`}
+                            name="name"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <Label
+                            htmlFor={`character-${character.id}-house`}
+                            text="House"
+                          />
+                          <Select
+                            defaultValue={character.houseId}
+                            id={`character-${character.id}-house`}
+                            name="houseId"
+                            required
+                          >
+                            {story.houses.map((houseOption) => (
+                              <option key={houseOption.id} value={houseOption.id}>
+                                {houseOption.name}
+                              </option>
+                            ))}
+                          </Select>
+                        </div>
+                        <div>
+                          <Label
+                            htmlFor={`character-${character.id}-bio`}
+                            text="Bio"
+                          />
+                          <TextArea
+                            defaultValue={character.bio ?? ""}
+                            id={`character-${character.id}-bio`}
+                            name="bio"
+                            rows={2}
+                          />
+                        </div>
+                        <div>
+                          <Label
+                            htmlFor={`character-${character.id}-notes`}
+                            text="Notes"
+                          />
+                          <TextArea
+                            defaultValue={character.notes ?? ""}
+                            id={`character-${character.id}-notes`}
+                            name="notes"
+                            rows={2}
+                          />
+                        </div>
+                      </FormGrid>
+                      <div className="flex gap-2">
+                        <Button type="submit" variant="outline">
+                          Save character
+                        </Button>
+                      </div>
+                    </form>
+
+                    <form action={deleteCharacterAction} className="mt-2">
+                      <input name="characterId" type="hidden" value={character.id} />
+                      <Button type="submit" variant="destructive">
+                        Delete character
+                      </Button>
+                    </form>
+
+                    <div className="mt-4 space-y-3 border-t border-slate-200 pt-3">
+                      <h4 className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                        Portraits
+                      </h4>
+                      <form action={createCharacterPortraitAction} className="space-y-3">
+                        <input name="characterId" type="hidden" value={character.id} />
+                        <FormGrid>
+                          <div>
+                            <Label
+                              htmlFor={`portrait-${character.id}-path`}
+                              text="Storage path"
+                            />
+                            <Input
+                              id={`portrait-${character.id}-path`}
+                              name="storagePath"
+                              required
+                            />
+                          </div>
+                          <div>
+                            <Label
+                              htmlFor={`portrait-${character.id}-label`}
+                              text="Label"
+                            />
+                            <Input id={`portrait-${character.id}-label`} name="label" />
+                          </div>
+                          <div>
+                            <Label
+                              htmlFor={`portrait-${character.id}-sort`}
+                              text="Sort order"
+                            />
+                            <Input
+                              defaultValue={0}
+                              id={`portrait-${character.id}-sort`}
+                              name="sortOrder"
+                              required
+                              type="number"
+                            />
+                          </div>
+                        </FormGrid>
+                        <Button type="submit" variant="outline">
+                          Add portrait
+                        </Button>
+                      </form>
+
+                      {character.portraits.map((portrait) => (
+                        <div
+                          className="rounded-md border border-slate-200 p-3"
+                          key={portrait.id}
+                        >
+                          <form action={updateCharacterPortraitAction} className="space-y-3">
+                            <input name="portraitId" type="hidden" value={portrait.id} />
+                            <input name="characterId" type="hidden" value={character.id} />
+                            <FormGrid>
+                              <div>
+                                <Label
+                                  htmlFor={`portrait-${portrait.id}-path`}
+                                  text="Storage path"
+                                />
+                                <Input
+                                  defaultValue={portrait.storagePath}
+                                  id={`portrait-${portrait.id}-path`}
+                                  name="storagePath"
+                                  required
+                                />
+                              </div>
+                              <div>
+                                <Label
+                                  htmlFor={`portrait-${portrait.id}-label`}
+                                  text="Label"
+                                />
+                                <Input
+                                  defaultValue={portrait.label ?? ""}
+                                  id={`portrait-${portrait.id}-label`}
+                                  name="label"
+                                />
+                              </div>
+                              <div>
+                                <Label
+                                  htmlFor={`portrait-${portrait.id}-sort`}
+                                  text="Sort order"
+                                />
+                                <Input
+                                  defaultValue={portrait.sortOrder}
+                                  id={`portrait-${portrait.id}-sort`}
+                                  name="sortOrder"
+                                  required
+                                  type="number"
+                                />
+                              </div>
+                            </FormGrid>
+                            <div className="flex gap-2">
+                              <Button type="submit" variant="outline">
+                                Save portrait
+                              </Button>
+                            </div>
+                          </form>
+                          <form action={deleteCharacterPortraitAction} className="mt-2">
+                            <input name="portraitId" type="hidden" value={portrait.id} />
+                            <Button size="sm" type="submit" variant="destructive">
+                              Delete portrait
+                            </Button>
+                          </form>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ))}
+          </SectionCard>
+        </>
+      ) : null}
+
+      {activeTab === "scene-assets" ? (
+        <SectionCard
+          title="Scene Assets"
+          description="Global reusable background image and music assets."
+        >
+          <form action={createMediaAssetAction} className="space-y-3">
+            <FormGrid>
+              <div>
+                <Label htmlFor="media-type" text="Type" />
+                <Select
+                  defaultValue={StoryEnums.mediaAssetTypes[0]}
+                  id="media-type"
+                  name="type"
+                  required
+                >
+                  {StoryEnums.mediaAssetTypes.map((type) => (
+                    <option key={type} value={type}>
+                      {type}
+                    </option>
+                  ))}
+                </Select>
+              </div>
+              <div>
+                <Label htmlFor="media-storage-path" text="Storage path" />
+                <Input id="media-storage-path" name="storagePath" required />
+              </div>
+              <div>
+                <Label htmlFor="media-label" text="Label" />
+                <Input id="media-label" name="label" />
+              </div>
+              <div>
+                <Label htmlFor="media-alt" text="Alt text" />
+                <Input id="media-alt" name="altText" />
+              </div>
+            </FormGrid>
+            <Button type="submit">Create media asset</Button>
+          </form>
+
+          <div className="space-y-3">
+            {story.mediaAssets.map((asset) => (
+              <div className="rounded-lg border border-slate-200 p-3" key={asset.id}>
+                <form action={updateMediaAssetAction} className="space-y-3">
+                  <input name="mediaAssetId" type="hidden" value={asset.id} />
+                  <FormGrid>
+                    <div>
+                      <Label htmlFor={`media-${asset.id}-type`} text="Type" />
+                      <Select
+                        defaultValue={asset.type}
+                        id={`media-${asset.id}-type`}
+                        name="type"
+                        required
+                      >
+                        {StoryEnums.mediaAssetTypes.map((type) => (
+                          <option key={type} value={type}>
+                            {type}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                    <div>
+                      <Label
+                        htmlFor={`media-${asset.id}-storage-path`}
+                        text="Storage path"
+                      />
+                      <Input
+                        defaultValue={asset.storagePath}
+                        id={`media-${asset.id}-storage-path`}
+                        name="storagePath"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor={`media-${asset.id}-label`} text="Label" />
+                      <Input
+                        defaultValue={asset.label ?? ""}
+                        id={`media-${asset.id}-label`}
+                        name="label"
+                      />
+                    </div>
+                    <div>
+                      <Label htmlFor={`media-${asset.id}-alt`} text="Alt text" />
+                      <Input
+                        defaultValue={asset.altText ?? ""}
+                        id={`media-${asset.id}-alt`}
+                        name="altText"
+                      />
+                    </div>
+                  </FormGrid>
+                  <div className="flex gap-2">
+                    <Button type="submit" variant="outline">
+                      Save media asset
+                    </Button>
+                  </div>
+                </form>
+                <form action={deleteMediaAssetAction} className="mt-2">
+                  <input name="mediaAssetId" type="hidden" value={asset.id} />
+                  <Button type="submit" variant="destructive">
+                    Delete media asset
+                  </Button>
+                </form>
+              </div>
+            ))}
+          </div>
+
+          <div className="rounded-lg border border-slate-200 p-3">
+            <h3 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
+              Usage snapshot
+            </h3>
+            <div className="mt-2 space-y-1 text-sm text-slate-700">
+              {story.chapters.flatMap((chapter) =>
+                chapter.scenes.map((scene) => (
+                  <p key={scene.id}>
+                    {sceneLabelMap.get(scene.id)}
+                    {": "}
+                    {scene.backgroundImageAsset.storagePath}
+                    {scene.backgroundMusicAsset
+                      ? ` / ${scene.backgroundMusicAsset.storagePath}`
+                      : " / no music"}
+                  </p>
+                ))
+              )}
+            </div>
+          </div>
+        </SectionCard>
+      ) : null}
     </main>
   );
 }

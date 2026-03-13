@@ -1,39 +1,147 @@
-import { AssetType, DialogueKind, Role, type Prisma } from "@prisma/client";
+import {
+  DialogueKind,
+  Role,
+  type MediaAssetType,
+  type Prisma
+} from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
 import { validateDialogueRules } from "@/lib/story/validation";
+import { slugify } from "@/lib/story/slug";
 
 export class StoryRepositoryError extends Error {}
 
+const MEDIA_ASSET_TYPES = ["background_image", "background_music"] as const;
+const MEDIA_ASSET_TYPE = {
+  background_image: MEDIA_ASSET_TYPES[0],
+  background_music: MEDIA_ASSET_TYPES[1]
+} as const;
+
+async function ensureUniqueSlug(
+  model: "chapter" | "character" | "house",
+  value: string,
+  excludeId?: string
+) {
+  const base = slugify(value);
+  let suffix = 1;
+  let candidate = base;
+
+  while (true) {
+    const exists = await (prisma[model] as unknown as {
+      count: (args: { where: Record<string, unknown> }) => Promise<number>;
+    }).count({
+      where: excludeId
+        ? {
+            slug: candidate,
+            NOT: { id: excludeId }
+          }
+        : {
+            slug: candidate
+          }
+    });
+
+    if (exists === 0) {
+      return candidate;
+    }
+
+    suffix += 1;
+    candidate = `${base}-${suffix}`;
+  }
+}
+
+async function getNextChapterOrderIndex() {
+  const chapter = await prisma.chapter.findFirst({
+    orderBy: {
+      orderIndex: "desc"
+    },
+    select: {
+      orderIndex: true
+    }
+  });
+
+  return (chapter?.orderIndex ?? 0) + 1;
+}
+
+async function ensureMediaAssetExists(
+  mediaAssetId: string,
+  expectedType: MediaAssetType,
+  label: string
+) {
+  const asset = await prisma.mediaAsset.findUnique({
+    where: { id: mediaAssetId },
+    select: {
+      id: true,
+      type: true
+    }
+  });
+
+  if (!asset || asset.type !== expectedType) {
+    throw new StoryRepositoryError(`${label} is invalid.`);
+  }
+}
+
 export async function getAdminStoryGraph() {
-  const [chapters, characters] = await Promise.all([
+  const [chapters, houses, mediaAssets] = await Promise.all([
     prisma.chapter.findMany({
       orderBy: { orderIndex: "asc" },
       include: {
+        imageAsset: true,
         scenes: {
           orderBy: { orderIndex: "asc" },
           include: {
-            assets: {
-              orderBy: { createdAt: "asc" }
+            backgroundImageAsset: true,
+            backgroundMusicAsset: true,
+            characterAppearances: {
+              include: {
+                character: {
+                  select: {
+                    id: true,
+                    name: true,
+                    slug: true
+                  }
+                },
+                portrait: true
+              }
             },
             dialogueEntries: {
               orderBy: { orderIndex: "asc" },
               include: {
-                character: true
+                character: {
+                  include: {
+                    portraits: {
+                      orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+                      take: 1
+                    }
+                  }
+                }
               }
             }
           }
         }
       }
     }),
-    prisma.character.findMany({
-      orderBy: { name: "asc" }
+    prisma.house.findMany({
+      orderBy: { name: "asc" },
+      include: {
+        characters: {
+          orderBy: { name: "asc" },
+          include: {
+            portraits: {
+              orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }]
+            }
+          }
+        }
+      }
+    }),
+    prisma.mediaAsset.findMany({
+      orderBy: [{ type: "asc" }, { createdAt: "asc" }]
     })
   ]);
 
   return {
     chapters,
-    characters
+    houses,
+    mediaAssets
   };
 }
 
@@ -47,7 +155,7 @@ export type ReaderEntry = {
     id: string;
     name: string;
     slug: string;
-    defaultPortraitPath: string | null;
+    portraitPath: string | null;
   } | null;
 };
 
@@ -69,51 +177,54 @@ export type ReaderChapter = {
   title: string;
   slug: string;
   orderIndex: number;
+  imagePath: string | null;
   scenes: ReaderScene[];
 };
 
-function resolveSceneMedia(scene: {
-  backgroundImagePath: string | null;
-  backgroundMusicPath: string | null;
-  assets: Array<{
-    type: AssetType;
-    storagePath: string;
-  }>;
-}): ResolvedSceneMedia {
-  const backgroundImageAsset = scene.assets.find(
-    (asset) => asset.type === AssetType.background_image
-  );
-  const backgroundMusicAsset = scene.assets.find(
-    (asset) => asset.type === AssetType.background_music
-  );
+function resolveCharacterPortraitPath(input: {
+  characterId: string;
+  appearanceMap: Map<string, string | null>;
+  defaultPortraitPath: string | null;
+}) {
+  if (input.appearanceMap.has(input.characterId)) {
+    return input.appearanceMap.get(input.characterId) ?? null;
+  }
 
-  return {
-    backgroundImagePath:
-      scene.backgroundImagePath ?? backgroundImageAsset?.storagePath ?? null,
-    backgroundMusicPath:
-      scene.backgroundMusicPath ?? backgroundMusicAsset?.storagePath ?? null
-  };
+  return input.defaultPortraitPath;
 }
 
 export async function getFirstPlayableChapter(): Promise<ReaderChapter | null> {
   const chapter = await prisma.chapter.findFirst({
-    where: {
-      isPublished: true
-    },
     orderBy: {
       orderIndex: "asc"
     },
     include: {
+      imageAsset: {
+        select: {
+          storagePath: true
+        }
+      },
       scenes: {
         orderBy: { orderIndex: "asc" },
         include: {
-          assets: {
-            where: {
-              type: {
-                in: [AssetType.background_image, AssetType.background_music]
+          backgroundImageAsset: {
+            select: {
+              storagePath: true
+            }
+          },
+          backgroundMusicAsset: {
+            select: {
+              storagePath: true
+            }
+          },
+          characterAppearances: {
+            include: {
+              portrait: {
+                select: {
+                  storagePath: true
+                }
               }
-            },
-            orderBy: { createdAt: "asc" }
+            }
           },
           dialogueEntries: {
             orderBy: { orderIndex: "asc" },
@@ -123,7 +234,13 @@ export async function getFirstPlayableChapter(): Promise<ReaderChapter | null> {
                   id: true,
                   name: true,
                   slug: true,
-                  defaultPortraitPath: true
+                  portraits: {
+                    orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
+                    take: 1,
+                    select: {
+                      storagePath: true
+                    }
+                  }
                 }
               }
             }
@@ -142,32 +259,71 @@ export async function getFirstPlayableChapter(): Promise<ReaderChapter | null> {
     title: chapter.title,
     slug: chapter.slug,
     orderIndex: chapter.orderIndex,
-    scenes: chapter.scenes.map((scene) => ({
-      id: scene.id,
-      title: scene.title,
-      orderIndex: scene.orderIndex,
-      media: resolveSceneMedia(scene),
-      entries: scene.dialogueEntries.map((entry) => ({
-        id: entry.id,
-        kind: entry.kind,
-        orderIndex: entry.orderIndex,
-        text: entry.text,
-        promptLabel: entry.promptLabel,
-        character: entry.character
-      }))
-    }))
+    imagePath: chapter.imageAsset.storagePath,
+    scenes: chapter.scenes.map((scene) => {
+      const appearanceMap = new Map(
+        scene.characterAppearances.map((appearance) => [
+          appearance.characterId,
+          appearance.portrait?.storagePath ?? null
+        ])
+      );
+
+      return {
+        id: scene.id,
+        title: scene.title,
+        orderIndex: scene.orderIndex,
+        media: {
+          backgroundImagePath: scene.backgroundImageAsset.storagePath,
+          backgroundMusicPath: scene.backgroundMusicAsset?.storagePath ?? null
+        },
+        entries: scene.dialogueEntries.map((entry) => ({
+          id: entry.id,
+          kind: entry.kind,
+          orderIndex: entry.orderIndex,
+          text: entry.text,
+          promptLabel: entry.promptLabel,
+          character: entry.character
+            ? {
+                id: entry.character.id,
+                name: entry.character.name,
+                slug: entry.character.slug,
+                portraitPath: resolveCharacterPortraitPath({
+                  characterId: entry.character.id,
+                  appearanceMap,
+                  defaultPortraitPath:
+                    entry.character.portraits[0]?.storagePath ?? null
+                })
+              }
+            : null
+        }))
+      };
+    })
   };
 }
 
 export async function createChapter(input: {
   title: string;
-  slug: string;
-  orderIndex: number;
-  isPublished: boolean;
+  imageAssetId: string;
 }) {
+  await ensureMediaAssetExists(
+    input.imageAssetId,
+    MEDIA_ASSET_TYPE.background_image,
+    "Chapter image asset"
+  );
+
+  const [slug, orderIndex] = await Promise.all([
+    ensureUniqueSlug("chapter", input.title),
+    getNextChapterOrderIndex()
+  ]);
+
   try {
     return await prisma.chapter.create({
-      data: input
+      data: {
+        title: input.title,
+        slug,
+        orderIndex,
+        imageAssetId: input.imageAssetId
+      }
     });
   } catch {
     throw new StoryRepositoryError("Unable to create chapter.");
@@ -177,18 +333,23 @@ export async function createChapter(input: {
 export async function updateChapter(input: {
   chapterId: string;
   title: string;
-  slug: string;
-  orderIndex: number;
-  isPublished: boolean;
+  imageAssetId: string;
 }) {
+  await ensureMediaAssetExists(
+    input.imageAssetId,
+    MEDIA_ASSET_TYPE.background_image,
+    "Chapter image asset"
+  );
+
+  const slug = await ensureUniqueSlug("chapter", input.title, input.chapterId);
+
   try {
     return await prisma.chapter.update({
       where: { id: input.chapterId },
       data: {
         title: input.title,
-        slug: input.slug,
-        orderIndex: input.orderIndex,
-        isPublished: input.isPublished
+        slug,
+        imageAssetId: input.imageAssetId
       }
     });
   } catch {
@@ -210,9 +371,23 @@ export async function createScene(input: {
   chapterId: string;
   title: string | null;
   orderIndex: number;
-  backgroundImagePath: string | null;
-  backgroundMusicPath: string | null;
+  backgroundImageAssetId: string;
+  backgroundMusicAssetId: string | null;
 }) {
+  await ensureMediaAssetExists(
+    input.backgroundImageAssetId,
+    MEDIA_ASSET_TYPE.background_image,
+    "Scene background image asset"
+  );
+
+  if (input.backgroundMusicAssetId) {
+    await ensureMediaAssetExists(
+      input.backgroundMusicAssetId,
+      MEDIA_ASSET_TYPE.background_music,
+      "Scene background music asset"
+    );
+  }
+
   try {
     return await prisma.scene.create({
       data: input
@@ -227,9 +402,23 @@ export async function updateScene(input: {
   chapterId: string;
   title: string | null;
   orderIndex: number;
-  backgroundImagePath: string | null;
-  backgroundMusicPath: string | null;
+  backgroundImageAssetId: string;
+  backgroundMusicAssetId: string | null;
 }) {
+  await ensureMediaAssetExists(
+    input.backgroundImageAssetId,
+    MEDIA_ASSET_TYPE.background_image,
+    "Scene background image asset"
+  );
+
+  if (input.backgroundMusicAssetId) {
+    await ensureMediaAssetExists(
+      input.backgroundMusicAssetId,
+      MEDIA_ASSET_TYPE.background_music,
+      "Scene background music asset"
+    );
+  }
+
   try {
     return await prisma.scene.update({
       where: { id: input.sceneId },
@@ -237,8 +426,8 @@ export async function updateScene(input: {
         chapterId: input.chapterId,
         title: input.title,
         orderIndex: input.orderIndex,
-        backgroundImagePath: input.backgroundImagePath,
-        backgroundMusicPath: input.backgroundMusicPath
+        backgroundImageAssetId: input.backgroundImageAssetId,
+        backgroundMusicAssetId: input.backgroundMusicAssetId
       }
     });
   } catch {
@@ -256,16 +445,83 @@ export async function deleteScene(sceneId: string) {
   }
 }
 
+export async function createHouse(input: {
+  name: string;
+  notes: string | null;
+}) {
+  const slug = await ensureUniqueSlug("house", input.name);
+
+  try {
+    return await prisma.house.create({
+      data: {
+        name: input.name,
+        notes: input.notes,
+        slug
+      }
+    });
+  } catch {
+    throw new StoryRepositoryError("Unable to create house.");
+  }
+}
+
+export async function updateHouse(input: {
+  houseId: string;
+  name: string;
+  notes: string | null;
+}) {
+  const slug = await ensureUniqueSlug("house", input.name, input.houseId);
+
+  try {
+    return await prisma.house.update({
+      where: { id: input.houseId },
+      data: {
+        name: input.name,
+        notes: input.notes,
+        slug
+      }
+    });
+  } catch {
+    throw new StoryRepositoryError("Unable to update house.");
+  }
+}
+
+export async function deleteHouse(houseId: string) {
+  try {
+    await prisma.house.delete({
+      where: { id: houseId }
+    });
+  } catch {
+    throw new StoryRepositoryError("Unable to delete house.");
+  }
+}
+
 export async function createCharacter(input: {
   name: string;
-  slug: string;
+  houseId: string;
   bio: string | null;
   notes: string | null;
-  defaultPortraitPath: string | null;
 }) {
+  const [slug, house] = await Promise.all([
+    ensureUniqueSlug("character", input.name),
+    prisma.house.findUnique({
+      where: { id: input.houseId },
+      select: { id: true }
+    })
+  ]);
+
+  if (!house) {
+    throw new StoryRepositoryError("Character house is invalid.");
+  }
+
   try {
     return await prisma.character.create({
-      data: input
+      data: {
+        name: input.name,
+        slug,
+        houseId: input.houseId,
+        bio: input.bio,
+        notes: input.notes
+      }
     });
   } catch {
     throw new StoryRepositoryError("Unable to create character.");
@@ -275,20 +531,31 @@ export async function createCharacter(input: {
 export async function updateCharacter(input: {
   characterId: string;
   name: string;
-  slug: string;
+  houseId: string;
   bio: string | null;
   notes: string | null;
-  defaultPortraitPath: string | null;
 }) {
+  const [slug, house] = await Promise.all([
+    ensureUniqueSlug("character", input.name, input.characterId),
+    prisma.house.findUnique({
+      where: { id: input.houseId },
+      select: { id: true }
+    })
+  ]);
+
+  if (!house) {
+    throw new StoryRepositoryError("Character house is invalid.");
+  }
+
   try {
     return await prisma.character.update({
       where: { id: input.characterId },
       data: {
         name: input.name,
-        slug: input.slug,
+        slug,
+        houseId: input.houseId,
         bio: input.bio,
-        notes: input.notes,
-        defaultPortraitPath: input.defaultPortraitPath
+        notes: input.notes
       }
     });
   } catch {
@@ -303,6 +570,114 @@ export async function deleteCharacter(characterId: string) {
     });
   } catch {
     throw new StoryRepositoryError("Unable to delete character.");
+  }
+}
+
+export async function createCharacterPortrait(input: {
+  characterId: string;
+  storagePath: string;
+  label: string | null;
+  sortOrder: number;
+}) {
+  try {
+    return await prisma.characterPortrait.create({
+      data: input
+    });
+  } catch {
+    throw new StoryRepositoryError("Unable to create character portrait.");
+  }
+}
+
+export async function updateCharacterPortrait(input: {
+  portraitId: string;
+  characterId: string;
+  storagePath: string;
+  label: string | null;
+  sortOrder: number;
+}) {
+  try {
+    return await prisma.characterPortrait.update({
+      where: { id: input.portraitId },
+      data: {
+        characterId: input.characterId,
+        storagePath: input.storagePath,
+        label: input.label,
+        sortOrder: input.sortOrder
+      }
+    });
+  } catch {
+    throw new StoryRepositoryError("Unable to update character portrait.");
+  }
+}
+
+export async function deleteCharacterPortrait(portraitId: string) {
+  try {
+    await prisma.characterPortrait.delete({
+      where: { id: portraitId }
+    });
+  } catch {
+    throw new StoryRepositoryError("Unable to delete character portrait.");
+  }
+}
+
+export async function upsertSceneCharacterAppearance(input: {
+  sceneId: string;
+  characterId: string;
+  portraitId: string | null;
+}) {
+  if (input.portraitId) {
+    const portrait = await prisma.characterPortrait.findUnique({
+      where: { id: input.portraitId },
+      select: {
+        id: true,
+        characterId: true
+      }
+    });
+
+    if (!portrait || portrait.characterId !== input.characterId) {
+      throw new StoryRepositoryError(
+        "Character appearance portrait must belong to selected character."
+      );
+    }
+  }
+
+  try {
+    return await prisma.sceneCharacterAppearance.upsert({
+      where: {
+        sceneId_characterId: {
+          sceneId: input.sceneId,
+          characterId: input.characterId
+        }
+      },
+      update: {
+        portraitId: input.portraitId
+      },
+      create: {
+        sceneId: input.sceneId,
+        characterId: input.characterId,
+        portraitId: input.portraitId
+      }
+    });
+  } catch {
+    throw new StoryRepositoryError("Unable to save scene character appearance.");
+  }
+}
+
+export async function deleteSceneCharacterAppearance(input: {
+  sceneId: string;
+  characterId: string;
+}) {
+  try {
+    await prisma.sceneCharacterAppearance.delete({
+      where: {
+        sceneId_characterId: {
+          sceneId: input.sceneId,
+          characterId: input.characterId
+        }
+      }
+    });
+  } catch {
+    throw new StoryRepositoryError("Unable to delete scene character appearance.");
   }
 }
 
@@ -385,35 +760,32 @@ export async function deleteDialogueEntry(dialogueEntryId: string) {
   }
 }
 
-export async function createSceneAsset(input: {
-  sceneId: string;
-  type: AssetType;
+export async function createMediaAsset(input: {
+  type: MediaAssetType;
   storagePath: string;
   altText: string | null;
   label: string | null;
 }) {
   try {
-    return await prisma.sceneAsset.create({
+    return await prisma.mediaAsset.create({
       data: input
     });
   } catch {
-    throw new StoryRepositoryError("Unable to create scene asset.");
+    throw new StoryRepositoryError("Unable to create media asset.");
   }
 }
 
-export async function updateSceneAsset(input: {
-  sceneAssetId: string;
-  sceneId: string;
-  type: AssetType;
+export async function updateMediaAsset(input: {
+  mediaAssetId: string;
+  type: MediaAssetType;
   storagePath: string;
   altText: string | null;
   label: string | null;
 }) {
   try {
-    return await prisma.sceneAsset.update({
-      where: { id: input.sceneAssetId },
+    return await prisma.mediaAsset.update({
+      where: { id: input.mediaAssetId },
       data: {
-        sceneId: input.sceneId,
         type: input.type,
         storagePath: input.storagePath,
         altText: input.altText,
@@ -421,17 +793,17 @@ export async function updateSceneAsset(input: {
       }
     });
   } catch {
-    throw new StoryRepositoryError("Unable to update scene asset.");
+    throw new StoryRepositoryError("Unable to update media asset.");
   }
 }
 
-export async function deleteSceneAsset(sceneAssetId: string) {
+export async function deleteMediaAsset(mediaAssetId: string) {
   try {
-    await prisma.sceneAsset.delete({
-      where: { id: sceneAssetId }
+    await prisma.mediaAsset.delete({
+      where: { id: mediaAssetId }
     });
   } catch {
-    throw new StoryRepositoryError("Unable to delete scene asset.");
+    throw new StoryRepositoryError("Unable to delete media asset.");
   }
 }
 
@@ -646,7 +1018,7 @@ export async function getAdminPlayerResponses(
 
 export const StoryEnums = {
   dialogueKinds: Object.values(DialogueKind),
-  assetTypes: Object.values(AssetType)
+  mediaAssetTypes: MEDIA_ASSET_TYPES
 } as const;
 
 export type StoryGraph = Awaited<ReturnType<typeof getAdminStoryGraph>>;

@@ -32,8 +32,7 @@ describe("createChapterAction", () => {
     const { createChapterAction } = await import("@/app/(admin)/admin/actions");
     const formData = new FormData();
     formData.set("title", "Chapter");
-    formData.set("slug", "chapter");
-    formData.set("orderIndex", "1");
+    formData.set("imageAssetId", "asset-1");
 
     await createChapterAction(formData);
 

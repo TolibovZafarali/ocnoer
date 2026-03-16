@@ -3,6 +3,7 @@
 import {
   type CSSProperties,
   useActionState,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -16,36 +17,151 @@ import {
   submitPlayerPromptResponseAction
 } from "@/app/(player)/play/actions";
 import { Button } from "@/components/ui/button";
-import type { ReaderChapter } from "@/lib/story/repository";
+import {
+  fetchPublishedJson,
+  getManifestChapterById,
+  type PublishedChapterBundle,
+  type PublishedStoryManifest
+} from "@/lib/story/published";
 import {
   advanceReaderProgress,
   canAdvanceFromEntry,
   createInitialReaderProgress,
+  createReaderCheckpoint,
+  createReaderProgressFromCheckpoint,
   getCurrentEntry,
   getCurrentScene,
+  isCheckpointValidForChapter,
   resolveEntryPresentation,
-  toPublicMediaUrl
+  toPublicMediaUrl,
+  type ReaderCheckpoint
 } from "@/lib/story/reader";
 
 type PlayerStoryReaderProps = {
-  chapter: ReaderChapter;
+  initialBundle: PublishedChapterBundle;
+  initialServerCheckpoint: ReaderCheckpoint | null;
+  manifest: PublishedStoryManifest;
+  progressStorageKey: string;
+  publishedVersionId: string;
   supabaseUrl: string;
 };
 
-export function PlayerStoryReader({ chapter, supabaseUrl }: PlayerStoryReaderProps) {
-  const [progress, setProgress] = useState(createInitialReaderProgress);
+function readStoredCheckpoint(storageKey: string): ReaderCheckpoint | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+
+  const raw = window.localStorage.getItem(storageKey);
+
+  if (!raw) {
+    return null;
+  }
+
+  try {
+    return JSON.parse(raw) as ReaderCheckpoint;
+  } catch {
+    return null;
+  }
+}
+
+function persistCheckpoint(storageKey: string, checkpoint: ReaderCheckpoint | null) {
+  if (typeof window === "undefined" || !checkpoint) {
+    return;
+  }
+
+  window.localStorage.setItem(storageKey, JSON.stringify(checkpoint));
+}
+
+function checkpointTimestamp(checkpoint: ReaderCheckpoint | null) {
+  if (!checkpoint) {
+    return 0;
+  }
+
+  const value = Date.parse(checkpoint.lastReadAt);
+  return Number.isNaN(value) ? 0 : value;
+}
+
+export function PlayerStoryReader({
+  initialBundle,
+  initialServerCheckpoint,
+  manifest,
+  progressStorageKey,
+  publishedVersionId,
+  supabaseUrl
+}: PlayerStoryReaderProps) {
+  const cacheRef = useRef(
+    new Map<string, PublishedChapterBundle>([[initialBundle.chapter.id, initialBundle]])
+  );
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const hydratedLocalCheckpointRef = useRef(false);
+  const latestCheckpointRef = useRef<ReaderCheckpoint | null>(null);
+  const previousSceneIdRef = useRef<string | null>(null);
+  const previousChapterIdRef = useRef<string | null>(null);
+  const previousCompletionStateRef = useRef(false);
+  const [currentBundle, setCurrentBundle] = useState(initialBundle);
+  const [progress, setProgress] = useState(() =>
+    createReaderProgressFromCheckpoint(initialBundle.chapter, initialServerCheckpoint)
+  );
   const [needsManualMusicStart, setNeedsManualMusicStart] = useState(false);
   const [submittedPromptEntryIds, setSubmittedPromptEntryIds] = useState(
     () => new Set<string>()
   );
-  const audioRef = useRef<HTMLAudioElement>(null);
+  const [isLoadingChapter, setIsLoadingChapter] = useState(false);
   const [submitState, submitAction, isSubmittingPrompt] = useActionState(
     submitPlayerPromptResponseAction,
     initialSubmitPlayerPromptResponseState
   );
 
-  const scene = getCurrentScene(chapter, progress);
-  const entry = getCurrentEntry(chapter, progress);
+  const loadChapterBundle = useCallback(
+    async (chapterPublicId: string) => {
+      const cachedBundle = cacheRef.current.get(chapterPublicId);
+
+      if (cachedBundle) {
+        return cachedBundle;
+      }
+
+      const manifestChapter = getManifestChapterById(manifest, chapterPublicId);
+
+      if (!manifestChapter) {
+        throw new Error("Published chapter is no longer available.");
+      }
+
+      const bundle = await fetchPublishedJson<PublishedChapterBundle>(
+        supabaseUrl,
+        manifestChapter.bundleStoragePath
+      );
+
+      cacheRef.current.set(chapterPublicId, bundle);
+      return bundle;
+    },
+    [manifest, supabaseUrl]
+  );
+
+  const applyCheckpoint = useCallback(
+    async (checkpoint: ReaderCheckpoint) => {
+      if (checkpoint.publishedVersionId !== publishedVersionId) {
+        return false;
+      }
+
+      const bundle =
+        checkpoint.chapterPublicId === currentBundle.chapter.id
+          ? currentBundle
+          : await loadChapterBundle(checkpoint.chapterPublicId);
+
+      if (!isCheckpointValidForChapter(bundle.chapter, checkpoint)) {
+        return false;
+      }
+
+      setCurrentBundle(bundle);
+      setProgress(createReaderProgressFromCheckpoint(bundle.chapter, checkpoint));
+
+      return true;
+    },
+    [currentBundle, loadChapterBundle, publishedVersionId]
+  );
+
+  const scene = getCurrentScene(currentBundle.chapter, progress);
+  const entry = getCurrentEntry(currentBundle.chapter, progress);
   const canAdvance = canAdvanceFromEntry(entry, submittedPromptEntryIds);
   const activePromptFeedback =
     entry && submitState.dialogueEntryId === entry.id ? submitState : null;
@@ -57,6 +173,33 @@ export function PlayerStoryReader({ chapter, supabaseUrl }: PlayerStoryReaderPro
   const backgroundMusicUrl = useMemo(
     () => toPublicMediaUrl(supabaseUrl, scene?.media.backgroundMusicPath ?? null),
     [scene?.media.backgroundMusicPath, supabaseUrl]
+  );
+  const currentCheckpoint = useMemo(
+    () =>
+      createReaderCheckpoint({
+        chapter: currentBundle.chapter,
+        publishedVersionId,
+        state: progress
+      }),
+    [currentBundle.chapter, progress, publishedVersionId]
+  );
+
+  const syncCheckpoint = useCallback(
+    async (checkpoint: ReaderCheckpoint, keepalive = false) => {
+      try {
+        await fetch("/api/player/progress", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify(checkpoint),
+          keepalive
+        });
+      } catch {
+        // Local state is authoritative until the next sync opportunity.
+      }
+    },
+    []
   );
 
   useEffect(() => {
@@ -86,6 +229,101 @@ export function PlayerStoryReader({ chapter, supabaseUrl }: PlayerStoryReaderPro
     });
   }, [submitState.dialogueEntryId, submitState.status]);
 
+  useEffect(() => {
+    if (submitState.status !== "success" || !currentCheckpoint) {
+      return;
+    }
+
+    void syncCheckpoint(currentCheckpoint);
+  }, [currentCheckpoint, submitState.status, syncCheckpoint]);
+
+  useEffect(() => {
+    latestCheckpointRef.current = currentCheckpoint;
+    persistCheckpoint(progressStorageKey, currentCheckpoint);
+  }, [currentCheckpoint, progressStorageKey]);
+
+  useEffect(() => {
+    if (!currentCheckpoint) {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      void syncCheckpoint(currentCheckpoint);
+    }, 750);
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [currentCheckpoint, syncCheckpoint]);
+
+  useEffect(() => {
+    const currentSceneId = scene?.id ?? null;
+    const currentChapterId = currentBundle.chapter.id;
+    const shouldForceSync =
+      Boolean(currentCheckpoint) &&
+      (previousSceneIdRef.current !== currentSceneId ||
+        previousChapterIdRef.current !== currentChapterId ||
+        (!previousCompletionStateRef.current && progress.isChapterComplete));
+
+    previousSceneIdRef.current = currentSceneId;
+    previousChapterIdRef.current = currentChapterId;
+    previousCompletionStateRef.current = progress.isChapterComplete;
+
+    if (shouldForceSync && currentCheckpoint) {
+      void syncCheckpoint(currentCheckpoint);
+    }
+  }, [currentBundle.chapter.id, currentCheckpoint, progress.isChapterComplete, scene?.id, syncCheckpoint]);
+
+  useEffect(() => {
+    const flushCheckpoint = () => {
+      if (document.visibilityState === "hidden" && latestCheckpointRef.current) {
+        void syncCheckpoint(latestCheckpointRef.current, true);
+      }
+    };
+
+    const flushOnPageHide = () => {
+      if (latestCheckpointRef.current) {
+        void syncCheckpoint(latestCheckpointRef.current, true);
+      }
+    };
+
+    document.addEventListener("visibilitychange", flushCheckpoint);
+    window.addEventListener("pagehide", flushOnPageHide);
+
+    return () => {
+      document.removeEventListener("visibilitychange", flushCheckpoint);
+      window.removeEventListener("pagehide", flushOnPageHide);
+    };
+  }, [syncCheckpoint]);
+
+  useEffect(() => {
+    if (!currentBundle.nextChapterId || cacheRef.current.has(currentBundle.nextChapterId)) {
+      return;
+    }
+
+    void loadChapterBundle(currentBundle.nextChapterId).catch(() => undefined);
+  }, [currentBundle.nextChapterId, loadChapterBundle]);
+
+  useEffect(() => {
+    if (hydratedLocalCheckpointRef.current) {
+      return;
+    }
+
+    hydratedLocalCheckpointRef.current = true;
+
+    const localCheckpoint = readStoredCheckpoint(progressStorageKey);
+
+    if (!localCheckpoint || localCheckpoint.publishedVersionId !== publishedVersionId) {
+      return;
+    }
+
+    if (checkpointTimestamp(localCheckpoint) <= checkpointTimestamp(initialServerCheckpoint)) {
+      return;
+    }
+
+    void applyCheckpoint(localCheckpoint);
+  }, [applyCheckpoint, initialServerCheckpoint, progressStorageKey, publishedVersionId]);
+
   const sceneKey = scene?.id ?? "no-scene";
   const entryKey = entry?.id ?? `${sceneKey}-no-entry`;
   const sceneBackgroundStyle: CSSProperties = backgroundImageUrl
@@ -93,7 +331,23 @@ export function PlayerStoryReader({ chapter, supabaseUrl }: PlayerStoryReaderPro
     : {};
 
   const onAdvance = () => {
-    setProgress((current) => advanceReaderProgress(chapter, current));
+    setProgress((current) => advanceReaderProgress(currentBundle.chapter, current));
+  };
+
+  const onAdvanceToNextChapter = async () => {
+    if (!currentBundle.nextChapterId) {
+      return;
+    }
+
+    setIsLoadingChapter(true);
+
+    try {
+      const nextBundle = await loadChapterBundle(currentBundle.nextChapterId);
+      setCurrentBundle(nextBundle);
+      setProgress(createInitialReaderProgress());
+    } finally {
+      setIsLoadingChapter(false);
+    }
   };
 
   const onStartMusic = async () => {
@@ -110,12 +364,12 @@ export function PlayerStoryReader({ chapter, supabaseUrl }: PlayerStoryReaderPro
     }
   };
 
-  if (chapter.scenes.length === 0) {
+  if (currentBundle.chapter.scenes.length === 0) {
     return (
       <section className="rounded-xl border border-slate-200 bg-white/90 p-6 text-slate-900 shadow-sm">
-        <h2 className="text-xl font-semibold">No scenes in this chapter yet</h2>
+        <h2 className="text-xl font-semibold">This published chapter is empty</h2>
         <p className="mt-2 text-sm text-slate-700">
-          The first chapter has no authored scenes.
+          Publish a version that includes at least one authored scene.
         </p>
       </section>
     );
@@ -149,7 +403,7 @@ export function PlayerStoryReader({ chapter, supabaseUrl }: PlayerStoryReaderPro
         <header className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-slate-300">
-              {chapter.title}
+              {currentBundle.chapter.title}
             </p>
             <h2 className="mt-1 text-lg font-semibold text-white">
               {scene?.title ?? `Scene ${scene?.orderIndex ?? 0}`}
@@ -189,7 +443,9 @@ export function PlayerStoryReader({ chapter, supabaseUrl }: PlayerStoryReaderPro
                     Chapter complete
                   </p>
                   <p className="mt-3 text-lg leading-relaxed text-slate-100">
-                    You reached the end of this chapter.
+                    {currentBundle.nextChapterId
+                      ? "You reached the end of this chapter."
+                      : "You reached the end of the published story."}
                   </p>
                 </>
               ) : !entry ? (
@@ -198,7 +454,7 @@ export function PlayerStoryReader({ chapter, supabaseUrl }: PlayerStoryReaderPro
                     Empty scene
                   </p>
                   <p className="mt-3 text-lg leading-relaxed text-slate-100">
-                    This scene has no dialogue entries yet.
+                    This published scene has no dialogue entries.
                   </p>
                 </>
               ) : (
@@ -228,9 +484,14 @@ export function PlayerStoryReader({ chapter, supabaseUrl }: PlayerStoryReaderPro
                   </p>
                   {entry.kind === DialogueKind.player_prompt ? (
                     <form action={submitAction} className="mt-4 space-y-3">
+                      <input name="publishedVersionId" type="hidden" value={publishedVersionId} />
                       <input name="dialogueEntryId" type="hidden" value={entry.id} />
                       <input name="sceneId" type="hidden" value={scene?.id ?? ""} />
-                      <input name="chapterId" type="hidden" value={chapter.id} />
+                      <input
+                        name="chapterId"
+                        type="hidden"
+                        value={currentBundle.chapter.id}
+                      />
                       <label
                         className="block text-xs font-medium uppercase tracking-wide text-slate-300"
                         htmlFor={`player-response-${entry.id}`}
@@ -286,7 +547,17 @@ export function PlayerStoryReader({ chapter, supabaseUrl }: PlayerStoryReaderPro
         {!progress.isChapterComplete && canAdvance ? (
           <div className="flex justify-end">
             <Button onClick={onAdvance} type="button">
-              {entry ? "Next" : progress.sceneIndex + 1 < chapter.scenes.length ? "Next scene" : "Finish chapter"}
+              {entry
+                ? "Next"
+                : progress.sceneIndex + 1 < currentBundle.chapter.scenes.length
+                ? "Next scene"
+                : "Finish chapter"}
+            </Button>
+          </div>
+        ) : progress.isChapterComplete && currentBundle.nextChapterId ? (
+          <div className="flex justify-end">
+            <Button disabled={isLoadingChapter} onClick={onAdvanceToNextChapter} type="button">
+              {isLoadingChapter ? "Loading chapter..." : "Next chapter"}
             </Button>
           </div>
         ) : !progress.isChapterComplete ? (

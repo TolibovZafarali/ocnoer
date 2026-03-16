@@ -2,15 +2,17 @@
 
 ## Purpose
 
-This document defines how the Ocnoer story system should behave in MVP.
+This document defines how the Ocnoer story system behaves after the published-runtime refactor.
 
-The product is a narrative-driven, visual novel style experience with minimal player interaction and a mostly linear flow.
+The product remains a narrative-driven, visual-novel-style experience with limited player interaction and a mostly linear flow.
 
 ## Core Hierarchy
 
-The story structure is:
+The authored story structure is:
 
 `Chapter -> Scene -> DialogueEntry`
+
+The published runtime preserves that same linear progression but delivers it through compiled chapter bundles.
 
 ### Chapter
 
@@ -20,7 +22,7 @@ A chapter contains:
 
 - ordered scenes
 - title and identity metadata
-- optional publication state
+- one published runtime bundle per published version
 
 ### Scene
 
@@ -47,7 +49,7 @@ For MVP, a dialogue entry can be:
 
 ## Scene Rendering Rules
 
-These rules should remain fixed unless the product direction changes.
+These rules remain fixed unless the product direction changes.
 
 - Ocnoer appears on the left when she speaks or thinks.
 - Other characters appear on the right.
@@ -62,13 +64,20 @@ These placement rules are product rules, not optional UI preferences.
 The intended player experience is:
 
 1. Enter the story reader.
-2. Load the current chapter.
-3. Load the current scene in chapter order.
-4. Present dialogue entries in scene order.
-5. Advance to the next scene when the current scene is complete.
-6. Advance to the next chapter when the current chapter is complete.
+2. Resolve the player's pinned published story version.
+3. Load the published manifest and current chapter bundle.
+4. Load the current scene in chapter order.
+5. Present dialogue entries in scene order.
+6. Advance to the next scene when the current scene is complete.
+7. Advance to the next chapter when the current chapter is complete.
 
 The default assumption is linear progression.
+
+Important runtime boundary:
+
+- the reader consumes published bundles
+- the reader does not fetch raw `Chapter`, `Scene`, or `DialogueEntry` authoring records during normal progression
+- chapter-to-chapter movement should not require per-entry backend round-trips
 
 ## Interaction Rules
 
@@ -80,13 +89,35 @@ During those moments:
 
 1. the story reaches a dialogue entry configured as a player input prompt
 2. the player types a response
-3. the response is saved
-4. the admin can review the response later in the admin panel
+3. the response is validated against the pinned published runtime bundle
+4. the response is saved with published version + runtime public ids
+5. the admin can review the response later in the admin panel
 
 Important boundary:
 
 - responses are stored for narrative and emotional context
 - responses do not create branches or alternate story paths in MVP
+
+## Progress And Resume
+
+Reader progress is local-first in phase one.
+
+Checkpoint data includes:
+
+- published version id
+- chapter public id
+- scene public id
+- dialogue entry public id
+- last-read timestamp
+
+Resume behavior:
+
+1. local progress is updated immediately as the reader advances
+2. backend checkpoint sync happens on a debounce and on major transitions
+3. if a player has in-progress data, they stay pinned to that published version
+4. new reading sessions without progress start on the current active published version
+
+This preserves stable in-progress sessions even when the admin publishes a newer version.
 
 ## Dialogue Entry Types
 
@@ -130,7 +161,7 @@ Minimum authoring expectations:
 
 A typical progression should look like this:
 
-1. Chapter 1 opens.
+1. Chapter 1 opens from a published chapter bundle.
 2. Scene 1 loads its background and music.
 3. Narrator text sets the tone.
 4. Ocnoer speaks from the left.

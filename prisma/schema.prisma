@@ -25,12 +25,13 @@ enum MediaAssetType {
 }
 
 model User {
-  id        String           @id @default(cuid())
-  email     String           @unique
-  role      Role
-  createdAt DateTime         @default(now())
-  updatedAt DateTime         @updatedAt
-  responses PlayerResponse[]
+  id              String           @id @default(cuid())
+  email           String           @unique
+  role            Role
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+  responses       PlayerResponse[]
+  readingProgress ReadingProgress?
 }
 
 model House {
@@ -45,6 +46,7 @@ model House {
 
 model Character {
   id               String                     @id @default(cuid())
+  publicId         String                     @unique
   name             String
   slug             String                     @unique
   houseId          String
@@ -91,34 +93,34 @@ model MediaAsset {
 }
 
 model Chapter {
-  id            String           @id @default(cuid())
-  title         String
-  slug          String           @unique
-  orderIndex    Int              @unique
-  imageAssetId  String
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-  imageAsset    MediaAsset       @relation("ChapterImageAsset", fields: [imageAssetId], references: [id], onDelete: Restrict)
-  scenes        Scene[]
-  playerReplies PlayerResponse[]
+  id           String      @id @default(cuid())
+  publicId     String      @unique
+  title        String
+  slug         String      @unique
+  orderIndex   Int         @unique
+  imageAssetId String
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  imageAsset   MediaAsset  @relation("ChapterImageAsset", fields: [imageAssetId], references: [id], onDelete: Restrict)
+  scenes       Scene[]
 
   @@index([imageAssetId])
 }
 
 model Scene {
-  id                     String                     @id @default(cuid())
+  id                     String                   @id @default(cuid())
+  publicId               String                   @unique
   chapterId              String
   title                  String?
   orderIndex             Int
   backgroundImageAssetId String
   backgroundMusicAssetId String?
-  createdAt              DateTime                   @default(now())
-  updatedAt              DateTime                   @updatedAt
-  chapter                Chapter                    @relation(fields: [chapterId], references: [id], onDelete: Cascade)
-  backgroundImageAsset   MediaAsset                 @relation("SceneBackgroundImageAsset", fields: [backgroundImageAssetId], references: [id], onDelete: Restrict)
-  backgroundMusicAsset   MediaAsset?                @relation("SceneBackgroundMusicAsset", fields: [backgroundMusicAssetId], references: [id], onDelete: SetNull)
+  createdAt              DateTime                 @default(now())
+  updatedAt              DateTime                 @updatedAt
+  chapter                Chapter                  @relation(fields: [chapterId], references: [id], onDelete: Cascade)
+  backgroundImageAsset   MediaAsset               @relation("SceneBackgroundImageAsset", fields: [backgroundImageAssetId], references: [id], onDelete: Restrict)
+  backgroundMusicAsset   MediaAsset?              @relation("SceneBackgroundMusicAsset", fields: [backgroundMusicAssetId], references: [id], onDelete: SetNull)
   dialogueEntries        DialogueEntry[]
-  playerReplies          PlayerResponse[]
   characterAppearances   SceneCharacterAppearance[]
 
   @@unique([chapterId, orderIndex])
@@ -146,6 +148,7 @@ model SceneCharacterAppearance {
 
 model DialogueEntry {
   id           String           @id @default(cuid())
+  publicId     String           @unique
   sceneId      String
   kind         DialogueKind
   orderIndex   Int
@@ -156,28 +159,62 @@ model DialogueEntry {
   updatedAt    DateTime         @updatedAt
   scene        Scene            @relation(fields: [sceneId], references: [id], onDelete: Cascade)
   character    Character?       @relation(fields: [characterId], references: [id], onDelete: SetNull)
-  responses    PlayerResponse[]
 
   @@unique([sceneId, orderIndex])
   @@index([sceneId])
   @@index([characterId])
 }
 
-model PlayerResponse {
-  id              String        @id @default(cuid())
-  dialogueEntryId String
-  sceneId         String
-  chapterId       String
-  userId          String
-  responseText    String
-  createdAt       DateTime      @default(now())
-  dialogueEntry   DialogueEntry @relation(fields: [dialogueEntryId], references: [id], onDelete: Cascade)
-  scene           Scene         @relation(fields: [sceneId], references: [id], onDelete: Cascade)
-  chapter         Chapter       @relation(fields: [chapterId], references: [id], onDelete: Cascade)
-  user            User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+model PublishedStoryVersion {
+  id                  String            @id @default(cuid())
+  version             Int               @unique
+  isActive            Boolean           @default(false)
+  manifestStoragePath String
+  storagePrefix       String            @unique
+  createdAt           DateTime          @default(now())
+  activatedAt         DateTime?
+  readingProgress     ReadingProgress[]
+  playerResponses     PlayerResponse[]
+}
 
-  @@index([dialogueEntryId])
-  @@index([sceneId])
-  @@index([chapterId])
+model ReadingProgress {
+  id                  String                @id @default(cuid())
+  userId              String                @unique
+  publishedVersionId  String
+  chapterPublicId     String
+  scenePublicId       String
+  dialogueEntryPublicId String
+  lastReadAt          DateTime
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  publishedVersion    PublishedStoryVersion @relation(fields: [publishedVersionId], references: [id], onDelete: Restrict)
+
+  @@index([publishedVersionId])
+}
+
+model PlayerResponse {
+  id                  String                @id @default(cuid())
+  publishedVersionId  String
+  chapterPublicId     String
+  chapterTitle        String
+  chapterSlug         String
+  chapterOrderIndex   Int
+  scenePublicId       String
+  sceneTitle          String?
+  sceneOrderIndex     Int
+  dialogueEntryPublicId String
+  promptLabel         String?
+  promptText          String
+  userId              String
+  responseText        String
+  createdAt           DateTime              @default(now())
+  publishedVersion    PublishedStoryVersion @relation(fields: [publishedVersionId], references: [id], onDelete: Restrict)
+  user                User                  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([publishedVersionId])
+  @@index([chapterPublicId])
+  @@index([scenePublicId])
+  @@index([dialogueEntryPublicId])
   @@index([userId])
 }

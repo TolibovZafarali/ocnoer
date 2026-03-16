@@ -60,6 +60,7 @@ describe("getFirstPlayableChapter", () => {
                 character: {
                   select: {
                     id: true,
+                    publicId: true,
                     name: true,
                     slug: true,
                     portraits: {
@@ -86,9 +87,10 @@ describe("getFirstPlayableChapter", () => {
     await expect(getFirstPlayableChapter()).resolves.toBeNull();
   });
 
-  it("resolves scene media and scene-bound character portrait", async () => {
+  it("resolves scene media and scene-bound character portrait using runtime ids", async () => {
     findFirstMock.mockResolvedValueOnce({
-      id: "chapter-1",
+      id: "chapter-db-1",
+      publicId: "chapter-public-1",
       title: "Chapter 1",
       slug: "chapter-1",
       orderIndex: 1,
@@ -97,7 +99,8 @@ describe("getFirstPlayableChapter", () => {
       },
       scenes: [
         {
-          id: "scene-1",
+          id: "scene-db-1",
+          publicId: "scene-public-1",
           title: "Scene 1",
           orderIndex: 1,
           backgroundImageAsset: {
@@ -108,7 +111,7 @@ describe("getFirstPlayableChapter", () => {
           },
           characterAppearances: [
             {
-              characterId: "char-1",
+              characterId: "char-db-1",
               portrait: {
                 storagePath: "portraits/ocnoer/angry.png"
               }
@@ -116,13 +119,15 @@ describe("getFirstPlayableChapter", () => {
           ],
           dialogueEntries: [
             {
-              id: "entry-1",
+              id: "entry-db-1",
+              publicId: "entry-public-1",
               kind: DialogueKind.speech,
               orderIndex: 1,
               text: "Line",
               promptLabel: null,
               character: {
-                id: "char-1",
+                id: "char-db-1",
+                publicId: "character-public-1",
                 name: "Ocnoer",
                 slug: "ocnoer",
                 portraits: [
@@ -140,14 +145,14 @@ describe("getFirstPlayableChapter", () => {
     const { getFirstPlayableChapter } = await import("@/lib/story/repository");
 
     await expect(getFirstPlayableChapter()).resolves.toEqual({
-      id: "chapter-1",
+      id: "chapter-public-1",
       title: "Chapter 1",
       slug: "chapter-1",
       orderIndex: 1,
       imagePath: "chapters/ch1.jpg",
       scenes: [
         {
-          id: "scene-1",
+          id: "scene-public-1",
           title: "Scene 1",
           orderIndex: 1,
           media: {
@@ -156,13 +161,13 @@ describe("getFirstPlayableChapter", () => {
           },
           entries: [
             {
-              id: "entry-1",
+              id: "entry-public-1",
               kind: DialogueKind.speech,
               orderIndex: 1,
               text: "Line",
               promptLabel: null,
               character: {
-                id: "char-1",
+                id: "character-public-1",
                 name: "Ocnoer",
                 slug: "ocnoer",
                 portraitPath: "portraits/ocnoer/angry.png"

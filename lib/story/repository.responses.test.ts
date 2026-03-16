@@ -1,11 +1,18 @@
-import { DialogueKind, Role } from "@prisma/client";
+import { Role } from "@prisma/client";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const userFindUniqueMock = vi.fn();
 const userCreateMock = vi.fn();
 const playerResponseCreateMock = vi.fn();
 const playerResponseFindManyMock = vi.fn();
-const dialogueEntryFindUniqueMock = vi.fn();
+const readingProgressFindUniqueMock = vi.fn();
+const readingProgressUpsertMock = vi.fn();
+const publishedStoryVersionFindManyMock = vi.fn();
+const publishedStoryVersionFindFirstMock = vi.fn();
+const publishedStoryVersionFindUniqueMock = vi.fn();
+const publishedStoryVersionUpdateManyMock = vi.fn();
+const publishedStoryVersionUpdateMock = vi.fn();
+const publishedStoryVersionCreateMock = vi.fn();
 const transactionMock = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
@@ -18,8 +25,17 @@ vi.mock("@/lib/prisma", () => ({
       create: playerResponseCreateMock,
       findMany: playerResponseFindManyMock
     },
-    dialogueEntry: {
-      findUnique: dialogueEntryFindUniqueMock
+    readingProgress: {
+      findUnique: readingProgressFindUniqueMock,
+      upsert: readingProgressUpsertMock
+    },
+    publishedStoryVersion: {
+      findMany: publishedStoryVersionFindManyMock,
+      findFirst: publishedStoryVersionFindFirstMock,
+      findUnique: publishedStoryVersionFindUniqueMock,
+      updateMany: publishedStoryVersionUpdateManyMock,
+      update: publishedStoryVersionUpdateMock,
+      create: publishedStoryVersionCreateMock
     },
     $transaction: transactionMock
   }
@@ -36,8 +52,10 @@ describe("player response repository", () => {
       playerResponse: {
         create: typeof playerResponseCreateMock;
       };
-      dialogueEntry: {
-        findUnique: typeof dialogueEntryFindUniqueMock;
+      publishedStoryVersion: {
+        updateMany: typeof publishedStoryVersionUpdateManyMock;
+        update: typeof publishedStoryVersionUpdateMock;
+        create: typeof publishedStoryVersionCreateMock;
       };
     };
     type TransactionCallback = (client: TransactionMockClient) => unknown;
@@ -51,8 +69,10 @@ describe("player response repository", () => {
         playerResponse: {
           create: playerResponseCreateMock
         },
-        dialogueEntry: {
-          findUnique: dialogueEntryFindUniqueMock
+        publishedStoryVersion: {
+          updateMany: publishedStoryVersionUpdateManyMock,
+          update: publishedStoryVersionUpdateMock,
+          create: publishedStoryVersionCreateMock
         }
       })
     );
@@ -99,18 +119,12 @@ describe("player response repository", () => {
 
     await expect(
       resolveOrUpsertPlayerUserByEmail("admin@example.com")
-    ).rejects.toThrow("Signed-in account is not configured for player response capture.");
+    ).rejects.toThrow(
+      "Signed-in account is not configured for player response capture."
+    );
   });
 
-  it("validates prompt context before creating a response", async () => {
-    dialogueEntryFindUniqueMock.mockResolvedValueOnce({
-      id: "entry-1",
-      kind: DialogueKind.player_prompt,
-      sceneId: "scene-1",
-      scene: {
-        chapterId: "chapter-1"
-      }
-    });
+  it("persists runtime-versioned prompt responses", async () => {
     userFindUniqueMock.mockResolvedValueOnce({
       id: "user-1",
       email: "player@example.com",
@@ -124,9 +138,17 @@ describe("player response repository", () => {
 
     await expect(
       createPlayerPromptResponse({
-        dialogueEntryId: "entry-1",
-        sceneId: "scene-1",
-        chapterId: "chapter-1",
+        publishedVersionId: "version-2",
+        chapterPublicId: "chapter-public-1",
+        chapterTitle: "Chapter 1",
+        chapterSlug: "chapter-1",
+        chapterOrderIndex: 1,
+        scenePublicId: "scene-public-1",
+        sceneTitle: "Scene 1",
+        sceneOrderIndex: 1,
+        dialogueEntryPublicId: "entry-public-1",
+        promptLabel: "Ask",
+        promptText: "  Who are you?  ",
         userEmail: "player@example.com",
         responseText: "  hello  "
       })
@@ -134,9 +156,17 @@ describe("player response repository", () => {
 
     expect(playerResponseCreateMock).toHaveBeenCalledWith({
       data: {
-        dialogueEntryId: "entry-1",
-        sceneId: "scene-1",
-        chapterId: "chapter-1",
+        publishedVersionId: "version-2",
+        chapterPublicId: "chapter-public-1",
+        chapterTitle: "Chapter 1",
+        chapterSlug: "chapter-1",
+        chapterOrderIndex: 1,
+        scenePublicId: "scene-public-1",
+        sceneTitle: "Scene 1",
+        sceneOrderIndex: 1,
+        dialogueEntryPublicId: "entry-public-1",
+        promptLabel: "Ask",
+        promptText: "  Who are you?  ",
         userId: "user-1",
         responseText: "hello"
       }
@@ -148,35 +178,21 @@ describe("player response repository", () => {
 
     await expect(
       createPlayerPromptResponse({
-        dialogueEntryId: "entry-1",
-        sceneId: "scene-1",
-        chapterId: "chapter-1",
+        publishedVersionId: "version-2",
+        chapterPublicId: "chapter-public-1",
+        chapterTitle: "Chapter 1",
+        chapterSlug: "chapter-1",
+        chapterOrderIndex: 1,
+        scenePublicId: "scene-public-1",
+        sceneTitle: "Scene 1",
+        sceneOrderIndex: 1,
+        dialogueEntryPublicId: "entry-public-1",
+        promptLabel: null,
+        promptText: "Prompt",
         userEmail: "player@example.com",
         responseText: "   "
       })
     ).rejects.toThrow("Response text cannot be empty.");
-  });
-
-  it("rejects mismatched prompt context", async () => {
-    dialogueEntryFindUniqueMock.mockResolvedValueOnce({
-      id: "entry-1",
-      kind: DialogueKind.player_prompt,
-      sceneId: "scene-9",
-      scene: {
-        chapterId: "chapter-1"
-      }
-    });
-    const { createPlayerPromptResponse } = await import("@/lib/story/repository");
-
-    await expect(
-      createPlayerPromptResponse({
-        dialogueEntryId: "entry-1",
-        sceneId: "scene-1",
-        chapterId: "chapter-1",
-        userEmail: "player@example.com",
-        responseText: "valid"
-      })
-    ).rejects.toThrow("Prompt context is invalid or no longer available.");
   });
 
   it("loads admin responses ordered by newest first", async () => {
@@ -185,23 +201,211 @@ describe("player response repository", () => {
         id: "response-1",
         responseText: "One",
         createdAt: new Date("2026-03-12T10:00:00.000Z"),
+        publishedVersion: {
+          id: "version-2",
+          version: 2,
+          isActive: true
+        },
         user: { email: "player@example.com" },
-        chapter: { id: "ch-1", title: "Chapter 1", orderIndex: 1 },
-        scene: { id: "sc-1", title: "Scene 1", orderIndex: 1 },
-        dialogueEntry: { id: "de-1", text: "Prompt text", promptLabel: "Ask" }
+        chapterPublicId: "chapter-public-1",
+        chapterSlug: "chapter-1",
+        chapterTitle: "Chapter 1",
+        chapterOrderIndex: 1,
+        scenePublicId: "scene-public-1",
+        sceneTitle: "Scene 1",
+        sceneOrderIndex: 1,
+        dialogueEntryPublicId: "entry-public-1",
+        promptText: "Prompt text",
+        promptLabel: "Ask"
       }
     ]);
     const { getAdminPlayerResponses } = await import("@/lib/story/repository");
 
-    await expect(getAdminPlayerResponses()).resolves.toHaveLength(1);
+    await expect(getAdminPlayerResponses()).resolves.toEqual([
+      {
+        id: "response-1",
+        responseText: "One",
+        createdAt: new Date("2026-03-12T10:00:00.000Z"),
+        publishedVersion: {
+          id: "version-2",
+          version: 2,
+          isActive: true
+        },
+        user: { email: "player@example.com" },
+        chapter: {
+          id: "chapter-public-1",
+          slug: "chapter-1",
+          title: "Chapter 1",
+          orderIndex: 1
+        },
+        scene: {
+          id: "scene-public-1",
+          title: "Scene 1",
+          orderIndex: 1
+        },
+        dialogueEntry: {
+          id: "entry-public-1",
+          text: "Prompt text",
+          promptLabel: "Ask"
+        }
+      }
+    ]);
     expect(playerResponseFindManyMock).toHaveBeenCalledWith({
       orderBy: { createdAt: "desc" },
       take: 50,
       include: {
-        user: { select: { email: true } },
-        chapter: { select: { id: true, title: true, orderIndex: true } },
-        scene: { select: { id: true, title: true, orderIndex: true } },
-        dialogueEntry: { select: { id: true, text: true, promptLabel: true } }
+        publishedVersion: {
+          select: {
+            id: true,
+            version: true,
+            isActive: true
+          }
+        },
+        user: { select: { email: true } }
+      }
+    });
+  });
+
+  it("loads reading progress by user id", async () => {
+    const updatedAt = new Date("2026-03-13T10:00:00.000Z");
+    const lastReadAt = new Date("2026-03-13T09:59:00.000Z");
+    readingProgressFindUniqueMock.mockResolvedValueOnce({
+      publishedVersionId: "version-2",
+      chapterPublicId: "chapter-public-1",
+      scenePublicId: "scene-public-1",
+      dialogueEntryPublicId: "entry-public-1",
+      lastReadAt,
+      updatedAt
+    });
+    const { getReadingProgressForUserId } = await import(
+      "@/lib/story/repository"
+    );
+
+    await expect(getReadingProgressForUserId("user-1")).resolves.toEqual({
+      publishedVersionId: "version-2",
+      chapterPublicId: "chapter-public-1",
+      scenePublicId: "scene-public-1",
+      dialogueEntryPublicId: "entry-public-1",
+      lastReadAt,
+      updatedAt
+    });
+
+    expect(readingProgressFindUniqueMock).toHaveBeenCalledWith({
+      where: { userId: "user-1" },
+      select: {
+        publishedVersionId: true,
+        chapterPublicId: true,
+        scenePublicId: true,
+        dialogueEntryPublicId: true,
+        lastReadAt: true,
+        updatedAt: true
+      }
+    });
+  });
+
+  it("upserts reading progress using runtime public ids", async () => {
+    const lastReadAt = new Date("2026-03-13T10:00:00.000Z");
+    readingProgressUpsertMock.mockResolvedValueOnce({ id: "progress-1" });
+    const { upsertReadingProgress } = await import("@/lib/story/repository");
+
+    await expect(
+      upsertReadingProgress({
+        userId: "user-1",
+        publishedVersionId: "version-2",
+        chapterPublicId: "chapter-public-1",
+        scenePublicId: "scene-public-1",
+        dialogueEntryPublicId: "entry-public-1",
+        lastReadAt
+      })
+    ).resolves.toEqual({ id: "progress-1" });
+
+    expect(readingProgressUpsertMock).toHaveBeenCalledWith({
+      where: { userId: "user-1" },
+      update: {
+        publishedVersionId: "version-2",
+        chapterPublicId: "chapter-public-1",
+        scenePublicId: "scene-public-1",
+        dialogueEntryPublicId: "entry-public-1",
+        lastReadAt
+      },
+      create: {
+        userId: "user-1",
+        publishedVersionId: "version-2",
+        chapterPublicId: "chapter-public-1",
+        scenePublicId: "scene-public-1",
+        dialogueEntryPublicId: "entry-public-1",
+        lastReadAt
+      }
+    });
+  });
+
+  it("activates a published story version without recompiling", async () => {
+    publishedStoryVersionUpdateManyMock.mockResolvedValueOnce({ count: 2 });
+    publishedStoryVersionUpdateMock.mockResolvedValueOnce({
+      id: "version-2",
+      version: 2,
+      isActive: true
+    });
+    const { activatePublishedStoryVersion } = await import(
+      "@/lib/story/repository"
+    );
+
+    await expect(activatePublishedStoryVersion("version-2")).resolves.toEqual({
+      id: "version-2",
+      version: 2,
+      isActive: true
+    });
+
+    expect(publishedStoryVersionUpdateManyMock).toHaveBeenCalledWith({
+      data: { isActive: false }
+    });
+    expect(publishedStoryVersionUpdateMock).toHaveBeenCalledWith({
+      where: { id: "version-2" },
+      data: {
+        isActive: true,
+        activatedAt: expect.any(Date)
+      }
+    });
+  });
+
+  it("creates and activates a new published story version", async () => {
+    publishedStoryVersionUpdateManyMock.mockResolvedValueOnce({ count: 1 });
+    publishedStoryVersionCreateMock.mockResolvedValueOnce({
+      id: "version-3",
+      version: 3,
+      isActive: true,
+      manifestStoragePath: "runtime/story/v3/manifest.json",
+      storagePrefix: "story/v3"
+    });
+    const { createPublishedStoryVersion } = await import(
+      "@/lib/story/repository"
+    );
+
+    await expect(
+      createPublishedStoryVersion({
+        version: 3,
+        manifestStoragePath: "runtime/story/v3/manifest.json",
+        storagePrefix: "story/v3"
+      })
+    ).resolves.toEqual({
+      id: "version-3",
+      version: 3,
+      isActive: true,
+      manifestStoragePath: "runtime/story/v3/manifest.json",
+      storagePrefix: "story/v3"
+    });
+
+    expect(publishedStoryVersionUpdateManyMock).toHaveBeenCalledWith({
+      data: { isActive: false }
+    });
+    expect(publishedStoryVersionCreateMock).toHaveBeenCalledWith({
+      data: {
+        id: undefined,
+        version: 3,
+        isActive: true,
+        manifestStoragePath: "runtime/story/v3/manifest.json",
+        storagePrefix: "story/v3",
+        activatedAt: expect.any(Date)
       }
     });
   });

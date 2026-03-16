@@ -5,6 +5,9 @@ import {
   advanceReaderProgress,
   canAdvanceFromEntry,
   createInitialReaderProgress,
+  createReaderCheckpoint,
+  createReaderProgressFromCheckpoint,
+  isCheckpointValidForChapter,
   resolveEntryPresentation,
   toPublicMediaUrl
 } from "@/lib/story/reader";
@@ -60,7 +63,7 @@ const chapterFixture: ReaderChapter = {
         backgroundImagePath: null,
         backgroundMusicPath: null
       },
-      entries: []
+      entries: [makeEntry({ id: "entry-3", orderIndex: 1 })]
     }
   ]
 };
@@ -127,6 +130,75 @@ describe("resolveEntryPresentation", () => {
   });
 });
 
+describe("reader checkpoints", () => {
+  it("validates checkpoints against the current chapter bundle", () => {
+    expect(
+      isCheckpointValidForChapter(chapterFixture, {
+        chapterPublicId: "chapter-1",
+        scenePublicId: "scene-2",
+        dialogueEntryPublicId: "entry-3"
+      })
+    ).toBe(true);
+
+    expect(
+      isCheckpointValidForChapter(chapterFixture, {
+        chapterPublicId: "chapter-9",
+        scenePublicId: "scene-2",
+        dialogueEntryPublicId: "entry-3"
+      })
+    ).toBe(false);
+  });
+
+  it("restores reader progress from a valid checkpoint", () => {
+    expect(
+      createReaderProgressFromCheckpoint(chapterFixture, {
+        chapterPublicId: "chapter-1",
+        scenePublicId: "scene-2",
+        dialogueEntryPublicId: "entry-3"
+      })
+    ).toEqual({
+      sceneIndex: 1,
+      entryIndex: 0,
+      isChapterComplete: false
+    });
+  });
+
+  it("falls back to the first entry when checkpoint is invalid", () => {
+    expect(
+      createReaderProgressFromCheckpoint(chapterFixture, {
+        chapterPublicId: "chapter-1",
+        scenePublicId: "scene-2",
+        dialogueEntryPublicId: "missing-entry"
+      })
+    ).toEqual({
+      sceneIndex: 0,
+      entryIndex: 0,
+      isChapterComplete: false
+    });
+  });
+
+  it("serializes the current runtime position into a checkpoint", () => {
+    expect(
+      createReaderCheckpoint({
+        chapter: chapterFixture,
+        publishedVersionId: "version-2",
+        state: {
+          sceneIndex: 1,
+          entryIndex: 0,
+          isChapterComplete: false
+        },
+        lastReadAt: "2026-03-15T12:00:00.000Z"
+      })
+    ).toEqual({
+      publishedVersionId: "version-2",
+      chapterPublicId: "chapter-1",
+      scenePublicId: "scene-2",
+      dialogueEntryPublicId: "entry-3",
+      lastReadAt: "2026-03-15T12:00:00.000Z"
+    });
+  });
+});
+
 describe("advanceReaderProgress", () => {
   it("advances across entries, scenes, and chapter completion", () => {
     let state = createInitialReaderProgress();
@@ -185,8 +257,11 @@ describe("toPublicMediaUrl", () => {
   });
 
   it("keeps absolute URLs unchanged", () => {
-    expect(toPublicMediaUrl("https://project.supabase.co", "https://cdn.example.com/x.png")).toBe(
-      "https://cdn.example.com/x.png"
-    );
+    expect(
+      toPublicMediaUrl(
+        "https://project.supabase.co",
+        "https://cdn.example.com/x.png"
+      )
+    ).toBe("https://cdn.example.com/x.png");
   });
 });

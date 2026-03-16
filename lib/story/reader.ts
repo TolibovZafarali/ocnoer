@@ -16,11 +16,102 @@ export type ReaderProgressState = {
   isChapterComplete: boolean;
 };
 
+export type ReaderCheckpoint = {
+  publishedVersionId: string;
+  chapterPublicId: string;
+  scenePublicId: string;
+  dialogueEntryPublicId: string;
+  lastReadAt: string;
+};
+
 export function createInitialReaderProgress(): ReaderProgressState {
   return {
     sceneIndex: 0,
     entryIndex: 0,
     isChapterComplete: false
+  };
+}
+
+export function isCheckpointValidForChapter(
+  chapter: ReaderChapter,
+  checkpoint: Pick<
+    ReaderCheckpoint,
+    "chapterPublicId" | "scenePublicId" | "dialogueEntryPublicId"
+  >
+) {
+  if (chapter.id !== checkpoint.chapterPublicId) {
+    return false;
+  }
+
+  const scene = chapter.scenes.find(
+    (candidate) => candidate.id === checkpoint.scenePublicId
+  );
+
+  if (!scene) {
+    return false;
+  }
+
+  return scene.entries.some(
+    (candidate) => candidate.id === checkpoint.dialogueEntryPublicId
+  );
+}
+
+export function createReaderProgressFromCheckpoint(
+  chapter: ReaderChapter,
+  checkpoint:
+    | Pick<ReaderCheckpoint, "chapterPublicId" | "scenePublicId" | "dialogueEntryPublicId">
+    | null
+) {
+  if (!checkpoint || !isCheckpointValidForChapter(chapter, checkpoint)) {
+    return createInitialReaderProgress();
+  }
+
+  const sceneIndex = chapter.scenes.findIndex(
+    (scene) => scene.id === checkpoint.scenePublicId
+  );
+  const entryIndex = chapter.scenes[sceneIndex]?.entries.findIndex(
+    (entry) => entry.id === checkpoint.dialogueEntryPublicId
+  );
+
+  if (sceneIndex < 0 || entryIndex == null || entryIndex < 0) {
+    return createInitialReaderProgress();
+  }
+
+  return {
+    sceneIndex,
+    entryIndex,
+    isChapterComplete: false
+  };
+}
+
+export function createReaderCheckpoint(input: {
+  chapter: ReaderChapter;
+  publishedVersionId: string;
+  state: ReaderProgressState;
+  lastReadAt?: string;
+}): ReaderCheckpoint | null {
+  const currentScene = input.state.isChapterComplete
+    ? input.chapter.scenes.at(-1) ?? null
+    : getCurrentScene(input.chapter, input.state);
+
+  if (!currentScene) {
+    return null;
+  }
+
+  const currentEntry = input.state.isChapterComplete
+    ? currentScene.entries.at(-1) ?? null
+    : getCurrentEntry(input.chapter, input.state) ?? currentScene.entries.at(-1) ?? null;
+
+  if (!currentEntry) {
+    return null;
+  }
+
+  return {
+    publishedVersionId: input.publishedVersionId,
+    chapterPublicId: input.chapter.id,
+    scenePublicId: currentScene.id,
+    dialogueEntryPublicId: currentEntry.id,
+    lastReadAt: input.lastReadAt ?? new Date().toISOString()
   };
 }
 

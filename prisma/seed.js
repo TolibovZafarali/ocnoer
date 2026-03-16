@@ -4,10 +4,16 @@ const {
   MediaAssetType,
   Role
 } = require("@prisma/client");
+const { randomUUID } = require("node:crypto");
 
 const prisma = new PrismaClient();
 
+function createPublicId(prefix) {
+  return `${prefix}_${randomUUID().replace(/-/g, "")}`;
+}
+
 async function main() {
+  await prisma.readingProgress.deleteMany();
   await prisma.playerResponse.deleteMany();
   await prisma.sceneCharacterAppearance.deleteMany();
   await prisma.dialogueEntry.deleteMany();
@@ -17,6 +23,7 @@ async function main() {
   await prisma.character.deleteMany();
   await prisma.house.deleteMany();
   await prisma.mediaAsset.deleteMany();
+  await prisma.publishedStoryVersion.deleteMany();
 
   await prisma.user.upsert({
     where: { email: "admin@example.com" },
@@ -46,6 +53,7 @@ async function main() {
 
   const ocnoer = await prisma.character.create({
     data: {
+      publicId: createPublicId("character"),
       name: "Ocnoer",
       slug: "ocnoer",
       houseId: house.id,
@@ -55,6 +63,7 @@ async function main() {
 
   const alvyn = await prisma.character.create({
     data: {
+      publicId: createPublicId("character"),
       name: "Alvyn Rivers",
       slug: "alvyn-rivers",
       houseId: house.id,
@@ -107,6 +116,7 @@ async function main() {
 
   const chapter = await prisma.chapter.create({
     data: {
+      publicId: createPublicId("chapter"),
       title: "Chapter 1: First Echo",
       slug: "chapter-1-first-echo",
       orderIndex: 1,
@@ -116,6 +126,7 @@ async function main() {
 
   const scene = await prisma.scene.create({
     data: {
+      publicId: createPublicId("scene"),
       chapterId: chapter.id,
       title: "Dockside Dawn",
       orderIndex: 1,
@@ -134,6 +145,7 @@ async function main() {
 
   const narrator = await prisma.dialogueEntry.create({
     data: {
+      publicId: createPublicId("entry"),
       sceneId: scene.id,
       kind: DialogueKind.narrator,
       orderIndex: 1,
@@ -143,6 +155,7 @@ async function main() {
 
   await prisma.dialogueEntry.create({
     data: {
+      publicId: createPublicId("entry"),
       sceneId: scene.id,
       kind: DialogueKind.speech,
       orderIndex: 2,
@@ -153,6 +166,7 @@ async function main() {
 
   const prompt = await prisma.dialogueEntry.create({
     data: {
+      publicId: createPublicId("entry"),
       sceneId: scene.id,
       kind: DialogueKind.player_prompt,
       orderIndex: 3,
@@ -163,6 +177,7 @@ async function main() {
 
   await prisma.dialogueEntry.create({
     data: {
+      publicId: createPublicId("entry"),
       sceneId: scene.id,
       kind: DialogueKind.speech,
       orderIndex: 4,
@@ -171,12 +186,29 @@ async function main() {
     }
   });
 
+  const legacyPublishedVersion = await prisma.publishedStoryVersion.create({
+    data: {
+      version: 0,
+      isActive: false,
+      manifestStoragePath: "runtime/legacy/manifest.json",
+      storagePrefix: "runtime/legacy"
+    }
+  });
+
   await prisma.playerResponse.create({
     data: {
+      publishedVersionId: legacyPublishedVersion.id,
+      chapterPublicId: chapter.publicId,
+      chapterTitle: chapter.title,
+      chapterSlug: chapter.slug,
+      chapterOrderIndex: chapter.orderIndex,
+      scenePublicId: scene.publicId,
+      sceneTitle: scene.title,
+      sceneOrderIndex: scene.orderIndex,
+      dialogueEntryPublicId: prompt.publicId,
+      promptLabel: prompt.promptLabel,
+      promptText: prompt.text,
       userId: playerUser.id,
-      chapterId: chapter.id,
-      sceneId: scene.id,
-      dialogueEntryId: prompt.id,
       responseText: "Sample seeded response for review flow wiring."
     }
   });

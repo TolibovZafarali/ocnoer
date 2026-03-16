@@ -2,8 +2,10 @@
 
 import { DialogueKind } from "@prisma/client";
 import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 
 import { requireRole } from "@/lib/auth/guards";
+import { publishStory, rollbackPublishedStoryVersion, StoryPublishError } from "@/lib/story/publish";
 import {
   StoryEnums,
   createChapter,
@@ -371,4 +373,48 @@ export async function deleteMediaAssetAction(formData: FormData) {
       getRequiredString(formData, "mediaAssetId", "Media asset id")
     );
   });
+}
+
+export async function publishStoryAction() {
+  await requireRole("admin");
+
+  try {
+    await publishStory();
+    revalidatePath("/admin");
+    redirect("/admin?tab=chapters&publishStatus=success");
+  } catch (error) {
+    const message =
+      error instanceof StoryPublishError
+        ? error.message
+        : "Unable to publish the story right now.";
+
+    redirect(
+      `/admin?tab=chapters&publishStatus=error&publishMessage=${encodeURIComponent(message)}`
+    );
+  }
+}
+
+export async function rollbackPublishedStoryVersionAction(formData: FormData) {
+  await requireRole("admin");
+
+  const versionId = getRequiredString(
+    formData,
+    "publishedVersionId",
+    "Published version id"
+  );
+
+  try {
+    await rollbackPublishedStoryVersion(versionId);
+    revalidatePath("/admin");
+    redirect("/admin?tab=chapters&publishStatus=rollback-success");
+  } catch (error) {
+    const message =
+      error instanceof StoryPublishError
+        ? error.message
+        : "Unable to roll back the published story version.";
+
+    redirect(
+      `/admin?tab=chapters&publishStatus=error&publishMessage=${encodeURIComponent(message)}`
+    );
+  }
 }

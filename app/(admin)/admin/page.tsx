@@ -8,6 +8,8 @@ import type {
 
 import { signOutAction } from "@/app/actions/auth";
 import {
+  publishStoryAction,
+  rollbackPublishedStoryVersionAction,
   createChapterAction,
   createCharacterAction,
   createCharacterPortraitAction,
@@ -34,10 +36,15 @@ import {
 } from "@/app/(admin)/admin/actions";
 import { Button } from "@/components/ui/button";
 import {
+  PUBLISHED_RUNTIME_SCHEMA_UNAVAILABLE_MESSAGE,
+  StoryRepositoryError,
   StoryEnums,
   getAdminPlayerResponses,
-  getAdminStoryGraph
+  getAdminStoryGraph,
+  hasPublishedRuntimeSchema,
+  getPublishedStoryVersions
 } from "@/lib/story/repository";
+import { validateStoryForPublish } from "@/lib/story/published";
 
 function SectionCard(props: {
   title: string;
@@ -134,12 +141,59 @@ function getParam(
 
 export default async function AdminPage({ searchParams }: AdminPageProps) {
   const resolvedSearchParams = searchParams ? await searchParams : {};
-  const [story, responses] = await Promise.all([
-    getAdminStoryGraph(),
-    getAdminPlayerResponses()
-  ]);
+  const story = await getAdminStoryGraph();
+  const [responsesResult, publishedVersionsResult, publishedRuntimeSchemaReady] =
+    await Promise.all([
+      getAdminPlayerResponses().then(
+        (responses) => ({ responses, error: null as StoryRepositoryError | null })
+      ).catch((error: unknown) => {
+        if (
+          error instanceof StoryRepositoryError &&
+          error.message === PUBLISHED_RUNTIME_SCHEMA_UNAVAILABLE_MESSAGE
+        ) {
+          return {
+            responses: [],
+            error
+          };
+        }
+
+        throw error;
+      }),
+      getPublishedStoryVersions().then(
+        (publishedVersions) =>
+          ({
+            publishedVersions,
+            error: null as StoryRepositoryError | null
+          })
+      ).catch((error: unknown) => {
+        if (
+          error instanceof StoryRepositoryError &&
+          error.message === PUBLISHED_RUNTIME_SCHEMA_UNAVAILABLE_MESSAGE
+        ) {
+          return {
+            publishedVersions: [],
+            error
+          };
+        }
+
+        throw error;
+      }),
+      hasPublishedRuntimeSchema()
+    ]);
+  const responses = responsesResult.responses;
+  const publishedVersions = publishedVersionsResult.publishedVersions;
+  const publishedRuntimeSchemaWarning =
+    !publishedRuntimeSchemaReady ||
+    responsesResult.error?.message ===
+      PUBLISHED_RUNTIME_SCHEMA_UNAVAILABLE_MESSAGE ||
+    publishedVersionsResult.error?.message ===
+      PUBLISHED_RUNTIME_SCHEMA_UNAVAILABLE_MESSAGE
+      ? PUBLISHED_RUNTIME_SCHEMA_UNAVAILABLE_MESSAGE
+      : null;
 
   const activeTab = getParam(resolvedSearchParams.tab, "chapters");
+  const publishStatus = getParam(resolvedSearchParams.publishStatus);
+  const publishMessage = getParam(resolvedSearchParams.publishMessage);
   const selectedChapterId = getParam(
     resolvedSearchParams.chapterId,
     story.chapters[0]?.id ?? ""
@@ -172,6 +226,9 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
   const musicAssets = story.mediaAssets.filter(
     (asset) => asset.type === "background_music"
   );
+  const publishValidation = validateStoryForPublish(story);
+  const activePublishedVersion =
+    publishedVersions.find((version) => version.isActive) ?? null;
 
   const dateFormatter = new Intl.DateTimeFormat("en-US", {
     dateStyle: "medium",
@@ -242,6 +299,136 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
               </FormGrid>
               <Button type="submit">Create chapter</Button>
             </form>
+          </SectionCard>
+
+          <SectionCard
+            title="Published Runtime"
+            description="Compile authored story data into immutable runtime bundles for the player."
+          >
+            {publishedRuntimeSchemaWarning ? (
+              <p className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+                {publishedRuntimeSchemaWarning}
+              </p>
+            ) : null}
+            {publishStatus === "success" ? (
+              <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                Published a new runtime version successfully.
+              </p>
+            ) : null}
+            {publishStatus === "rollback-success" ? (
+              <p className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700">
+                Rolled back to the selected published version.
+              </p>
+            ) : null}
+            {publishStatus === "error" ? (
+              <p className="rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-700">
+                {publishMessage || "Unable to complete the publish action."}
+              </p>
+            ) : null}
+
+            <div className="grid gap-4 md:grid-cols-2">
+              <div className="rounded-lg border border-slate-200 p-3">
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Publish validation
+                </h3>
+                {publishValidation.ok ? (
+                  <p className="mt-2 text-sm text-emerald-700">
+                    Ready to publish. Runtime bundles will be generated from the current authoring data.
+                  </p>
+                ) : (
+                  <div className="mt-2 space-y-2">
+                    <p className="text-sm text-rose-700">
+                      Resolve these issues before publishing:
+                    </p>
+                    <ul className="list-disc space-y-1 pl-5 text-sm text-slate-700">
+                      {publishValidation.errors.map((error) => (
+                        <li key={error}>{error}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                <form action={publishStoryAction} className="mt-4">
+                  <Button
+                    disabled={
+                      !publishValidation.ok || Boolean(publishedRuntimeSchemaWarning)
+                    }
+                    type="submit"
+                  >
+                    Publish runtime version
+                  </Button>
+                </form>
+              </div>
+
+              <div className="rounded-lg border border-slate-200 p-3">
+                <h3 className="text-sm font-semibold text-slate-900">
+                  Active published version
+                </h3>
+                {activePublishedVersion ? (
+                  <div className="mt-2 space-y-1 text-sm text-slate-700">
+                    <p>Version {activePublishedVersion.version}</p>
+                    <p>
+                      Activated{" "}
+                      {dateFormatter.format(
+                        activePublishedVersion.activatedAt ??
+                          activePublishedVersion.createdAt
+                      )}
+                    </p>
+                    <p className="truncate">
+                      Manifest: {activePublishedVersion.manifestStoragePath}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="mt-2 text-sm text-slate-600">
+                    No published runtime version is active yet.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <h3 className="text-sm font-semibold text-slate-900">
+                Publish history
+              </h3>
+              {publishedVersions.length === 0 ? (
+                <p className="text-sm text-slate-600">
+                  No published versions available.
+                </p>
+              ) : (
+                publishedVersions.map((version) => (
+                  <article
+                    className="rounded-lg border border-slate-200 p-3"
+                    key={version.id}
+                  >
+                    <div className="flex flex-wrap items-center justify-between gap-3">
+                      <div className="space-y-1 text-sm text-slate-700">
+                        <p className="font-medium text-slate-900">
+                          Version {version.version}
+                          {version.isActive ? " (active)" : ""}
+                        </p>
+                        <p>
+                          Created {dateFormatter.format(version.createdAt)}
+                        </p>
+                        <p className="truncate">
+                          Manifest: {version.manifestStoragePath}
+                        </p>
+                      </div>
+                      {!version.isActive ? (
+                        <form action={rollbackPublishedStoryVersionAction}>
+                          <input
+                            name="publishedVersionId"
+                            type="hidden"
+                            value={version.id}
+                          />
+                          <Button type="submit" variant="outline">
+                            Roll back
+                          </Button>
+                        </form>
+                      ) : null}
+                    </div>
+                  </article>
+                ))
+              )}
+            </div>
           </SectionCard>
 
           <SectionCard
@@ -754,6 +941,10 @@ export default async function AdminPage({ searchParams }: AdminPageProps) {
                       {dateFormatter.format(response.createdAt)}
                     </p>
                     <p className="mt-1 text-sm text-slate-700">{response.user.email}</p>
+                    <p className="mt-1 text-xs text-slate-500">
+                      Published version {response.publishedVersion.version}
+                      {response.publishedVersion.isActive ? " (active)" : ""}
+                    </p>
                     <p className="mt-1 text-sm font-medium text-slate-900">
                       Chapter {response.chapter.orderIndex}: {response.chapter.title} /
                       {" "}Scene {response.scene.orderIndex}

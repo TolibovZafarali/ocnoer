@@ -16,6 +16,18 @@ const createServerSupabaseClientMock = vi.fn(async () => ({
   }
 }));
 const createPlayerPromptResponseMock = vi.fn(async () => ({ id: "response-1" }));
+const getPublishedPromptContextMock = vi.fn(async () => ({
+  chapterPublicId: "chapter-public-1",
+  chapterTitle: "Chapter 1",
+  chapterSlug: "chapter-1",
+  chapterOrderIndex: 1,
+  scenePublicId: "scene-public-1",
+  sceneTitle: "Scene 1",
+  sceneOrderIndex: 1,
+  dialogueEntryPublicId: "entry-public-1",
+  promptLabel: "Ask",
+  promptText: "Who are you?"
+}));
 const revalidatePathMock = vi.fn();
 
 vi.mock("@/lib/auth/guards", () => ({
@@ -37,6 +49,17 @@ vi.mock("@/lib/story/repository", async () => {
   };
 });
 
+vi.mock("@/lib/story/runtime", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/story/runtime")>(
+    "@/lib/story/runtime"
+  );
+
+  return {
+    ...actual,
+    getPublishedPromptContext: getPublishedPromptContextMock
+  };
+});
+
 vi.mock("next/cache", () => ({
   revalidatePath: revalidatePathMock
 }));
@@ -46,14 +69,15 @@ describe("submitPlayerPromptResponseAction", () => {
     vi.clearAllMocks();
   });
 
-  it("enforces player role and saves response", async () => {
+  it("enforces player role and saves response against published runtime ids", async () => {
     const { submitPlayerPromptResponseAction } = await import(
       "@/app/(player)/play/actions"
     );
     const formData = new FormData();
-    formData.set("dialogueEntryId", "entry-1");
-    formData.set("sceneId", "scene-1");
-    formData.set("chapterId", "chapter-1");
+    formData.set("publishedVersionId", "version-2");
+    formData.set("dialogueEntryId", "entry-public-1");
+    formData.set("sceneId", "scene-public-1");
+    formData.set("chapterId", "chapter-public-1");
     formData.set("responseText", "hello");
 
     await expect(
@@ -68,14 +92,28 @@ describe("submitPlayerPromptResponseAction", () => {
     ).resolves.toEqual({
       status: "success",
       message: "Response saved.",
-      dialogueEntryId: "entry-1"
+      dialogueEntryId: "entry-public-1"
     });
 
     expect(requireRoleMock).toHaveBeenCalledWith("player");
+    expect(getPublishedPromptContextMock).toHaveBeenCalledWith({
+      publishedVersionId: "version-2",
+      chapterPublicId: "chapter-public-1",
+      scenePublicId: "scene-public-1",
+      dialogueEntryPublicId: "entry-public-1"
+    });
     expect(createPlayerPromptResponseMock).toHaveBeenCalledWith({
-      dialogueEntryId: "entry-1",
-      sceneId: "scene-1",
-      chapterId: "chapter-1",
+      publishedVersionId: "version-2",
+      chapterPublicId: "chapter-public-1",
+      chapterTitle: "Chapter 1",
+      chapterSlug: "chapter-1",
+      chapterOrderIndex: 1,
+      scenePublicId: "scene-public-1",
+      sceneTitle: "Scene 1",
+      sceneOrderIndex: 1,
+      dialogueEntryPublicId: "entry-public-1",
+      promptLabel: "Ask",
+      promptText: "Who are you?",
       userEmail: "player@example.com",
       responseText: "hello"
     });
@@ -87,9 +125,10 @@ describe("submitPlayerPromptResponseAction", () => {
       "@/app/(player)/play/actions"
     );
     const formData = new FormData();
-    formData.set("dialogueEntryId", "entry-1");
-    formData.set("sceneId", "scene-1");
-    formData.set("chapterId", "chapter-1");
+    formData.set("publishedVersionId", "version-2");
+    formData.set("dialogueEntryId", "entry-public-1");
+    formData.set("sceneId", "scene-public-1");
+    formData.set("chapterId", "chapter-public-1");
     formData.set("responseText", "   ");
 
     await expect(
@@ -104,7 +143,7 @@ describe("submitPlayerPromptResponseAction", () => {
     ).resolves.toEqual({
       status: "error",
       message: "Response is required.",
-      dialogueEntryId: "entry-1"
+      dialogueEntryId: "entry-public-1"
     });
 
     expect(createPlayerPromptResponseMock).not.toHaveBeenCalled();
@@ -122,9 +161,10 @@ describe("submitPlayerPromptResponseAction", () => {
       "@/app/(player)/play/actions"
     );
     const formData = new FormData();
-    formData.set("dialogueEntryId", "entry-1");
-    formData.set("sceneId", "scene-1");
-    formData.set("chapterId", "chapter-1");
+    formData.set("publishedVersionId", "version-2");
+    formData.set("dialogueEntryId", "entry-public-1");
+    formData.set("sceneId", "scene-public-1");
+    formData.set("chapterId", "chapter-public-1");
     formData.set("responseText", "hello");
 
     await expect(
@@ -139,7 +179,7 @@ describe("submitPlayerPromptResponseAction", () => {
     ).resolves.toEqual({
       status: "error",
       message: "Unable to resolve your account email for response capture.",
-      dialogueEntryId: "entry-1"
+      dialogueEntryId: "entry-public-1"
     });
   });
 
@@ -149,9 +189,10 @@ describe("submitPlayerPromptResponseAction", () => {
       "@/app/(player)/play/actions"
     );
     const formData = new FormData();
-    formData.set("dialogueEntryId", "entry-1");
-    formData.set("sceneId", "scene-1");
-    formData.set("chapterId", "chapter-1");
+    formData.set("publishedVersionId", "version-2");
+    formData.set("dialogueEntryId", "entry-public-1");
+    formData.set("sceneId", "scene-public-1");
+    formData.set("chapterId", "chapter-public-1");
     formData.set("responseText", "hello");
 
     await expect(

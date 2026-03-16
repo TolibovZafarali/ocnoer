@@ -1,8 +1,10 @@
+import { randomUUID } from "node:crypto";
+
 import {
   DialogueKind,
+  Prisma,
   Role,
-  type MediaAssetType,
-  type Prisma
+  type MediaAssetType
 } from "@prisma/client";
 
 import { prisma } from "@/lib/prisma";
@@ -11,11 +13,25 @@ import { slugify } from "@/lib/story/slug";
 
 export class StoryRepositoryError extends Error {}
 
+export const PUBLISHED_RUNTIME_SCHEMA_UNAVAILABLE_MESSAGE =
+  "Published runtime schema is unavailable. Run the latest Prisma migration before using publish/runtime features.";
+
 const MEDIA_ASSET_TYPES = ["background_image", "background_music"] as const;
 const MEDIA_ASSET_TYPE = {
   background_image: MEDIA_ASSET_TYPES[0],
   background_music: MEDIA_ASSET_TYPES[1]
 } as const;
+
+function createPublicId(prefix: string) {
+  return `${prefix}_${randomUUID().replace(/-/g, "")}`;
+}
+
+function isPublishedRuntimeSchemaUnavailableError(error: unknown) {
+  return (
+    error instanceof Prisma.PrismaClientKnownRequestError &&
+    (error.code === "P2021" || error.code === "P2022")
+  );
+}
 
 async function ensureUniqueSlug(
   model: "chapter" | "character" | "house",
@@ -96,6 +112,7 @@ export async function getAdminStoryGraph() {
                 character: {
                   select: {
                     id: true,
+                    publicId: true,
                     name: true,
                     slug: true
                   }
@@ -107,7 +124,16 @@ export async function getAdminStoryGraph() {
               orderBy: { orderIndex: "asc" },
               include: {
                 character: {
-                  include: {
+                  select: {
+                    id: true,
+                    publicId: true,
+                    name: true,
+                    slug: true,
+                    bio: true,
+                    notes: true,
+                    houseId: true,
+                    createdAt: true,
+                    updatedAt: true,
                     portraits: {
                       orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }],
                       take: 1
@@ -232,6 +258,7 @@ export async function getFirstPlayableChapter(): Promise<ReaderChapter | null> {
               character: {
                 select: {
                   id: true,
+                  publicId: true,
                   name: true,
                   slug: true,
                   portraits: {
@@ -255,7 +282,7 @@ export async function getFirstPlayableChapter(): Promise<ReaderChapter | null> {
   }
 
   return {
-    id: chapter.id,
+    id: chapter.publicId,
     title: chapter.title,
     slug: chapter.slug,
     orderIndex: chapter.orderIndex,
@@ -269,7 +296,7 @@ export async function getFirstPlayableChapter(): Promise<ReaderChapter | null> {
       );
 
       return {
-        id: scene.id,
+        id: scene.publicId,
         title: scene.title,
         orderIndex: scene.orderIndex,
         media: {
@@ -277,14 +304,14 @@ export async function getFirstPlayableChapter(): Promise<ReaderChapter | null> {
           backgroundMusicPath: scene.backgroundMusicAsset?.storagePath ?? null
         },
         entries: scene.dialogueEntries.map((entry) => ({
-          id: entry.id,
+          id: entry.publicId,
           kind: entry.kind,
           orderIndex: entry.orderIndex,
           text: entry.text,
           promptLabel: entry.promptLabel,
           character: entry.character
             ? {
-                id: entry.character.id,
+                id: entry.character.publicId,
                 name: entry.character.name,
                 slug: entry.character.slug,
                 portraitPath: resolveCharacterPortraitPath({
@@ -319,6 +346,7 @@ export async function createChapter(input: {
   try {
     return await prisma.chapter.create({
       data: {
+        publicId: createPublicId("chapter"),
         title: input.title,
         slug,
         orderIndex,
@@ -390,7 +418,10 @@ export async function createScene(input: {
 
   try {
     return await prisma.scene.create({
-      data: input
+      data: {
+        ...input,
+        publicId: createPublicId("scene")
+      }
     });
   } catch {
     throw new StoryRepositoryError("Unable to create scene.");
@@ -516,6 +547,7 @@ export async function createCharacter(input: {
   try {
     return await prisma.character.create({
       data: {
+        publicId: createPublicId("character"),
         name: input.name,
         slug,
         houseId: input.houseId,
@@ -715,7 +747,10 @@ export async function createDialogueEntry(input: {
 
   try {
     return await prisma.dialogueEntry.create({
-      data: input
+      data: {
+        ...input,
+        publicId: createPublicId("entry")
+      }
     });
   } catch {
     throw new StoryRepositoryError("Unable to create dialogue entry.");
@@ -870,9 +905,17 @@ export async function resolveOrUpsertPlayerUserByEmail(email: string) {
 }
 
 export async function createPlayerResponse(input: {
-  dialogueEntryId: string;
-  sceneId: string;
-  chapterId: string;
+  publishedVersionId: string;
+  chapterPublicId: string;
+  chapterTitle: string;
+  chapterSlug: string;
+  chapterOrderIndex: number;
+  scenePublicId: string;
+  sceneTitle: string | null;
+  sceneOrderIndex: number;
+  dialogueEntryPublicId: string;
+  promptLabel: string | null;
+  promptText: string;
   userId: string;
   responseText: string;
 }) {
@@ -880,15 +923,29 @@ export async function createPlayerResponse(input: {
     return await prisma.playerResponse.create({
       data: input
     });
-  } catch {
+  } catch (error) {
+    if (isPublishedRuntimeSchemaUnavailableError(error)) {
+      throw new StoryRepositoryError(
+        PUBLISHED_RUNTIME_SCHEMA_UNAVAILABLE_MESSAGE
+      );
+    }
+
     throw new StoryRepositoryError("Unable to save player response.");
   }
 }
 
 export async function createPlayerPromptResponse(input: {
-  dialogueEntryId: string;
-  sceneId: string;
-  chapterId: string;
+  publishedVersionId: string;
+  chapterPublicId: string;
+  chapterTitle: string;
+  chapterSlug: string;
+  chapterOrderIndex: number;
+  scenePublicId: string;
+  sceneTitle: string | null;
+  sceneOrderIndex: number;
+  dialogueEntryPublicId: string;
+  promptLabel: string | null;
+  promptText: string;
   userEmail: string;
   responseText: string;
 }) {
@@ -900,31 +957,6 @@ export async function createPlayerPromptResponse(input: {
 
   try {
     return await prisma.$transaction(async (tx) => {
-      const promptEntry = await tx.dialogueEntry.findUnique({
-        where: { id: input.dialogueEntryId },
-        select: {
-          id: true,
-          kind: true,
-          sceneId: true,
-          scene: {
-            select: {
-              chapterId: true
-            }
-          }
-        }
-      });
-
-      if (
-        !promptEntry ||
-        promptEntry.kind !== DialogueKind.player_prompt ||
-        promptEntry.sceneId !== input.sceneId ||
-        promptEntry.scene.chapterId !== input.chapterId
-      ) {
-        throw new StoryRepositoryError(
-          "Prompt context is invalid or no longer available."
-        );
-      }
-
       const user = await resolveOrUpsertPlayerUserByEmailInTx(
         tx,
         input.userEmail
@@ -932,9 +964,17 @@ export async function createPlayerPromptResponse(input: {
 
       return tx.playerResponse.create({
         data: {
-          dialogueEntryId: promptEntry.id,
-          sceneId: promptEntry.sceneId,
-          chapterId: promptEntry.scene.chapterId,
+          publishedVersionId: input.publishedVersionId,
+          chapterPublicId: input.chapterPublicId,
+          chapterTitle: input.chapterTitle,
+          chapterSlug: input.chapterSlug,
+          chapterOrderIndex: input.chapterOrderIndex,
+          scenePublicId: input.scenePublicId,
+          sceneTitle: input.sceneTitle,
+          sceneOrderIndex: input.sceneOrderIndex,
+          dialogueEntryPublicId: input.dialogueEntryPublicId,
+          promptLabel: input.promptLabel,
+          promptText: input.promptText,
           userId: user.id,
           responseText
         }
@@ -945,6 +985,12 @@ export async function createPlayerPromptResponse(input: {
       throw error;
     }
 
+    if (isPublishedRuntimeSchemaUnavailableError(error)) {
+      throw new StoryRepositoryError(
+        PUBLISHED_RUNTIME_SCHEMA_UNAVAILABLE_MESSAGE
+      );
+    }
+
     throw new StoryRepositoryError("Unable to save player response.");
   }
 }
@@ -953,11 +999,17 @@ export type AdminPlayerResponse = {
   id: string;
   responseText: string;
   createdAt: Date;
+  publishedVersion: {
+    id: string;
+    version: number;
+    isActive: boolean;
+  };
   user: {
     email: string;
   };
   chapter: {
     id: string;
+    slug: string;
     title: string;
     orderIndex: number;
   };
@@ -979,41 +1031,305 @@ export async function getAdminPlayerResponses(
   const safeLimit = Math.max(1, Math.min(limit, 200));
 
   try {
-    return await prisma.playerResponse.findMany({
-      orderBy: { createdAt: "desc" },
-      take: safeLimit,
-      include: {
-        user: {
-          select: {
-            email: true
-          }
-        },
-        chapter: {
-          select: {
-            id: true,
-            title: true,
-            orderIndex: true
-          }
-        },
-        scene: {
-          select: {
-            id: true,
-            title: true,
-            orderIndex: true
-          }
-        },
-        dialogueEntry: {
-          select: {
-            id: true,
-            text: true,
-            promptLabel: true
+    return await prisma.playerResponse
+      .findMany({
+        orderBy: { createdAt: "desc" },
+        take: safeLimit,
+        include: {
+          publishedVersion: {
+            select: {
+              id: true,
+              version: true,
+              isActive: true
+            }
+          },
+          user: {
+            select: {
+              email: true
+            }
           }
         }
-      }
-    });
-  } catch {
+      })
+      .then((responses) =>
+        responses.map((response) => ({
+          id: response.id,
+          responseText: response.responseText,
+          createdAt: response.createdAt,
+          publishedVersion: response.publishedVersion,
+          user: response.user,
+          chapter: {
+            id: response.chapterPublicId,
+            slug: response.chapterSlug,
+            title: response.chapterTitle,
+            orderIndex: response.chapterOrderIndex
+          },
+          scene: {
+            id: response.scenePublicId,
+            title: response.sceneTitle,
+            orderIndex: response.sceneOrderIndex
+          },
+          dialogueEntry: {
+            id: response.dialogueEntryPublicId,
+            text: response.promptText,
+            promptLabel: response.promptLabel
+          }
+        }))
+      );
+  } catch (error) {
+    if (isPublishedRuntimeSchemaUnavailableError(error)) {
+      throw new StoryRepositoryError(
+        PUBLISHED_RUNTIME_SCHEMA_UNAVAILABLE_MESSAGE
+      );
+    }
+
     throw new StoryRepositoryError("Unable to load player responses.");
   }
+}
+
+export type PublishedStoryVersionSummary = {
+  id: string;
+  version: number;
+  isActive: boolean;
+  manifestStoragePath: string;
+  storagePrefix: string;
+  createdAt: Date;
+  activatedAt: Date | null;
+};
+
+export async function getPublishedStoryVersions(): Promise<
+  PublishedStoryVersionSummary[]
+> {
+  try {
+    return await prisma.publishedStoryVersion.findMany({
+      orderBy: { version: "desc" }
+    });
+  } catch (error) {
+    if (isPublishedRuntimeSchemaUnavailableError(error)) {
+      throw new StoryRepositoryError(
+        PUBLISHED_RUNTIME_SCHEMA_UNAVAILABLE_MESSAGE
+      );
+    }
+
+    throw new StoryRepositoryError("Unable to load published story versions.");
+  }
+}
+
+export async function hasPublishedRuntimeSchema() {
+  try {
+    await prisma.publishedStoryVersion.findFirst({
+      select: {
+        id: true
+      }
+    });
+
+    return true;
+  } catch (error) {
+    if (isPublishedRuntimeSchemaUnavailableError(error)) {
+      return false;
+    }
+
+    throw new StoryRepositoryError(
+      "Unable to determine published runtime schema status."
+    );
+  }
+}
+
+export async function getActivePublishedStoryVersion() {
+  try {
+    return await prisma.publishedStoryVersion.findFirst({
+      where: { isActive: true },
+      orderBy: { version: "desc" }
+    });
+  } catch (error) {
+    if (isPublishedRuntimeSchemaUnavailableError(error)) {
+      throw new StoryRepositoryError(
+        PUBLISHED_RUNTIME_SCHEMA_UNAVAILABLE_MESSAGE
+      );
+    }
+
+    throw new StoryRepositoryError("Unable to load the active published story.");
+  }
+}
+
+export async function getPublishedStoryVersionById(versionId: string) {
+  try {
+    return await prisma.publishedStoryVersion.findUnique({
+      where: { id: versionId }
+    });
+  } catch (error) {
+    if (isPublishedRuntimeSchemaUnavailableError(error)) {
+      throw new StoryRepositoryError(
+        PUBLISHED_RUNTIME_SCHEMA_UNAVAILABLE_MESSAGE
+      );
+    }
+
+    throw new StoryRepositoryError("Unable to load the selected published story.");
+  }
+}
+
+export async function getNextPublishedStoryVersionNumber() {
+  try {
+    const latestVersion = await prisma.publishedStoryVersion.findFirst({
+      orderBy: { version: "desc" },
+      select: {
+        version: true
+      }
+    });
+
+    return (latestVersion?.version ?? 0) + 1;
+  } catch (error) {
+    if (isPublishedRuntimeSchemaUnavailableError(error)) {
+      throw new StoryRepositoryError(
+        PUBLISHED_RUNTIME_SCHEMA_UNAVAILABLE_MESSAGE
+      );
+    }
+
+    throw new StoryRepositoryError("Unable to determine the next publish version.");
+  }
+}
+
+export async function activatePublishedStoryVersion(versionId: string) {
+  try {
+    return await prisma.$transaction(async (tx) => {
+      await tx.publishedStoryVersion.updateMany({
+        data: {
+          isActive: false
+        }
+      });
+
+      return tx.publishedStoryVersion.update({
+        where: { id: versionId },
+        data: {
+          isActive: true,
+          activatedAt: new Date()
+        }
+      });
+    });
+  } catch (error) {
+    if (isPublishedRuntimeSchemaUnavailableError(error)) {
+      throw new StoryRepositoryError(
+        PUBLISHED_RUNTIME_SCHEMA_UNAVAILABLE_MESSAGE
+      );
+    }
+
+    throw new StoryRepositoryError("Unable to activate the published story version.");
+  }
+}
+
+export async function createPublishedStoryVersion(input: {
+  id?: string;
+  version: number;
+  manifestStoragePath: string;
+  storagePrefix: string;
+}) {
+  try {
+    return await prisma.$transaction(async (tx) => {
+      await tx.publishedStoryVersion.updateMany({
+        data: {
+          isActive: false
+        }
+      });
+
+      return tx.publishedStoryVersion.create({
+        data: {
+          id: input.id,
+          version: input.version,
+          isActive: true,
+          manifestStoragePath: input.manifestStoragePath,
+          storagePrefix: input.storagePrefix,
+          activatedAt: new Date()
+        }
+      });
+    });
+  } catch (error) {
+    if (isPublishedRuntimeSchemaUnavailableError(error)) {
+      throw new StoryRepositoryError(
+        PUBLISHED_RUNTIME_SCHEMA_UNAVAILABLE_MESSAGE
+      );
+    }
+
+    throw new StoryRepositoryError("Unable to save the published story version.");
+  }
+}
+
+export type ReadingProgressRecord = {
+  publishedVersionId: string;
+  chapterPublicId: string;
+  scenePublicId: string;
+  dialogueEntryPublicId: string;
+  lastReadAt: Date;
+  updatedAt: Date;
+};
+
+export async function getReadingProgressForUserId(
+  userId: string
+): Promise<ReadingProgressRecord | null> {
+  try {
+    return await prisma.readingProgress.findUnique({
+      where: { userId },
+      select: {
+        publishedVersionId: true,
+        chapterPublicId: true,
+        scenePublicId: true,
+        dialogueEntryPublicId: true,
+        lastReadAt: true,
+        updatedAt: true
+      }
+    });
+  } catch (error) {
+    if (isPublishedRuntimeSchemaUnavailableError(error)) {
+      throw new StoryRepositoryError(
+        PUBLISHED_RUNTIME_SCHEMA_UNAVAILABLE_MESSAGE
+      );
+    }
+
+    throw new StoryRepositoryError("Unable to load reading progress.");
+  }
+}
+
+export async function upsertReadingProgress(input: {
+  userId: string;
+  publishedVersionId: string;
+  chapterPublicId: string;
+  scenePublicId: string;
+  dialogueEntryPublicId: string;
+  lastReadAt: Date;
+}) {
+  try {
+    return await prisma.readingProgress.upsert({
+      where: { userId: input.userId },
+      update: {
+        publishedVersionId: input.publishedVersionId,
+        chapterPublicId: input.chapterPublicId,
+        scenePublicId: input.scenePublicId,
+        dialogueEntryPublicId: input.dialogueEntryPublicId,
+        lastReadAt: input.lastReadAt
+      },
+      create: input
+    });
+  } catch (error) {
+    if (isPublishedRuntimeSchemaUnavailableError(error)) {
+      throw new StoryRepositoryError(
+        PUBLISHED_RUNTIME_SCHEMA_UNAVAILABLE_MESSAGE
+      );
+    }
+
+    throw new StoryRepositoryError("Unable to save reading progress.");
+  }
+}
+
+export async function getReaderBootstrapData(userEmail: string) {
+  const user = await resolveOrUpsertPlayerUserByEmail(userEmail);
+  const progress = await getReadingProgressForUserId(user.id);
+  const publishedVersion = progress
+    ? await getPublishedStoryVersionById(progress.publishedVersionId)
+    : await getActivePublishedStoryVersion();
+
+  return {
+    user,
+    progress,
+    publishedVersion
+  };
 }
 
 export const StoryEnums = {

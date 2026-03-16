@@ -2,249 +2,173 @@
 
 ## Purpose
 
-This document describes the target MVP system for Ocnoer before application code exists.
+This document describes the current Ocnoer application architecture after the published-runtime refactor.
 
-The goal is a private, single-application story platform with two authenticated roles:
+The system now separates:
 
-- `admin` authors and manages story content
-- `player` reads the story and submits text responses when prompted
+- authoring data in relational tables
+- published runtime artifacts in Supabase Storage
+- player-specific state in backend tables plus local client persistence
+
+The core rule is that the player-facing runtime does not read authoring tables during normal reading/gameplay.
 
 ## System Shape
 
-Ocnoer should be built as one `Next.js` App Router application with two route areas:
+Ocnoer is a single `Next.js` App Router application with two route areas:
 
-- player-facing routes for reading the story
-- admin-facing routes for content management and response review
+- `app/(admin)` for story authoring, publishing, rollback, and response review
+- `app/(player)` for reading published story content
 
-The application should use:
+Primary infrastructure:
 
-- `Supabase PostgreSQL` as the primary database
-- `Prisma` as the ORM and schema layer
-- `Supabase Storage` for media assets
-- `Vercel` for hosting
+- `Supabase Auth` for session and role access
+- `PostgreSQL + Prisma` for authoring data, publish metadata, and user state
+- `Supabase Storage` for media assets and published runtime JSON artifacts
 
-This is a single-app MVP, not a microservice system and not a split frontend architecture.
+## High-Level Pipeline
 
-## Users And Access
+The system operates as:
 
-The MVP supports exactly two accounts.
+`authoring tables -> publish compiler -> versioned manifest + chapter bundles -> player runtime`
 
-- `admin`
-  - authenticated
-  - can create and edit chapters, scenes, dialogue, characters, and asset references
-  - can view saved player responses
-- `player`
-  - authenticated
-  - can read published story content
-  - can submit text responses when a dialogue prompt requests it
+### Authoring Layer
 
-Authorization should be role-based. The player must not access admin routes or editing actions.
+- Story source of truth remains relational.
+- Core authored entities include:
+  - `Chapter`
+  - `Scene`
+  - `DialogueEntry`
+  - `Character`
+  - `CharacterPortrait`
+  - `SceneCharacterAppearance`
+  - `MediaAsset`
+  - `House`
+- Runtime-stable `publicId` values exist on `Chapter`, `Scene`, `DialogueEntry`, and `Character`.
+- Admin editing continues to use server actions and repository mutations against the authoring schema.
 
-## Contracts
+### Publish Layer
 
-### Role Contract
+- Admin triggers publish manually from `/admin`.
+- The publish service reads the authored story graph, validates it, and compiles runtime artifacts.
+- Phase one artifact shape:
+  - one root manifest
+  - one bundle per chapter
+- Artifacts are stored in a public runtime bucket under immutable versioned prefixes such as `story/v3/...`.
+- `PublishedStoryVersion` tracks publish history, active version, manifest location, and storage prefix.
+- Rollback reactivates an existing published version without recompiling artifacts.
 
-- `admin` can manage story content and review saved player responses
-- `player` can consume story content and submit responses when prompted
-- both roles require authentication
-- role checks must gate route access and protected actions
+### Player Runtime Layer
 
-### Content Contract
+- `/play` resolves the signed-in player, pinned published version, and existing reading progress.
+- The server loads:
+  - active or pinned `PublishedStoryVersion`
+  - published manifest JSON
+  - the current chapter bundle JSON
+- The reader progresses entirely in client state within the loaded bundle.
+- The reader prefetches the next chapter bundle when available.
+- Prompt submissions validate against the published bundle for the pinned version before persistence.
 
-- a `Chapter` contains ordered `Scene` records
-- a `Scene` contains ordered `DialogueEntry` records
-- a `DialogueEntry` is one of: narrator text, character speech, character thought, or player input prompt
-- story content is authored in the application and stored in PostgreSQL
-- player responses do not create branching story paths in MVP
+### User State Layer
 
-### Asset Contract
+- `ReadingProgress` stores server-side checkpoints:
+  - `publishedVersionId`
+  - `chapterPublicId`
+  - `scenePublicId`
+  - `dialogueEntryPublicId`
+  - `lastReadAt`
+- The client mirrors progress in `localStorage` for instant resume.
+- Progress sync is debounced through `/api/player/progress`.
+- `PlayerResponse` stores prompt submissions against published runtime ids and denormalized prompt context rather than live authoring foreign keys.
 
-- a `Scene` can reference a background image
-- a `Scene` can reference background music
-- a `Character` can reference portrait assets for rendering
-- asset files live in Supabase Storage while metadata and relations live in PostgreSQL
+## Roles And Access
 
-## Major Subsystems
+### `admin`
 
-### 1. Web Application
+- authors and edits story content
+- publishes new runtime versions
+- rolls back to older published versions
+- reviews player prompt submissions
 
-The Next.js app is responsible for:
+### `player`
 
-- route handling
-- server and client rendering
-- authenticated session handling
-- admin and player UI composition
+- reads published story content only
+- submits prompt responses when prompted
+- resumes from pinned published-version checkpoints
 
-Recommended route split:
+Route and action access is role-gated through Supabase session metadata and server-side guards.
 
-- `app/(player)/...`
-- `app/(admin)/...`
+## Published Runtime Contract
 
-### 2. Story Content System
+### Manifest
 
-The story content system stores authored narrative data in PostgreSQL.
+The root manifest contains only runtime navigation data:
 
-MVP rules:
+- schema version
+- published version id and version number
+- generated timestamp
+- first chapter id
+- ordered chapter index
+- bundle path for each chapter
 
-- story content is authored in the app, not in markdown files
-- progression is mostly linear
-- chapters, scenes, and dialogue entries are ordered records
-- player responses are persisted but do not branch story flow in MVP
+### Chapter Bundle
 
-### 3. Asset Storage
+Each chapter bundle contains only what the reader needs:
 
-Scene and character media should be stored outside the database as files in Supabase Storage.
-
-Expected asset categories:
-
-- scene background images
-- character portraits
-- background music
-
-The database stores references and metadata, not the binary files themselves.
-
-### 4. Admin Surface
-
-The admin surface should allow Alvyn to:
-
-- create chapters
-- create scenes within chapters
-- write dialogue entries in display order
-- assign speaking characters or narrator mode
-- attach background images and music to scenes
-- review player-submitted responses
-
-### 5. Player Surface
-
-The player surface should allow Ocnoer to:
-
-- read story chapters and scenes in sequence
-- view scene art and character portraits
-- experience scene transitions and dialogue presentation
-- enter free-text responses only when explicitly prompted during Alvyn conversation moments
-
-## Conceptual Domain Model
-
-These conceptual entities should anchor the first schema design.
-
-### `User`
-
-Represents one authenticated account.
-
-Core concepts:
-
-- identity
-- role: `admin` or `player`
-- authentication metadata
-
-### `Character`
-
-Represents a named story character that can appear in scenes and dialogue.
-
-Core concepts:
-
-- display name
-- role in story
-- portrait references
-- placement behavior when rendered
-
-### `Chapter`
-
-Represents a high-level narrative unit.
-
-Core concepts:
-
-- title
-- slug or identifier
-- display order
-- publication state
-
-### `Scene`
-
-Represents a playable unit within a chapter.
-
-Core concepts:
-
-- parent chapter
-- display order
-- background image reference
-- background music reference
-- optional scene title or label
-
-### `DialogueEntry`
-
-Represents one ordered line or interaction inside a scene.
-
-Allowed kinds for MVP:
-
-- narrator text
-- character speech
-- character thought
-- player input prompt
-
-Core concepts:
-
-- parent scene
-- display order
-- type
-- text content
-- optional speaking character
-
-### `SceneAsset`
-
-Represents a media record linked to scenes or characters.
-
-Core concepts:
-
-- asset type
-- storage path
-- alt/display metadata
-- ownership relation to scene or character
-
-### `PlayerResponse`
-
-Represents a stored free-text response submitted by the player.
-
-Core concepts:
-
-- related dialogue prompt
-- related scene and chapter context
-- player account reference
-- submitted text
-- timestamp
-
-## Route-Level Contract
-
-The route contract should remain simple in MVP.
-
-- player routes: consume published story content
-- admin routes: manage content and review player responses
-
-The exact URLs can evolve, but the separation of concerns should remain stable.
-
-## Data Flow
+- chapter metadata
+- ordered scenes
+- ordered dialogue entries
+- scene media refs
+- character presentation data
+- prompt metadata
+- next chapter id
+
+The runtime bundle intentionally avoids mirroring the full authoring schema.
+
+## Data Flows
 
 ### Admin Authoring Flow
 
 1. Admin signs in.
-2. Admin creates or edits chapters, scenes, dialogue, and media references.
-3. Data is stored in PostgreSQL through Prisma.
-4. Uploaded media is stored in Supabase Storage.
+2. Admin edits chapters, scenes, dialogue, appearances, and media references.
+3. Server actions persist authoring changes to PostgreSQL.
+4. Admin publishes when the story graph is valid.
+
+### Publish Flow
+
+1. Load the full authoring graph from the repository layer.
+2. Validate minimum publishability:
+   - at least one chapter
+   - each chapter has at least one scene
+   - each scene has at least one dialogue entry
+   - scene media and prompt rules remain valid
+3. Compile deterministic runtime JSON.
+4. Upload manifest and chapter bundles to Supabase Storage.
+5. Create and activate a `PublishedStoryVersion`.
 
 ### Player Reading Flow
 
 1. Player signs in.
-2. Player opens the story reader.
-3. The app loads the current chapter, scene, dialogue sequence, and linked media.
-4. The UI renders each dialogue entry according to scene rules.
-5. If a player prompt appears, the submitted response is saved and later visible to the admin.
+2. `/play` resolves the player account in the app database.
+3. The app chooses a published version:
+   - existing progress version if present
+   - otherwise the active published version
+4. The app loads manifest and current chapter bundle from published storage.
+5. The client advances entry-to-entry locally without backend reads.
+6. The client prefetches the next chapter bundle.
 
-## MVP Boundaries
+### Progress Persistence Flow
 
-The following are out of scope unless requirements change:
+1. Reader position changes in client state.
+2. A checkpoint is serialized to `localStorage` immediately.
+3. Backend sync is debounced and flushed on meaningful transitions.
+4. On resume, the app prefers the newer valid checkpoint between local and server state for the pinned version.
 
-- branching story logic driven by player responses
-- public registration or multi-user audiences
-- live chat systems
-- multiplayer behavior
-- open-ended CMS features beyond Ocnoer's authoring needs
+## Boundaries
+
+The following remain intentionally out of scope in phase one:
+
+- branching story logic
+- player-choice-driven alternate bundles
+- scheduled publishing
+- service-worker-driven offline mode
+- multi-user collaborative authoring workflows

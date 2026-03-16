@@ -5,6 +5,10 @@ import { revalidatePath } from "next/cache";
 import { requireRole } from "@/lib/auth/guards";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import {
+  getPublishedPromptContext,
+  PublishedRuntimeError
+} from "@/lib/story/runtime";
+import {
   StoryRepositoryError,
   createPlayerPromptResponse
 } from "@/lib/story/repository";
@@ -41,9 +45,15 @@ export async function submitPlayerPromptResponseAction(
   let dialogueEntryId = "";
   let sceneId = "";
   let chapterId = "";
+  let publishedVersionId = "";
   let responseText = "";
 
   try {
+    publishedVersionId = getRequiredField(
+      formData,
+      "publishedVersionId",
+      "Published version id"
+    );
     dialogueEntryId = getRequiredField(
       formData,
       "dialogueEntryId",
@@ -73,10 +83,25 @@ export async function submitPlayerPromptResponseAction(
   }
 
   try {
+    const promptContext = await getPublishedPromptContext({
+      publishedVersionId,
+      chapterPublicId: chapterId,
+      scenePublicId: sceneId,
+      dialogueEntryPublicId: dialogueEntryId
+    });
+
     await createPlayerPromptResponse({
-      dialogueEntryId,
-      sceneId,
-      chapterId,
+      publishedVersionId,
+      chapterPublicId: promptContext.chapterPublicId,
+      chapterTitle: promptContext.chapterTitle,
+      chapterSlug: promptContext.chapterSlug,
+      chapterOrderIndex: promptContext.chapterOrderIndex,
+      scenePublicId: promptContext.scenePublicId,
+      sceneTitle: promptContext.sceneTitle,
+      sceneOrderIndex: promptContext.sceneOrderIndex,
+      dialogueEntryPublicId: promptContext.dialogueEntryPublicId,
+      promptLabel: promptContext.promptLabel,
+      promptText: promptContext.promptText,
       userEmail,
       responseText
     });
@@ -90,7 +115,8 @@ export async function submitPlayerPromptResponseAction(
     };
   } catch (error) {
     const message =
-      error instanceof StoryRepositoryError
+      error instanceof StoryRepositoryError ||
+      error instanceof PublishedRuntimeError
         ? error.message
         : "Unable to save your response right now.";
 

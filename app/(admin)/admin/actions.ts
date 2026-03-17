@@ -29,7 +29,10 @@ import {
   updateDialogueEntry,
   updateScene
 } from "@/lib/story/repository";
-import { parseIntegerField, validateRequiredText } from "@/lib/story/validation";
+import {
+  parseIntegerField,
+  validateRequiredText
+} from "@/lib/story/validation";
 
 function getOptionalString(formData: FormData, key: string) {
   const value = formData.get(key);
@@ -84,7 +87,10 @@ function getRequiredFile(formData: FormData, key: string, label: string) {
 function getCharacterIds(formData: FormData) {
   return formData
     .getAll("characterIds")
-    .filter((value): value is string => typeof value === "string" && value.trim().length > 0)
+    .filter(
+      (value): value is string =>
+        typeof value === "string" && value.trim().length > 0
+    )
     .map((value) => value.trim());
 }
 
@@ -133,11 +139,9 @@ async function runAdminAction(input: {
   let redirectPath: string;
 
   try {
-    redirectPath = (await input.action()) ?? withStatus(
-      returnTo,
-      "success",
-      input.successMessage
-    );
+    redirectPath =
+      (await input.action()) ??
+      withStatus(returnTo, "success", input.successMessage);
 
     await revalidateStoryPaths([returnTo, redirectPath]);
   } catch (error) {
@@ -204,7 +208,11 @@ export async function addCharacterEmotionAction(formData: FormData) {
       await addCharacterEmotion({
         characterId: getRequiredString(formData, "characterId", "Character id"),
         emotionKey: getRequiredString(formData, "emotionKey", "Emotion key"),
-        emotionLabel: getRequiredString(formData, "emotionLabel", "Emotion label"),
+        emotionLabel: getRequiredString(
+          formData,
+          "emotionLabel",
+          "Emotion label"
+        ),
         imageFile: getRequiredFile(formData, "imageFile", "Emotion image")
       });
     }
@@ -221,7 +229,11 @@ export async function updateCharacterEmotionAction(formData: FormData) {
         characterId: getRequiredString(formData, "characterId", "Character id"),
         emotionId: getRequiredString(formData, "emotionId", "Emotion id"),
         emotionKey: getRequiredString(formData, "emotionKey", "Emotion key"),
-        emotionLabel: getRequiredString(formData, "emotionLabel", "Emotion label"),
+        emotionLabel: getRequiredString(
+          formData,
+          "emotionLabel",
+          "Emotion label"
+        ),
         imageFile: getOptionalFile(formData, "imageFile")
       });
     }
@@ -358,7 +370,11 @@ export async function createChapterAction(formData: FormData) {
         orderIndex: getRequiredInteger(formData, "orderIndex", "Chapter order")
       });
 
-      return withStatus(`/admin/chapters/${chapter.id}`, "success", "Chapter created.");
+      return withStatus(
+        `/admin/chapters/${chapter.id}/scenes`,
+        "success",
+        "Chapter created."
+      );
     }
   });
 }
@@ -385,7 +401,9 @@ export async function deleteChapterAction(formData: FormData) {
     fallbackPath: "/admin/chapters",
     successMessage: "Chapter deleted.",
     action: async () => {
-      await deleteChapter(getRequiredString(formData, "chapterId", "Chapter id"));
+      await deleteChapter(
+        getRequiredString(formData, "chapterId", "Chapter id")
+      );
       return withStatus("/admin/chapters", "success", "Chapter deleted.");
     }
   });
@@ -407,7 +425,10 @@ export async function createSceneAction(formData: FormData) {
           "backgroundImageAssetId",
           "Background image"
         ),
-        backgroundMusicAssetId: getOptionalString(formData, "backgroundMusicAssetId"),
+        backgroundMusicAssetId: getOptionalString(
+          formData,
+          "backgroundMusicAssetId"
+        ),
         characterIds: getCharacterIds(formData)
       });
 
@@ -436,7 +457,10 @@ export async function updateSceneAction(formData: FormData) {
           "backgroundImageAssetId",
           "Background image"
         ),
-        backgroundMusicAssetId: getOptionalString(formData, "backgroundMusicAssetId"),
+        backgroundMusicAssetId: getOptionalString(
+          formData,
+          "backgroundMusicAssetId"
+        ),
         characterIds: getCharacterIds(formData)
       });
     }
@@ -456,7 +480,11 @@ export async function deleteSceneAction(formData: FormData) {
         sceneId: getRequiredString(formData, "sceneId", "Scene id")
       });
 
-      return withStatus(`/admin/chapters/${chapterId}`, "success", "Scene deleted.");
+      return withStatus(
+        `/admin/chapters/${chapterId}/scenes`,
+        "success",
+        "Scene deleted."
+      );
     }
   });
 }
@@ -470,9 +498,14 @@ export async function createDialogueEntryAction(formData: FormData) {
       await createDialogueEntry({
         chapterId: getRequiredString(formData, "chapterId", "Chapter id"),
         sceneId: getRequiredString(formData, "sceneId", "Scene id"),
-        orderIndex: getRequiredInteger(formData, "orderIndex", "Dialogue order"),
+        orderIndex: getRequiredInteger(
+          formData,
+          "orderIndex",
+          "Dialogue order"
+        ),
         speakerType:
-          getRequiredString(formData, "speakerType", "Speaker type") === "character"
+          getRequiredString(formData, "speakerType", "Speaker type") ===
+          "character"
             ? "character"
             : "narrator",
         characterId: getOptionalString(formData, "characterId"),
@@ -497,9 +530,14 @@ export async function updateDialogueEntryAction(formData: FormData) {
           "dialogueEntryId",
           "Dialogue entry id"
         ),
-        orderIndex: getRequiredInteger(formData, "orderIndex", "Dialogue order"),
+        orderIndex: getRequiredInteger(
+          formData,
+          "orderIndex",
+          "Dialogue order"
+        ),
         speakerType:
-          getRequiredString(formData, "speakerType", "Speaker type") === "character"
+          getRequiredString(formData, "speakerType", "Speaker type") ===
+          "character"
             ? "character"
             : "narrator",
         characterId: getOptionalString(formData, "characterId"),

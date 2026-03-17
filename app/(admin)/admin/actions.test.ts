@@ -65,7 +65,7 @@ describe("createChapterAction", () => {
     formData.set("orderIndex", "1");
 
     await expect(createChapterAction(formData)).rejects.toThrow(
-      "REDIRECT:/admin/chapters/chapter_123?status=success&message=Chapter+created."
+      "REDIRECT:/admin/chapters/chapter_123/scenes?status=success&message=Chapter+created."
     );
 
     expect(createChapterMock).toHaveBeenCalledWith({
@@ -75,10 +75,10 @@ describe("createChapterAction", () => {
     });
     expect(revalidatePathMock).toHaveBeenCalledWith("/admin/chapters");
     expect(revalidatePathMock).toHaveBeenCalledWith(
-      "/admin/chapters/chapter_123?status=success&message=Chapter+created."
+      "/admin/chapters/chapter_123/scenes?status=success&message=Chapter+created."
     );
     expect(redirectMock).toHaveBeenCalledWith(
-      "/admin/chapters/chapter_123?status=success&message=Chapter+created."
+      "/admin/chapters/chapter_123/scenes?status=success&message=Chapter+created."
     );
   });
 });

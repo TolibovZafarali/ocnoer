@@ -1,21 +1,16 @@
 import Link from "next/link";
 
 import {
-  createChapterAction,
-  deleteChapterAction,
-  updateChapterAction
-} from "@/app/(admin)/admin/actions";
+  AdminCardGrid,
+  AdminEmptyState,
+  AdminLinkCard
+} from "@/components/admin/cards";
 import {
   AdminPageShell,
-  Field,
-  FormGrid,
   Notice,
   PageHeader,
-  Pill,
-  SectionCard,
-  TextInput
+  Pill
 } from "@/components/admin/forms";
-import { Button } from "@/components/ui/button";
 import { getAdminStoryData } from "@/lib/story/repository";
 
 type ChaptersPageProps = {
@@ -23,116 +18,84 @@ type ChaptersPageProps = {
 };
 
 function getParam(value: string | string[] | undefined) {
-  return Array.isArray(value) ? value[0] ?? null : value ?? null;
+  return Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
 }
 
-export default async function ChaptersPage({ searchParams }: ChaptersPageProps) {
+export default async function ChaptersPage({
+  searchParams
+}: ChaptersPageProps) {
   const story = await getAdminStoryData();
   const params: Record<string, string | string[] | undefined> = searchParams
     ? await searchParams
     : {};
   const status = getParam(params.status);
   const message = getParam(params.message);
+  const firstChapter = story.chapters[0] ?? null;
 
   return (
     <AdminPageShell>
       <div className="space-y-6">
         <PageHeader
           title="Chapters"
-          description="Create chapters, set their runtime order, then jump directly into chapter-specific scene authoring."
+          description="Browse the chapter list and drill into each chapter's ordered scene flow."
+          actions={
+            <p className="text-sm text-slate-500">
+              Main destination:{" "}
+              <span className="font-medium text-slate-700">Scenes</span>
+            </p>
+          }
         />
 
-        {status === "success" && message ? <Notice kind="success">{message}</Notice> : null}
-        {status === "error" && message ? <Notice kind="error">{message}</Notice> : null}
-
-        <SectionCard
-          title="Create Chapter"
-          description="New chapters redirect immediately into their scene-management page."
-        >
-          <form action={createChapterAction} className="space-y-4">
-            <input type="hidden" name="returnTo" value="/admin/chapters" />
-            <FormGrid>
-              <Field htmlFor="chapter-title" label="Title">
-                <TextInput id="chapter-title" name="title" required />
-              </Field>
-              <Field htmlFor="chapter-slug" label="Slug">
-                <TextInput id="chapter-slug" name="slug" required />
-              </Field>
-              <Field htmlFor="chapter-order" label="Order Index">
-                <TextInput id="chapter-order" name="orderIndex" type="number" required />
-              </Field>
-            </FormGrid>
-            <div className="flex justify-end">
-              <Button type="submit">Create Chapter</Button>
-            </div>
-          </form>
-        </SectionCard>
+        {status === "success" && message ? (
+          <Notice kind="success">{message}</Notice>
+        ) : null}
+        {status === "error" && message ? (
+          <Notice kind="error">{message}</Notice>
+        ) : null}
 
         {story.chapters.length === 0 ? (
-          <SectionCard
+          <AdminEmptyState
             title="No Chapters Yet"
-            description="Create the first chapter to start building scenes and dialogue."
+            description="Phase 1 keeps this area focused on browse-first navigation. Chapter creation and editing flows can expand in Phase 2."
           />
         ) : (
-          <div className="space-y-5">
+          <AdminCardGrid>
             {story.chapters.map((chapter) => (
-              <SectionCard
+              <AdminLinkCard
                 key={chapter.id}
+                href={`/admin/chapters/${chapter.id}/scenes`}
                 title={chapter.title}
-                description={`Slug: ${chapter.slug}`}
-              >
-                <div className="flex flex-wrap gap-2">
-                  <Pill>Order {chapter.orderIndex}</Pill>
-                  <Pill>{chapter.scenes.length} scenes</Pill>
-                </div>
-                <form action={updateChapterAction} className="space-y-4">
-                  <input type="hidden" name="chapterId" value={chapter.id} />
-                  <input type="hidden" name="returnTo" value="/admin/chapters" />
-                  <FormGrid>
-                    <Field htmlFor={`chapter-title-${chapter.id}`} label="Title">
-                      <TextInput
-                        id={`chapter-title-${chapter.id}`}
-                        name="title"
-                        defaultValue={chapter.title}
-                        required
-                      />
-                    </Field>
-                    <Field htmlFor={`chapter-slug-${chapter.id}`} label="Slug">
-                      <TextInput
-                        id={`chapter-slug-${chapter.id}`}
-                        name="slug"
-                        defaultValue={chapter.slug}
-                        required
-                      />
-                    </Field>
-                    <Field htmlFor={`chapter-order-${chapter.id}`} label="Order Index">
-                      <TextInput
-                        id={`chapter-order-${chapter.id}`}
-                        name="orderIndex"
-                        type="number"
-                        defaultValue={chapter.orderIndex}
-                        required
-                      />
-                    </Field>
-                  </FormGrid>
-                  <div className="flex flex-wrap justify-end gap-3">
-                    <Button asChild variant="outline">
-                      <Link href={`/admin/chapters/${chapter.id}`}>Manage Scenes</Link>
-                    </Button>
-                    <Button type="submit">Save Chapter</Button>
-                  </div>
-                </form>
-                <form action={deleteChapterAction} className="flex justify-end">
-                  <input type="hidden" name="chapterId" value={chapter.id} />
-                  <input type="hidden" name="returnTo" value="/admin/chapters" />
-                  <Button type="submit" variant="destructive">
-                    Delete Chapter
-                  </Button>
-                </form>
-              </SectionCard>
+                eyebrow={`Chapter ${chapter.orderIndex}`}
+                description={
+                  <p>
+                    {chapter.scenes.length === 1
+                      ? "1 scene"
+                      : `${chapter.scenes.length} scenes`}
+                  </p>
+                }
+                footer={
+                  <>
+                    <Pill>Order {chapter.orderIndex}</Pill>
+                    <Pill>{chapter.scenes.length} scenes</Pill>
+                  </>
+                }
+              />
             ))}
-          </div>
+          </AdminCardGrid>
         )}
+
+        {firstChapter ? (
+          <p className="text-sm text-slate-500">
+            Chapter settings live at{" "}
+            <Link
+              href={`/admin/chapters/${firstChapter.id}/settings`}
+              className="font-medium text-slate-700 underline"
+            >
+              /admin/chapters/[chapterId]/settings
+            </Link>
+            .
+          </p>
+        ) : null}
       </div>
     </AdminPageShell>
   );

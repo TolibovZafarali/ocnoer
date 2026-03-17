@@ -1,7 +1,7 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { redirect } from "next/navigation";
+import { redirect, unstable_rethrow } from "next/navigation";
 
 import { requireAdminSession } from "@/lib/auth/admin";
 import {
@@ -130,19 +130,22 @@ async function runAdminAction(input: {
   await requireAdminSession();
 
   const returnTo = getReturnTo(input.formData, input.fallbackPath);
+  let redirectPath: string;
 
   try {
-    const redirectPath = (await input.action()) ?? withStatus(
+    redirectPath = (await input.action()) ?? withStatus(
       returnTo,
       "success",
       input.successMessage
     );
 
     await revalidateStoryPaths([returnTo, redirectPath]);
-    redirect(redirectPath);
   } catch (error) {
-    redirect(withStatus(returnTo, "error", getErrorMessage(error)));
+    unstable_rethrow(error);
+    redirectPath = withStatus(returnTo, "error", getErrorMessage(error));
   }
+
+  redirect(redirectPath);
 }
 
 export async function createCharacterAction(formData: FormData) {
@@ -525,4 +528,3 @@ export async function deleteDialogueEntryAction(formData: FormData) {
     }
   });
 }
-

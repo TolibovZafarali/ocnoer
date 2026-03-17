@@ -20,6 +20,7 @@ import {
   deleteCharacterEmotion,
   deleteDialogueEntry,
   deleteScene,
+  getAdminStoryData,
   setDefaultCharacterEmotion,
   updateBackgroundImageAsset,
   updateBackgroundMusicTrack,
@@ -57,8 +58,13 @@ function getRequiredString(formData: FormData, key: string, label: string) {
   return String(value).trim();
 }
 
-function getRequiredInteger(formData: FormData, key: string, label: string) {
+function getOptionalInteger(formData: FormData, key: string, label: string) {
   const value = formData.get(key);
+
+  if (value == null || value === "") {
+    return null;
+  }
+
   const parsed = parseIntegerField(value, label);
 
   if (!parsed.ok) {
@@ -115,6 +121,107 @@ function getErrorMessage(error: unknown) {
   return "Unable to save content right now.";
 }
 
+function getNextOrderIndex(items: Array<{ orderIndex: number }>) {
+  return (
+    items.reduce((highest, item) => Math.max(highest, item.orderIndex), 0) + 1
+  );
+}
+
+async function resolveChapterOrderIndex(formData: FormData) {
+  const explicit = getOptionalInteger(formData, "orderIndex", "Chapter order");
+
+  if (explicit != null) {
+    return explicit;
+  }
+
+  const story = await getAdminStoryData();
+
+  return getNextOrderIndex(story.chapters);
+}
+
+async function resolveExistingChapterOrderIndex(chapterId: string) {
+  const story = await getAdminStoryData();
+  const chapter = story.chapters.find((item) => item.id === chapterId) ?? null;
+
+  if (!chapter) {
+    throw new StoryRepositoryError("Chapter not found.");
+  }
+
+  return chapter.orderIndex;
+}
+
+async function resolveSceneOrderIndex(formData: FormData, chapterId: string) {
+  const explicit = getOptionalInteger(formData, "orderIndex", "Scene order");
+
+  if (explicit != null) {
+    return explicit;
+  }
+
+  const story = await getAdminStoryData();
+  const chapter = story.chapters.find((item) => item.id === chapterId) ?? null;
+
+  if (!chapter) {
+    throw new StoryRepositoryError("Chapter not found.");
+  }
+
+  return getNextOrderIndex(chapter.scenes);
+}
+
+async function resolveExistingSceneOrderIndex(
+  chapterId: string,
+  sceneId: string
+) {
+  const story = await getAdminStoryData();
+  const chapter = story.chapters.find((item) => item.id === chapterId) ?? null;
+  const scene = chapter?.scenes.find((item) => item.id === sceneId) ?? null;
+
+  if (!chapter || !scene) {
+    throw new StoryRepositoryError("Scene not found.");
+  }
+
+  return scene.orderIndex;
+}
+
+async function resolveDialogueOrderIndex(
+  formData: FormData,
+  chapterId: string,
+  sceneId: string
+) {
+  const explicit = getOptionalInteger(formData, "orderIndex", "Dialogue order");
+
+  if (explicit != null) {
+    return explicit;
+  }
+
+  const story = await getAdminStoryData();
+  const chapter = story.chapters.find((item) => item.id === chapterId) ?? null;
+  const scene = chapter?.scenes.find((item) => item.id === sceneId) ?? null;
+
+  if (!chapter || !scene) {
+    throw new StoryRepositoryError("Scene not found.");
+  }
+
+  return getNextOrderIndex(scene.dialogue);
+}
+
+async function resolveExistingDialogueOrderIndex(
+  chapterId: string,
+  sceneId: string,
+  dialogueEntryId: string
+) {
+  const story = await getAdminStoryData();
+  const chapter = story.chapters.find((item) => item.id === chapterId) ?? null;
+  const scene = chapter?.scenes.find((item) => item.id === sceneId) ?? null;
+  const entry =
+    scene?.dialogue.find((item) => item.id === dialogueEntryId) ?? null;
+
+  if (!chapter || !scene || !entry) {
+    throw new StoryRepositoryError("Dialogue entry not found.");
+  }
+
+  return entry.orderIndex;
+}
+
 async function revalidateStoryPaths(pathnames: string[]) {
   const uniquePathnames = [...new Set(["/admin", "/play", ...pathnames])];
 
@@ -158,14 +265,21 @@ export async function createCharacterAction(formData: FormData) {
     fallbackPath: "/admin/characters",
     successMessage: "Character created.",
     action: async () => {
-      await createCharacter({
-        name: getRequiredString(formData, "name", "Character name"),
-        slug: getRequiredString(formData, "slug", "Character slug"),
+      const name = getRequiredString(formData, "name", "Character name");
+      const character = await createCharacter({
+        name,
+        slug: getOptionalString(formData, "slug") ?? name,
         bio: getOptionalString(formData, "bio"),
         initialEmotionKey: getOptionalString(formData, "initialEmotionKey"),
         initialEmotionLabel: getOptionalString(formData, "initialEmotionLabel"),
         imageFile: getRequiredFile(formData, "imageFile", "Character image")
       });
+
+      return withStatus(
+        `/admin/characters/${character.id}`,
+        "success",
+        "Character created."
+      );
     }
   });
 }
@@ -176,12 +290,25 @@ export async function updateCharacterAction(formData: FormData) {
     fallbackPath: "/admin/characters",
     successMessage: "Character updated.",
     action: async () => {
+      const characterId = getRequiredString(
+        formData,
+        "characterId",
+        "Character id"
+      );
+      const name = getRequiredString(formData, "name", "Character name");
+
       await updateCharacter({
-        characterId: getRequiredString(formData, "characterId", "Character id"),
-        name: getRequiredString(formData, "name", "Character name"),
-        slug: getRequiredString(formData, "slug", "Character slug"),
+        characterId,
+        name,
+        slug: getOptionalString(formData, "slug") ?? name,
         bio: getOptionalString(formData, "bio")
       });
+
+      return withStatus(
+        `/admin/characters/${characterId}`,
+        "success",
+        "Character updated."
+      );
     }
   });
 }
@@ -205,8 +332,14 @@ export async function addCharacterEmotionAction(formData: FormData) {
     fallbackPath: "/admin/characters",
     successMessage: "Emotion added.",
     action: async () => {
+      const characterId = getRequiredString(
+        formData,
+        "characterId",
+        "Character id"
+      );
+
       await addCharacterEmotion({
-        characterId: getRequiredString(formData, "characterId", "Character id"),
+        characterId,
         emotionKey: getRequiredString(formData, "emotionKey", "Emotion key"),
         emotionLabel: getRequiredString(
           formData,
@@ -215,6 +348,12 @@ export async function addCharacterEmotionAction(formData: FormData) {
         ),
         imageFile: getRequiredFile(formData, "imageFile", "Emotion image")
       });
+
+      return withStatus(
+        `/admin/characters/${characterId}`,
+        "success",
+        "Emotion added."
+      );
     }
   });
 }
@@ -225,8 +364,14 @@ export async function updateCharacterEmotionAction(formData: FormData) {
     fallbackPath: "/admin/characters",
     successMessage: "Emotion updated.",
     action: async () => {
+      const characterId = getRequiredString(
+        formData,
+        "characterId",
+        "Character id"
+      );
+
       await updateCharacterEmotion({
-        characterId: getRequiredString(formData, "characterId", "Character id"),
+        characterId,
         emotionId: getRequiredString(formData, "emotionId", "Emotion id"),
         emotionKey: getRequiredString(formData, "emotionKey", "Emotion key"),
         emotionLabel: getRequiredString(
@@ -236,6 +381,12 @@ export async function updateCharacterEmotionAction(formData: FormData) {
         ),
         imageFile: getOptionalFile(formData, "imageFile")
       });
+
+      return withStatus(
+        `/admin/characters/${characterId}`,
+        "success",
+        "Emotion updated."
+      );
     }
   });
 }
@@ -246,10 +397,22 @@ export async function setDefaultCharacterEmotionAction(formData: FormData) {
     fallbackPath: "/admin/characters",
     successMessage: "Default emotion updated.",
     action: async () => {
+      const characterId = getRequiredString(
+        formData,
+        "characterId",
+        "Character id"
+      );
+
       await setDefaultCharacterEmotion({
-        characterId: getRequiredString(formData, "characterId", "Character id"),
+        characterId,
         emotionId: getRequiredString(formData, "emotionId", "Emotion id")
       });
+
+      return withStatus(
+        `/admin/characters/${characterId}`,
+        "success",
+        "Default emotion updated."
+      );
     }
   });
 }
@@ -260,10 +423,22 @@ export async function deleteCharacterEmotionAction(formData: FormData) {
     fallbackPath: "/admin/characters",
     successMessage: "Emotion deleted.",
     action: async () => {
+      const characterId = getRequiredString(
+        formData,
+        "characterId",
+        "Character id"
+      );
+
       await deleteCharacterEmotion({
-        characterId: getRequiredString(formData, "characterId", "Character id"),
+        characterId,
         emotionId: getRequiredString(formData, "emotionId", "Emotion id")
       });
+
+      return withStatus(
+        `/admin/characters/${characterId}`,
+        "success",
+        "Emotion deleted."
+      );
     }
   });
 }
@@ -274,9 +449,11 @@ export async function createBackgroundImageAssetAction(formData: FormData) {
     fallbackPath: "/admin/assets?tab=backgrounds",
     successMessage: "Background image created.",
     action: async () => {
+      const label = getRequiredString(formData, "label", "Asset label");
+
       await createBackgroundImageAsset({
-        label: getRequiredString(formData, "label", "Asset label"),
-        slug: getRequiredString(formData, "slug", "Asset slug"),
+        label,
+        slug: getOptionalString(formData, "slug") ?? label,
         altText: getOptionalString(formData, "altText"),
         file: getRequiredFile(formData, "file", "Background image")
       });
@@ -290,10 +467,12 @@ export async function updateBackgroundImageAssetAction(formData: FormData) {
     fallbackPath: "/admin/assets?tab=backgrounds",
     successMessage: "Background image updated.",
     action: async () => {
+      const label = getRequiredString(formData, "label", "Asset label");
+
       await updateBackgroundImageAsset({
         assetId: getRequiredString(formData, "assetId", "Asset id"),
-        label: getRequiredString(formData, "label", "Asset label"),
-        slug: getRequiredString(formData, "slug", "Asset slug"),
+        label,
+        slug: getOptionalString(formData, "slug") ?? label,
         altText: getOptionalString(formData, "altText"),
         file: getOptionalFile(formData, "file")
       });
@@ -320,9 +499,11 @@ export async function createBackgroundMusicTrackAction(formData: FormData) {
     fallbackPath: "/admin/assets?tab=music",
     successMessage: "Music track created.",
     action: async () => {
+      const label = getRequiredString(formData, "label", "Track label");
+
       await createBackgroundMusicTrack({
-        label: getRequiredString(formData, "label", "Track label"),
-        slug: getRequiredString(formData, "slug", "Track slug"),
+        label,
+        slug: getOptionalString(formData, "slug") ?? label,
         file: getRequiredFile(formData, "file", "Music file")
       });
     }
@@ -335,10 +516,12 @@ export async function updateBackgroundMusicTrackAction(formData: FormData) {
     fallbackPath: "/admin/assets?tab=music",
     successMessage: "Music track updated.",
     action: async () => {
+      const label = getRequiredString(formData, "label", "Track label");
+
       await updateBackgroundMusicTrack({
         assetId: getRequiredString(formData, "assetId", "Track id"),
-        label: getRequiredString(formData, "label", "Track label"),
-        slug: getRequiredString(formData, "slug", "Track slug"),
+        label,
+        slug: getOptionalString(formData, "slug") ?? label,
         file: getOptionalFile(formData, "file")
       });
     }
@@ -364,10 +547,11 @@ export async function createChapterAction(formData: FormData) {
     fallbackPath: "/admin/chapters",
     successMessage: "Chapter created.",
     action: async () => {
+      const title = getRequiredString(formData, "title", "Chapter title");
       const chapter = await createChapter({
-        title: getRequiredString(formData, "title", "Chapter title"),
-        slug: getRequiredString(formData, "slug", "Chapter slug"),
-        orderIndex: getRequiredInteger(formData, "orderIndex", "Chapter order")
+        title,
+        slug: getOptionalString(formData, "slug") ?? title,
+        orderIndex: await resolveChapterOrderIndex(formData)
       });
 
       return withStatus(
@@ -385,12 +569,23 @@ export async function updateChapterAction(formData: FormData) {
     fallbackPath: "/admin/chapters",
     successMessage: "Chapter updated.",
     action: async () => {
+      const chapterId = getRequiredString(formData, "chapterId", "Chapter id");
+      const title = getRequiredString(formData, "title", "Chapter title");
+
       await updateChapter({
-        chapterId: getRequiredString(formData, "chapterId", "Chapter id"),
-        title: getRequiredString(formData, "title", "Chapter title"),
-        slug: getRequiredString(formData, "slug", "Chapter slug"),
-        orderIndex: getRequiredInteger(formData, "orderIndex", "Chapter order")
+        chapterId,
+        title,
+        slug: getOptionalString(formData, "slug") ?? title,
+        orderIndex:
+          getOptionalInteger(formData, "orderIndex", "Chapter order") ??
+          (await resolveExistingChapterOrderIndex(chapterId))
       });
+
+      return withStatus(
+        `/admin/chapters/${chapterId}/settings`,
+        "success",
+        "Chapter updated."
+      );
     }
   });
 }
@@ -404,6 +599,7 @@ export async function deleteChapterAction(formData: FormData) {
       await deleteChapter(
         getRequiredString(formData, "chapterId", "Chapter id")
       );
+
       return withStatus("/admin/chapters", "success", "Chapter deleted.");
     }
   });
@@ -416,10 +612,11 @@ export async function createSceneAction(formData: FormData) {
     successMessage: "Scene created.",
     action: async () => {
       const chapterId = getRequiredString(formData, "chapterId", "Chapter id");
-      const scene = await createScene({
+
+      await createScene({
         chapterId,
         title: getRequiredString(formData, "title", "Scene title"),
-        orderIndex: getRequiredInteger(formData, "orderIndex", "Scene order"),
+        orderIndex: await resolveSceneOrderIndex(formData, chapterId),
         backgroundImageAssetId: getRequiredString(
           formData,
           "backgroundImageAssetId",
@@ -433,7 +630,7 @@ export async function createSceneAction(formData: FormData) {
       });
 
       return withStatus(
-        `/admin/chapters/${chapterId}/scenes/${scene.id}`,
+        `/admin/chapters/${chapterId}/scenes`,
         "success",
         "Scene created."
       );
@@ -447,11 +644,16 @@ export async function updateSceneAction(formData: FormData) {
     fallbackPath: "/admin/chapters",
     successMessage: "Scene updated.",
     action: async () => {
+      const chapterId = getRequiredString(formData, "chapterId", "Chapter id");
+      const sceneId = getRequiredString(formData, "sceneId", "Scene id");
+
       await updateScene({
-        chapterId: getRequiredString(formData, "chapterId", "Chapter id"),
-        sceneId: getRequiredString(formData, "sceneId", "Scene id"),
+        chapterId,
+        sceneId,
         title: getRequiredString(formData, "title", "Scene title"),
-        orderIndex: getRequiredInteger(formData, "orderIndex", "Scene order"),
+        orderIndex:
+          getOptionalInteger(formData, "orderIndex", "Scene order") ??
+          (await resolveExistingSceneOrderIndex(chapterId, sceneId)),
         backgroundImageAssetId: getRequiredString(
           formData,
           "backgroundImageAssetId",
@@ -463,6 +665,12 @@ export async function updateSceneAction(formData: FormData) {
         ),
         characterIds: getCharacterIds(formData)
       });
+
+      return withStatus(
+        `/admin/chapters/${chapterId}/scenes/${sceneId}`,
+        "success",
+        "Scene updated."
+      );
     }
   });
 }
@@ -495,13 +703,16 @@ export async function createDialogueEntryAction(formData: FormData) {
     fallbackPath: "/admin/chapters",
     successMessage: "Dialogue entry created.",
     action: async () => {
+      const chapterId = getRequiredString(formData, "chapterId", "Chapter id");
+      const sceneId = getRequiredString(formData, "sceneId", "Scene id");
+
       await createDialogueEntry({
-        chapterId: getRequiredString(formData, "chapterId", "Chapter id"),
-        sceneId: getRequiredString(formData, "sceneId", "Scene id"),
-        orderIndex: getRequiredInteger(
+        chapterId,
+        sceneId,
+        orderIndex: await resolveDialogueOrderIndex(
           formData,
-          "orderIndex",
-          "Dialogue order"
+          chapterId,
+          sceneId
         ),
         speakerType:
           getRequiredString(formData, "speakerType", "Speaker type") ===
@@ -512,6 +723,12 @@ export async function createDialogueEntryAction(formData: FormData) {
         emotionKey: getOptionalString(formData, "emotionKey"),
         text: getRequiredString(formData, "text", "Dialogue text")
       });
+
+      return withStatus(
+        `/admin/chapters/${chapterId}/scenes/${sceneId}`,
+        "success",
+        "Dialogue entry created."
+      );
     }
   });
 }
@@ -522,19 +739,25 @@ export async function updateDialogueEntryAction(formData: FormData) {
     fallbackPath: "/admin/chapters",
     successMessage: "Dialogue entry updated.",
     action: async () => {
+      const chapterId = getRequiredString(formData, "chapterId", "Chapter id");
+      const sceneId = getRequiredString(formData, "sceneId", "Scene id");
+      const dialogueEntryId = getRequiredString(
+        formData,
+        "dialogueEntryId",
+        "Dialogue entry id"
+      );
+
       await updateDialogueEntry({
-        chapterId: getRequiredString(formData, "chapterId", "Chapter id"),
-        sceneId: getRequiredString(formData, "sceneId", "Scene id"),
-        dialogueEntryId: getRequiredString(
-          formData,
-          "dialogueEntryId",
-          "Dialogue entry id"
-        ),
-        orderIndex: getRequiredInteger(
-          formData,
-          "orderIndex",
-          "Dialogue order"
-        ),
+        chapterId,
+        sceneId,
+        dialogueEntryId,
+        orderIndex:
+          getOptionalInteger(formData, "orderIndex", "Dialogue order") ??
+          (await resolveExistingDialogueOrderIndex(
+            chapterId,
+            sceneId,
+            dialogueEntryId
+          )),
         speakerType:
           getRequiredString(formData, "speakerType", "Speaker type") ===
           "character"
@@ -544,6 +767,12 @@ export async function updateDialogueEntryAction(formData: FormData) {
         emotionKey: getOptionalString(formData, "emotionKey"),
         text: getRequiredString(formData, "text", "Dialogue text")
       });
+
+      return withStatus(
+        `/admin/chapters/${chapterId}/scenes/${sceneId}`,
+        "success",
+        "Dialogue entry updated."
+      );
     }
   });
 }
@@ -554,15 +783,24 @@ export async function deleteDialogueEntryAction(formData: FormData) {
     fallbackPath: "/admin/chapters",
     successMessage: "Dialogue entry deleted.",
     action: async () => {
+      const chapterId = getRequiredString(formData, "chapterId", "Chapter id");
+      const sceneId = getRequiredString(formData, "sceneId", "Scene id");
+
       await deleteDialogueEntry({
-        chapterId: getRequiredString(formData, "chapterId", "Chapter id"),
-        sceneId: getRequiredString(formData, "sceneId", "Scene id"),
+        chapterId,
+        sceneId,
         dialogueEntryId: getRequiredString(
           formData,
           "dialogueEntryId",
           "Dialogue entry id"
         )
       });
+
+      return withStatus(
+        `/admin/chapters/${chapterId}/scenes/${sceneId}`,
+        "success",
+        "Dialogue entry deleted."
+      );
     }
   });
 }

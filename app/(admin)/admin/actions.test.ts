@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const requireAdminSessionMock = vi.fn();
 const createChapterMock = vi.fn();
+const getAdminStoryDataMock = vi.fn();
 const redirectMock = vi.fn((path: string) => {
   throw new Error(`REDIRECT:${path}`);
 });
@@ -37,6 +38,7 @@ vi.mock("@/lib/story/repository", () => ({
   deleteCharacterEmotion: vi.fn(),
   deleteDialogueEntry: vi.fn(),
   deleteScene: vi.fn(),
+  getAdminStoryData: getAdminStoryDataMock,
   setDefaultCharacterEmotion: vi.fn(),
   updateBackgroundImageAsset: vi.fn(),
   updateBackgroundMusicTrack: vi.fn(),
@@ -54,15 +56,19 @@ describe("createChapterAction", () => {
     vi.clearAllMocks();
     requireAdminSessionMock.mockResolvedValue(undefined);
     createChapterMock.mockResolvedValue({ id: "chapter_123" });
+    getAdminStoryDataMock.mockResolvedValue({
+      chapters: [
+        { id: "chapter_1", orderIndex: 2 },
+        { id: "chapter_2", orderIndex: 5 }
+      ]
+    });
     unstableRethrowMock.mockImplementation(() => {});
   });
 
-  it("redirects to the new chapter with a success status after saving", async () => {
+  it("derives slug and next order, then redirects to the new chapter scenes page", async () => {
     const formData = new FormData();
     formData.set("returnTo", "/admin/chapters");
     formData.set("title", "Chapter One");
-    formData.set("slug", "chapter-one");
-    formData.set("orderIndex", "1");
 
     await expect(createChapterAction(formData)).rejects.toThrow(
       "REDIRECT:/admin/chapters/chapter_123/scenes?status=success&message=Chapter+created."
@@ -70,8 +76,8 @@ describe("createChapterAction", () => {
 
     expect(createChapterMock).toHaveBeenCalledWith({
       title: "Chapter One",
-      slug: "chapter-one",
-      orderIndex: 1
+      slug: "Chapter One",
+      orderIndex: 6
     });
     expect(revalidatePathMock).toHaveBeenCalledWith("/admin/chapters");
     expect(revalidatePathMock).toHaveBeenCalledWith(

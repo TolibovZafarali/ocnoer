@@ -1,5 +1,6 @@
 import Link from "next/link";
 
+import { createChapterAction } from "@/app/(admin)/admin/actions";
 import {
   AdminCardGrid,
   AdminEmptyState,
@@ -7,10 +8,14 @@ import {
 } from "@/components/admin/cards";
 import {
   AdminPageShell,
+  Field,
   Notice,
   PageHeader,
-  Pill
+  Pill,
+  SectionCard,
+  TextInput
 } from "@/components/admin/forms";
+import { Button } from "@/components/ui/button";
 import { getAdminStoryData } from "@/lib/story/repository";
 
 type ChaptersPageProps = {
@@ -37,7 +42,7 @@ export default async function ChaptersPage({
       <div className="space-y-6">
         <PageHeader
           title="Chapters"
-          description="Browse the chapter list and drill into each chapter's ordered scene flow."
+          description="Create a chapter from its title, then drill straight into that chapter's ordered scene flow."
           actions={
             <p className="text-sm text-slate-500">
               Main destination:{" "}
@@ -53,10 +58,35 @@ export default async function ChaptersPage({
           <Notice kind="error">{message}</Notice>
         ) : null}
 
+        <SectionCard
+          title="Create Chapter"
+          description="Enter the chapter title. The slug and order are derived automatically."
+        >
+          <form action={createChapterAction} className="space-y-4">
+            <input type="hidden" name="returnTo" value="/admin/chapters" />
+            <Field
+              label="Chapter Title"
+              htmlFor="chapter-title"
+              hint="New chapters redirect to their scenes page after save."
+            >
+              <TextInput
+                id="chapter-title"
+                name="title"
+                placeholder="Chapter 1: Arrival"
+                required
+              />
+            </Field>
+
+            <div className="flex justify-end">
+              <Button type="submit">Create Chapter</Button>
+            </div>
+          </form>
+        </SectionCard>
+
         {story.chapters.length === 0 ? (
           <AdminEmptyState
             title="No Chapters Yet"
-            description="Phase 1 keeps this area focused on browse-first navigation. Chapter creation and editing flows can expand in Phase 2."
+            description="Create the first chapter above to start the authoring flow."
           />
         ) : (
           <AdminCardGrid>

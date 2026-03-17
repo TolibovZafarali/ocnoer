@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { createSceneAction } from "@/app/(admin)/admin/actions";
 import {
   AdminCardGrid,
   AdminEmptyState,
@@ -10,9 +11,13 @@ import {
 } from "@/components/admin/cards";
 import {
   AdminPageShell,
+  Field,
   Notice,
   PageHeader,
-  Pill
+  Pill,
+  SectionCard,
+  SelectInput,
+  TextInput
 } from "@/components/admin/forms";
 import { Button } from "@/components/ui/button";
 import { getAdminStoryData } from "@/lib/story/repository";
@@ -50,13 +55,15 @@ export default async function ChapterScenesPage({
 
   const status = getParam(query.status);
   const message = getParam(query.message);
+  const returnTo = `/admin/chapters/${chapter.id}/scenes`;
+  const sceneCreateBlocked = story.backgroundImages.length === 0;
 
   return (
     <AdminPageShell>
       <div className="space-y-6">
         <PageHeader
           title={chapter.title}
-          description="This is the primary chapter destination. Scenes stay ordered here, while chapter settings live on their own route."
+          description="This is the main chapter destination. Create scenes here, then drill into each scene for dialogue and scene-level editing."
           actions={
             <div className="flex flex-wrap gap-3">
               <Button asChild variant="outline">
@@ -78,10 +85,122 @@ export default async function ChapterScenesPage({
           <Notice kind="error">{message}</Notice>
         ) : null}
 
+        <SectionCard
+          title="Create Scene"
+          description="Add a scene to this chapter. Background image is required; music and character pool are optional."
+        >
+          {sceneCreateBlocked ? (
+            <Notice kind="error">
+              Scene creation is blocked until at least one background image
+              asset exists.
+            </Notice>
+          ) : null}
+
+          <form action={createSceneAction} className="space-y-4">
+            <input type="hidden" name="chapterId" value={chapter.id} />
+            <input type="hidden" name="returnTo" value={returnTo} />
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Field label="Scene Title" htmlFor="scene-title">
+                <TextInput
+                  id="scene-title"
+                  name="title"
+                  placeholder="Campfire at Dusk"
+                  required
+                />
+              </Field>
+
+              <Field
+                label="Background Image"
+                htmlFor="background-image-asset"
+                hint="Required for every scene."
+              >
+                <SelectInput
+                  id="background-image-asset"
+                  name="backgroundImageAssetId"
+                  defaultValue=""
+                  required
+                  disabled={sceneCreateBlocked}
+                >
+                  <option value="" disabled>
+                    Select a background image
+                  </option>
+                  {story.backgroundImages.map((asset) => (
+                    <option key={asset.id} value={asset.id}>
+                      {asset.label}
+                    </option>
+                  ))}
+                </SelectInput>
+              </Field>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Field
+                label="Background Music"
+                htmlFor="background-music-asset"
+                hint="Optional."
+              >
+                <SelectInput
+                  id="background-music-asset"
+                  name="backgroundMusicAssetId"
+                  defaultValue=""
+                  disabled={sceneCreateBlocked}
+                >
+                  <option value="">No music</option>
+                  {story.backgroundMusicTracks.map((asset) => (
+                    <option key={asset.id} value={asset.id}>
+                      {asset.label}
+                    </option>
+                  ))}
+                </SelectInput>
+              </Field>
+
+              <Field
+                label="Scene Characters"
+                htmlFor="scene-character-pool"
+                hint="Selected characters are available as dialogue speakers in this scene."
+              >
+                <div
+                  id="scene-character-pool"
+                  className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2"
+                >
+                  {story.characters.length === 0 ? (
+                    <p className="text-sm text-slate-500">
+                      No characters yet. Scene dialogue will be narrator-only
+                      until characters are created.
+                    </p>
+                  ) : (
+                    story.characters.map((character) => (
+                      <label
+                        key={character.id}
+                        className="flex items-center gap-2 text-sm text-slate-700"
+                      >
+                        <input
+                          type="checkbox"
+                          name="characterIds"
+                          value={character.id}
+                          className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                        />
+                        <span>{character.name}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </Field>
+            </div>
+
+            <div className="flex justify-end">
+              <Button type="submit" disabled={sceneCreateBlocked}>
+                Create Scene
+              </Button>
+            </div>
+          </form>
+        </SectionCard>
+
         {chapter.scenes.length === 0 ? (
           <AdminEmptyState
             title="No Scenes Yet"
-            description="Phase 1 only establishes the chapter-to-scenes drill-down. Scene creation and editing flows can land in Phase 2."
+            description="Create the first scene above to begin the chapter flow."
           />
         ) : (
           <AdminCardGrid>

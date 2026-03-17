@@ -1,5 +1,6 @@
 /* eslint-disable @next/next/no-img-element */
 
+import { createCharacterAction } from "@/app/(admin)/admin/actions";
 import {
   AdminCardGrid,
   AdminEmptyState,
@@ -7,10 +8,15 @@ import {
 } from "@/components/admin/cards";
 import {
   AdminPageShell,
+  Field,
   Notice,
   PageHeader,
-  Pill
+  Pill,
+  SectionCard,
+  TextArea,
+  TextInput
 } from "@/components/admin/forms";
+import { Button } from "@/components/ui/button";
 import { getAdminStoryData } from "@/lib/story/repository";
 import { toPublicStorageUrl } from "@/lib/story/runtime";
 import { getSupabaseEnv } from "@/lib/supabase/env";
@@ -39,7 +45,7 @@ export default async function CharactersPage({
       <div className="space-y-6">
         <PageHeader
           title="Characters"
-          description="Browse the cast first, then drill into a single character to inspect emotion variants."
+          description="Create characters with an initial default emotion, then drill into a single character to manage its emotion variants."
         />
 
         {status === "success" && message ? (
@@ -49,10 +55,62 @@ export default async function CharactersPage({
           <Notice kind="error">{message}</Notice>
         ) : null}
 
+        <SectionCard
+          title="Create Character"
+          description="Name, optional bio, and the first emotion image are enough to get a character into the authoring flow."
+        >
+          <form
+            action={createCharacterAction}
+            className="space-y-4"
+            encType="multipart/form-data"
+          >
+            <input type="hidden" name="returnTo" value="/admin/characters" />
+            <input type="hidden" name="initialEmotionKey" value="default" />
+            <input type="hidden" name="initialEmotionLabel" value="Default" />
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <Field label="Character Name" htmlFor="character-name">
+                <TextInput
+                  id="character-name"
+                  name="name"
+                  placeholder="Nora"
+                  required
+                />
+              </Field>
+
+              <Field
+                label="Default Emotion Image"
+                htmlFor="character-image"
+                hint="The first uploaded image becomes the default emotion."
+              >
+                <TextInput
+                  id="character-image"
+                  name="imageFile"
+                  type="file"
+                  accept="image/*"
+                  required
+                />
+              </Field>
+            </div>
+
+            <Field label="Bio" htmlFor="character-bio" hint="Optional.">
+              <TextArea
+                id="character-bio"
+                name="bio"
+                placeholder="Write a short character summary."
+              />
+            </Field>
+
+            <div className="flex justify-end">
+              <Button type="submit">Create Character</Button>
+            </div>
+          </form>
+        </SectionCard>
+
         {story.characters.length === 0 ? (
           <AdminEmptyState
             title="No Characters Yet"
-            description="Phase 1 keeps the character area focused on navigation and visual structure. Creation and editing flows can expand in Phase 2."
+            description="Create the first character above to populate the cast."
           />
         ) : (
           <AdminCardGrid>

@@ -95,23 +95,26 @@ export function DialogueEntryForm(props: DialogueEntryFormProps) {
         />
       ) : null}
 
-      <div className="grid gap-4 md:grid-cols-[140px_1fr_1fr]">
-        <div className="space-y-2">
-          <label className="text-sm font-medium text-slate-800" htmlFor="orderIndex">
-            Order
-          </label>
-          <input
-            id="orderIndex"
-            name="orderIndex"
-            type="number"
-            defaultValue={props.initial?.orderIndex ?? 1}
-            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none ring-slate-200 transition focus:ring-2"
-            required
-          />
-        </div>
+      {props.initial?.orderIndex != null ? (
+        <input
+          type="hidden"
+          name="orderIndex"
+          value={props.initial.orderIndex}
+        />
+      ) : null}
 
+      <div
+        className={`grid gap-4 ${
+          speakerType === "character"
+            ? "md:grid-cols-[140px_1fr]"
+            : "md:grid-cols-[180px_1fr]"
+        }`}
+      >
         <div className="space-y-2">
-          <label className="text-sm font-medium text-slate-800" htmlFor="speakerType">
+          <label
+            className="text-sm font-medium text-slate-800"
+            htmlFor="speakerType"
+          >
             Speaker
           </label>
           <select
@@ -132,7 +135,10 @@ export function DialogueEntryForm(props: DialogueEntryFormProps) {
 
         {speakerType === "character" ? (
           <div className="space-y-2">
-            <label className="text-sm font-medium text-slate-800" htmlFor="characterId">
+            <label
+              className="text-sm font-medium text-slate-800"
+              htmlFor="characterId"
+            >
               Scene Character
             </label>
             <select
@@ -157,7 +163,10 @@ export function DialogueEntryForm(props: DialogueEntryFormProps) {
 
       {speakerType === "character" ? (
         <div className="space-y-2">
-          <label className="text-sm font-medium text-slate-800" htmlFor="emotionKey">
+          <label
+            className="text-sm font-medium text-slate-800"
+            htmlFor="emotionKey"
+          >
             Emotion
           </label>
           <select
@@ -199,4 +208,3 @@ export function DialogueEntryForm(props: DialogueEntryFormProps) {
     </form>
   );
 }
-

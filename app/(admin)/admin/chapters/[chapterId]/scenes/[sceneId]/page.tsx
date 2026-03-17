@@ -3,16 +3,26 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import {
+  createDialogueEntryAction,
+  updateSceneAction
+} from "@/app/(admin)/admin/actions";
 import { AdminCard, AdminEmptyState } from "@/components/admin/cards";
+import { DialogueEntryForm } from "@/components/admin/dialogue-entry-form";
 import {
   AdminPageShell,
+  Field,
+  Notice,
   PageHeader,
   Pill,
-  SectionCard
+  SectionCard,
+  SelectInput,
+  TextInput
 } from "@/components/admin/forms";
 import { Button } from "@/components/ui/button";
 import { getAdminStoryData } from "@/lib/story/repository";
 import { toPublicStorageUrl } from "@/lib/story/runtime";
+import type { CharacterDefinition } from "@/lib/story/types";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 
 type SceneDetailPageProps = {
@@ -20,19 +30,28 @@ type SceneDetailPageProps = {
     chapterId: string;
     sceneId: string;
   }>;
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
 
 function getDialoguePreview(text: string) {
   return text.length > 220 ? `${text.slice(0, 217).trimEnd()}...` : text;
 }
 
+function getParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
+}
+
 export default async function SceneDetailPage({
-  params
+  params,
+  searchParams
 }: SceneDetailPageProps) {
   const [{ chapterId, sceneId }, story] = await Promise.all([
     params,
     getAdminStoryData()
   ]);
+  const query: Record<string, string | string[] | undefined> = searchParams
+    ? await searchParams
+    : {};
   const { url: supabaseUrl } = getSupabaseEnv();
   const chapter = story.chapters.find((item) => item.id === chapterId) ?? null;
   const scene = chapter?.scenes.find((item) => item.id === sceneId) ?? null;
@@ -41,6 +60,9 @@ export default async function SceneDetailPage({
     notFound();
   }
 
+  const status = getParam(query.status);
+  const message = getParam(query.message);
+  const returnTo = `/admin/chapters/${chapter.id}/scenes/${scene.id}`;
   const backgroundImage =
     story.backgroundImages.find(
       (asset) => asset.id === scene.backgroundImageAssetId
@@ -49,6 +71,20 @@ export default async function SceneDetailPage({
     supabaseUrl,
     backgroundImage?.filePath ?? null
   );
+  const sceneCharacters = scene.characterIds
+    .map(
+      (characterId) =>
+        story.characters.find((item) => item.id === characterId) ?? null
+    )
+    .filter((character): character is CharacterDefinition => character !== null)
+    .map((character) => ({
+      id: character.id,
+      name: character.name,
+      emotions: character.emotions.map((emotion) => ({
+        key: emotion.key,
+        label: emotion.label
+      }))
+    }));
 
   return (
     <AdminPageShell>
@@ -72,9 +108,16 @@ export default async function SceneDetailPage({
           }
         />
 
+        {status === "success" && message ? (
+          <Notice kind="success">{message}</Notice>
+        ) : null}
+        {status === "error" && message ? (
+          <Notice kind="error">{message}</Notice>
+        ) : null}
+
         <SectionCard
-          title="Scene Summary"
-          description="Phase 1 keeps the detail view focused on reading the dialogue sequence in order."
+          title="Scene Settings"
+          description="Keep scene metadata here while dialogue authoring stays below."
         >
           <div className="grid gap-6 lg:grid-cols-[1.1fr_0.9fr]">
             <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-100">
@@ -94,30 +137,124 @@ export default async function SceneDetailPage({
                 </div>
               )}
             </div>
-            <div className="space-y-4">
+
+            <form action={updateSceneAction} className="space-y-4">
+              <input type="hidden" name="chapterId" value={chapter.id} />
+              <input type="hidden" name="sceneId" value={scene.id} />
+              <input type="hidden" name="orderIndex" value={scene.orderIndex} />
+              <input type="hidden" name="returnTo" value={returnTo} />
+
               <div className="flex flex-wrap gap-2">
                 <Pill>Order {scene.orderIndex}</Pill>
                 <Pill>{scene.dialogue.length} dialogue rows</Pill>
                 <Pill>{scene.characterIds.length} characters in cast</Pill>
               </div>
-              <div className="space-y-2 text-sm text-slate-600">
-                <p>
-                  <span className="font-medium text-slate-800">
-                    Background:
-                  </span>{" "}
-                  {backgroundImage?.label ?? "Missing background reference"}
-                </p>
-                <p>
-                  <span className="font-medium text-slate-800">Music:</span>{" "}
-                  {scene.backgroundMusicAssetId
-                    ? (story.backgroundMusicTracks.find(
-                        (asset) => asset.id === scene.backgroundMusicAssetId
-                      )?.label ?? "Missing music reference")
-                    : "No music assigned"}
-                </p>
+
+              <Field label="Scene Title" htmlFor="scene-title">
+                <TextInput
+                  id="scene-title"
+                  name="title"
+                  defaultValue={scene.title}
+                  required
+                />
+              </Field>
+
+              <Field label="Background Image" htmlFor="scene-background-image">
+                <SelectInput
+                  id="scene-background-image"
+                  name="backgroundImageAssetId"
+                  defaultValue={scene.backgroundImageAssetId}
+                  required
+                >
+                  {story.backgroundImages.map((asset) => (
+                    <option key={asset.id} value={asset.id}>
+                      {asset.label}
+                    </option>
+                  ))}
+                </SelectInput>
+              </Field>
+
+              <Field
+                label="Background Music"
+                htmlFor="scene-background-music"
+                hint="Optional."
+              >
+                <SelectInput
+                  id="scene-background-music"
+                  name="backgroundMusicAssetId"
+                  defaultValue={scene.backgroundMusicAssetId ?? ""}
+                >
+                  <option value="">No music</option>
+                  {story.backgroundMusicTracks.map((asset) => (
+                    <option key={asset.id} value={asset.id}>
+                      {asset.label}
+                    </option>
+                  ))}
+                </SelectInput>
+              </Field>
+
+              <Field
+                label="Scene Characters"
+                htmlFor="scene-character-pool"
+                hint="These characters become available speakers for dialogue entries."
+              >
+                <div
+                  id="scene-character-pool"
+                  className="grid gap-2 rounded-xl border border-slate-200 bg-slate-50 p-3 sm:grid-cols-2"
+                >
+                  {story.characters.length === 0 ? (
+                    <p className="text-sm text-slate-500">
+                      No characters exist yet. Dialogue remains narrator-only
+                      until characters are created.
+                    </p>
+                  ) : (
+                    story.characters.map((character) => (
+                      <label
+                        key={character.id}
+                        className="flex items-center gap-2 text-sm text-slate-700"
+                      >
+                        <input
+                          type="checkbox"
+                          name="characterIds"
+                          value={character.id}
+                          defaultChecked={scene.characterIds.includes(
+                            character.id
+                          )}
+                          className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                        />
+                        <span>{character.name}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
+              </Field>
+
+              <div className="flex justify-end">
+                <Button type="submit">Save Scene</Button>
               </div>
-            </div>
+            </form>
           </div>
+        </SectionCard>
+
+        <SectionCard
+          title="Create Dialogue Entry"
+          description="Add the next dialogue row. Narrator entries always work, and character entries only use the scene's current cast."
+        >
+          {sceneCharacters.length === 0 ? (
+            <p className="text-sm text-slate-500">
+              No scene characters are selected, so new dialogue entries will be
+              narrator-only until the cast is expanded above.
+            </p>
+          ) : null}
+
+          <DialogueEntryForm
+            action={createDialogueEntryAction}
+            chapterId={chapter.id}
+            sceneId={scene.id}
+            returnTo={returnTo}
+            submitLabel="Add Dialogue Entry"
+            sceneCharacters={sceneCharacters}
+          />
         </SectionCard>
 
         <section className="space-y-4">
@@ -132,7 +269,7 @@ export default async function SceneDetailPage({
           {scene.dialogue.length === 0 ? (
             <AdminEmptyState
               title="No Dialogue Yet"
-              description="Phase 2 can reintroduce authoring controls here. For now this detail page is a read-oriented card view."
+              description="Create the first dialogue entry above."
             />
           ) : (
             <div className="space-y-4">

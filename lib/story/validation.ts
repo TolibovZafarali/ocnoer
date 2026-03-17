@@ -1,5 +1,3 @@
-import { DialogueKind } from "@prisma/client";
-
 export type ValidationResult =
   | {
       ok: true;
@@ -46,23 +44,25 @@ export function parseIntegerField(
   };
 }
 
-export function validateDialogueRules(input: {
-  kind: DialogueKind;
-  characterId: string | null;
-}): ValidationResult {
-  if (input.kind === DialogueKind.player_prompt && input.characterId) {
+export function validateOptionalFile(
+  value: unknown
+): { ok: true; file: File | null } | { ok: false; message: string } {
+  if (value == null) {
     return {
-      ok: false,
-      message: "Player prompt entries cannot have a character assignment."
+      ok: true,
+      file: null
     };
   }
 
-  if (input.kind === DialogueKind.speech && !input.characterId) {
+  if (!(value instanceof File) || value.size === 0) {
     return {
-      ok: false,
-      message: "Speech entries require a character assignment."
+      ok: true,
+      file: null
     };
   }
 
-  return { ok: true };
+  return {
+    ok: true,
+    file: value
+  };
 }

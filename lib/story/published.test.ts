@@ -1,97 +1,132 @@
-import { DialogueKind } from "@prisma/client";
 import { describe, expect, it } from "vitest";
 
-import {
-  compilePublishedStory,
-  getManifestChapterById,
-  resolvePromptContext,
-  validateStoryForPublish
-} from "@/lib/story/published";
+import { compileRuntimeStory } from "@/lib/story/published";
+import type { StoryAuthoringSnapshot } from "@/lib/story/types";
 
-const storyGraphFixture = {
-  chapters: [
+const snapshot: StoryAuthoringSnapshot = {
+  characters: [
     {
-      publicId: "chapter-public-1",
-      title: "Chapter 1",
-      slug: "chapter-1",
-      orderIndex: 1,
-      imageAsset: {
-        storagePath: "chapters/ch1.jpg"
-      },
-      scenes: [
+      id: "character_ocnoer",
+      name: "Ocnoer",
+      slug: "ocnoer",
+      bio: null,
+      defaultEmotionKey: "calm",
+      emotions: [
         {
-          id: "scene-1-db",
-          publicId: "scene-public-1",
-          title: "Scene 1",
-          orderIndex: 1,
-          backgroundImageAsset: {
-            storagePath: "scenes/ch1/scene-1.jpg"
-          },
-          backgroundMusicAsset: {
-            storagePath: "music/ch1/theme.mp3"
-          },
-          characterAppearances: [
-            {
-              characterId: "character-db-1",
-              portrait: {
-                storagePath: "portraits/ocnoer/scene-1.png"
-              }
-            }
-          ],
-          dialogueEntries: [
-            {
-              publicId: "entry-public-1",
-              kind: DialogueKind.speech,
-              orderIndex: 1,
-              text: "The wind cuts through the pass.",
-              promptLabel: null,
-              character: {
-                id: "character-db-1",
-                publicId: "character-public-1",
-                name: "Ocnoer",
-                slug: "ocnoer",
-                portraits: [{ storagePath: "portraits/ocnoer/default.png" }]
-              }
-            },
-            {
-              publicId: "entry-public-2",
-              kind: DialogueKind.player_prompt,
-              orderIndex: 2,
-              text: "What do you say?",
-              promptLabel: "Answer",
-              character: null
-            }
-          ]
+          id: "emotion_calm",
+          key: "calm",
+          label: "Calm",
+          imagePath: "runtime/media/ocnoer-calm.png",
+          createdAt: "2026-03-16T00:00:00.000Z",
+          updatedAt: "2026-03-16T00:00:00.000Z"
+        },
+        {
+          id: "emotion_smile",
+          key: "smile",
+          label: "Smile",
+          imagePath: "runtime/media/ocnoer-smile.png",
+          createdAt: "2026-03-16T00:00:00.000Z",
+          updatedAt: "2026-03-16T00:00:00.000Z"
         }
-      ]
+      ],
+      createdAt: "2026-03-16T00:00:00.000Z",
+      updatedAt: "2026-03-16T00:00:00.000Z"
     },
     {
-      publicId: "chapter-public-2",
-      title: "Chapter 2",
-      slug: "chapter-2",
-      orderIndex: 2,
-      imageAsset: {
-        storagePath: "chapters/ch2.jpg"
-      },
+      id: "character_ren",
+      name: "Ren",
+      slug: "ren",
+      bio: null,
+      defaultEmotionKey: "neutral",
+      emotions: [
+        {
+          id: "emotion_neutral",
+          key: "neutral",
+          label: "Neutral",
+          imagePath: "runtime/media/ren-neutral.png",
+          createdAt: "2026-03-16T00:00:00.000Z",
+          updatedAt: "2026-03-16T00:00:00.000Z"
+        }
+      ],
+      createdAt: "2026-03-16T00:00:00.000Z",
+      updatedAt: "2026-03-16T00:00:00.000Z"
+    }
+  ],
+  backgroundImages: [
+    {
+      id: "bg_hall",
+      type: "background_image",
+      label: "Hall",
+      slug: "hall",
+      altText: "Stone hall",
+      filePath: "runtime/media/hall.png",
+      createdAt: "2026-03-16T00:00:00.000Z",
+      updatedAt: "2026-03-16T00:00:00.000Z"
+    }
+  ],
+  backgroundMusicTracks: [
+    {
+      id: "music_theme",
+      type: "background_music",
+      label: "Theme",
+      slug: "theme",
+      filePath: "runtime/media/theme.mp3",
+      createdAt: "2026-03-16T00:00:00.000Z",
+      updatedAt: "2026-03-16T00:00:00.000Z"
+    }
+  ],
+  chapters: [
+    {
+      id: "chapter_one",
+      title: "Chapter One",
+      slug: "chapter-one",
+      orderIndex: 1,
+      createdAt: "2026-03-16T00:00:00.000Z",
+      updatedAt: "2026-03-16T00:00:00.000Z",
       scenes: [
         {
-          id: "scene-2-db",
-          publicId: "scene-public-2",
-          title: "Scene 2",
+          id: "scene_one",
+          title: "Opening",
           orderIndex: 1,
-          backgroundImageAsset: {
-            storagePath: "scenes/ch2/scene-1.jpg"
-          },
-          backgroundMusicAsset: null,
-          characterAppearances: [],
-          dialogueEntries: [
+          backgroundImageAssetId: "bg_hall",
+          backgroundMusicAssetId: "music_theme",
+          characterIds: ["character_ocnoer", "character_ren"],
+          createdAt: "2026-03-16T00:00:00.000Z",
+          updatedAt: "2026-03-16T00:00:00.000Z",
+          dialogue: [
             {
-              publicId: "entry-public-3",
-              kind: DialogueKind.narrator,
+              id: "dialogue_narrator",
               orderIndex: 1,
-              text: "Dawn breaks.",
-              promptLabel: null,
-              character: null
+              text: "The hall is quiet.",
+              speaker: {
+                type: "narrator"
+              },
+              createdAt: "2026-03-16T00:00:00.000Z",
+              updatedAt: "2026-03-16T00:00:00.000Z"
+            },
+            {
+              id: "dialogue_ren",
+              orderIndex: 2,
+              text: "Are you ready?",
+              speaker: {
+                type: "character",
+                characterId: "character_ren",
+                emotionKey: "neutral"
+              },
+              createdAt: "2026-03-16T00:00:00.000Z",
+              updatedAt: "2026-03-16T00:00:00.000Z"
+            },
+            {
+              id: "dialogue_ocnoer",
+              orderIndex: 3,
+              text: "I am.",
+              speaker: {
+                type: "character",
+                characterId: "character_ocnoer",
+                emotionKey: "smile"
+              },
+              createdAt: "2026-03-16T00:00:00.000Z",
+              updatedAt: "2026-03-16T00:00:00.000Z"
             }
           ]
         }
@@ -100,162 +135,40 @@ const storyGraphFixture = {
   ]
 };
 
-describe("validateStoryForPublish", () => {
-  it("reports incomplete authoring content", () => {
-    expect(
-      validateStoryForPublish({
-        chapters: [
-          {
-            publicId: "chapter-public-1",
-            title: "Chapter 1",
-            slug: "chapter-1",
-            orderIndex: 1,
-            imageAsset: { storagePath: "chapters/ch1.jpg" },
-            scenes: [
-              {
-                id: "scene-db-1",
-                publicId: "scene-public-1",
-                title: null,
-                orderIndex: 1,
-                backgroundImageAsset: { storagePath: "" },
-                backgroundMusicAsset: null,
-                characterAppearances: [],
-                dialogueEntries: []
-              }
-            ]
-          }
-        ]
-      })
-    ).toEqual({
-      ok: false,
-      errors: [
-        'Scene 1 in "Chapter 1" is missing a background image.',
-        'Scene 1 in "Chapter 1" must include at least one dialogue entry.'
-      ]
+describe("compileRuntimeStory", () => {
+  it("embeds direct media paths and computes simple two-character stage data", () => {
+    const compiled = compileRuntimeStory({
+      snapshot,
+      bucket: "runtime",
+      runtimePrefix: "runtime",
+      generatedAt: "2026-03-16T01:00:00.000Z"
     });
+
+    expect(compiled.manifest.firstChapterId).toBe("chapter_one");
+    expect(compiled.manifest.chapters[0]?.bundlePath).toBe(
+      "runtime/runtime/chapters/chapter_one.json"
+    );
+
+    const bundle = compiled.chapterBundles[0]?.bundle;
+    const scene = bundle?.chapter.scenes[0];
+    const narratorEntry = scene?.dialogue[0];
+    const renEntry = scene?.dialogue[1];
+    const ocnoerEntry = scene?.dialogue[2];
+
+    expect(scene?.backgroundImage.filePath).toBe("runtime/media/hall.png");
+    expect(scene?.backgroundMusic?.filePath).toBe("runtime/media/theme.mp3");
+    expect(narratorEntry?.stage.left?.characterSlug).toBe("ocnoer");
+    expect(narratorEntry?.stage.right).toBeNull();
+    expect(renEntry?.stage.left?.characterSlug).toBe("ocnoer");
+    expect(renEntry?.stage.right?.characterSlug).toBe("ren");
+    expect(ocnoerEntry?.stage.left?.emotionKey).toBe("smile");
+    expect(ocnoerEntry?.stage.right?.characterSlug).toBe("ren");
+    expect(ocnoerEntry?.speaker.type).toBe("character");
+    if (ocnoerEntry?.speaker.type === "character") {
+      expect(ocnoerEntry.speaker.emotionImagePath).toBe(
+        "runtime/media/ocnoer-smile.png"
+      );
+    }
   });
 });
 
-describe("compilePublishedStory", () => {
-  it("produces a deterministic manifest and per-chapter bundles", () => {
-    const compiled = compilePublishedStory({
-      storyGraph: storyGraphFixture,
-      bucket: "runtime",
-      publishedVersionId: "version-2",
-      version: 2,
-      generatedAt: "2026-03-15T12:00:00.000Z",
-      storagePrefix: "story/v2"
-    });
-
-    expect(compiled.manifest).toEqual({
-      schemaVersion: 1,
-      publishedVersionId: "version-2",
-      version: 2,
-      firstChapterId: "chapter-public-1",
-      generatedAt: "2026-03-15T12:00:00.000Z",
-      chapters: [
-        {
-          id: "chapter-public-1",
-          slug: "chapter-1",
-          title: "Chapter 1",
-          orderIndex: 1,
-          bundleStoragePath: "runtime/story/v2/chapters/chapter-public-1.json"
-        },
-        {
-          id: "chapter-public-2",
-          slug: "chapter-2",
-          title: "Chapter 2",
-          orderIndex: 2,
-          bundleStoragePath: "runtime/story/v2/chapters/chapter-public-2.json"
-        }
-      ]
-    });
-
-    expect(compiled.manifestStoragePath).toBe("runtime/story/v2/manifest.json");
-    expect(compiled.chapterBundles).toHaveLength(2);
-    expect(compiled.chapterBundles[0]).toEqual({
-      chapterId: "chapter-public-1",
-      bundleStoragePath: "runtime/story/v2/chapters/chapter-public-1.json",
-      bundle: {
-        schemaVersion: 1,
-        publishedVersionId: "version-2",
-        version: 2,
-        generatedAt: "2026-03-15T12:00:00.000Z",
-        chapter: {
-          id: "chapter-public-1",
-          title: "Chapter 1",
-          slug: "chapter-1",
-          orderIndex: 1,
-          imagePath: "chapters/ch1.jpg",
-          scenes: [
-            {
-              id: "scene-public-1",
-              title: "Scene 1",
-              orderIndex: 1,
-              media: {
-                backgroundImagePath: "scenes/ch1/scene-1.jpg",
-                backgroundMusicPath: "music/ch1/theme.mp3"
-              },
-              entries: [
-                {
-                  id: "entry-public-1",
-                  kind: DialogueKind.speech,
-                  orderIndex: 1,
-                  text: "The wind cuts through the pass.",
-                  promptLabel: null,
-                  character: {
-                    id: "character-public-1",
-                    name: "Ocnoer",
-                    slug: "ocnoer",
-                    portraitPath: "portraits/ocnoer/scene-1.png"
-                  }
-                },
-                {
-                  id: "entry-public-2",
-                  kind: DialogueKind.player_prompt,
-                  orderIndex: 2,
-                  text: "What do you say?",
-                  promptLabel: "Answer",
-                  character: null
-                }
-              ]
-            }
-          ]
-        },
-        nextChapterId: "chapter-public-2"
-      }
-    });
-  });
-
-  it("resolves prompt context from a published chapter bundle", () => {
-    const compiled = compilePublishedStory({
-      storyGraph: storyGraphFixture,
-      bucket: "runtime",
-      publishedVersionId: "version-2",
-      version: 2,
-      generatedAt: "2026-03-15T12:00:00.000Z",
-      storagePrefix: "story/v2"
-    });
-    const chapter = getManifestChapterById(compiled.manifest, "chapter-public-1");
-
-    expect(chapter).not.toBeNull();
-    expect(
-      resolvePromptContext(
-        compiled.chapterBundles[0].bundle,
-        "scene-public-1",
-        "entry-public-2"
-      )
-    ).toEqual({
-      chapterPublicId: "chapter-public-1",
-      chapterTitle: "Chapter 1",
-      chapterSlug: "chapter-1",
-      chapterOrderIndex: 1,
-      scenePublicId: "scene-public-1",
-      sceneTitle: "Scene 1",
-      sceneOrderIndex: 1,
-      dialogueEntryPublicId: "entry-public-2",
-      promptLabel: "Answer",
-      promptText: "What do you say?"
-    });
-  });
-});

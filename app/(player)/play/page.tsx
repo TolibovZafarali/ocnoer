@@ -1,76 +1,37 @@
-import { signOutAction } from "@/app/actions/auth";
-import { Button } from "@/components/ui/button";
-import { createServerSupabaseClient } from "@/lib/supabase/server";
-import { getSupabaseEnv } from "@/lib/supabase/env";
+import Link from "next/link";
+
 import { PlayerStoryReader } from "@/app/(player)/play/player-story-reader";
-import {
-  PUBLISHED_RUNTIME_SCHEMA_UNAVAILABLE_MESSAGE
-} from "@/lib/story/repository";
-import {
-  getPlayerRuntimeBootstrap,
-  PublishedRuntimeError
-} from "@/lib/story/runtime";
+import { Button } from "@/components/ui/button";
+import { getRuntimeBootstrapConfig } from "@/lib/story/runtime";
 
-export default async function PlayerPlayPage() {
-  const supabase = await createServerSupabaseClient();
-  const { data } = await supabase.auth.getUser();
-  const userEmail = data.user?.email ?? null;
-  let runtime = null;
-  let runtimeMessage: string | null = null;
-
-  if (userEmail) {
-    try {
-      runtime = await getPlayerRuntimeBootstrap(userEmail);
-    } catch (error) {
-      if (
-        error instanceof PublishedRuntimeError &&
-        error.message === PUBLISHED_RUNTIME_SCHEMA_UNAVAILABLE_MESSAGE
-      ) {
-        runtimeMessage = error.message;
-      } else {
-        throw error;
-      }
-    }
-  }
-
-  const { url: supabaseUrl } = getSupabaseEnv();
+export default function PlayerPlayPage() {
+  const runtime = getRuntimeBootstrapConfig();
 
   return (
-    <main className="mx-auto w-full max-w-6xl px-6 py-8">
-      <div className="flex items-start justify-between gap-4">
+    <main className="min-h-screen bg-[linear-gradient(180deg,#0f172a_0%,#1e293b_100%)] text-slate-50">
+      <div className="mx-auto flex w-full max-w-7xl items-center justify-between px-6 py-6">
         <div>
-          <h1 className="text-3xl font-semibold text-slate-900">Story Reader</h1>
-          <p className="mt-3 text-slate-700">
-            Read the published story with local-first progress.
+          <p className="text-xs font-medium uppercase tracking-[0.24em] text-slate-400">
+            Runtime Player
           </p>
+          <h1 className="mt-2 text-3xl font-semibold tracking-tight">Ocnoer</h1>
         </div>
-        <form action={signOutAction}>
-          <Button type="submit" variant="outline">
-            Sign out
+        <div className="flex gap-3">
+          <Button asChild variant="outline">
+            <Link href="/">Home</Link>
           </Button>
-        </form>
+          <Button asChild>
+            <Link href="/admin/login">Admin</Link>
+          </Button>
+        </div>
       </div>
 
-      <div className="mt-6">
-        {runtime ? (
-          <PlayerStoryReader
-            initialBundle={runtime.initialBundle}
-            initialServerCheckpoint={runtime.serverCheckpoint}
-            manifest={runtime.manifest}
-            progressStorageKey={`ocnoer:reading-progress:${runtime.userId}`}
-            publishedVersionId={runtime.pinnedVersionId}
-            supabaseUrl={supabaseUrl}
-          />
-        ) : (
-          <section className="rounded-xl border border-slate-200 bg-white p-6 text-slate-900 shadow-sm">
-            <h2 className="text-xl font-semibold">No published story available</h2>
-            <p className="mt-2 text-sm text-slate-700">
-              {runtimeMessage ??
-                "Publish a story version in admin before opening the player reader."}
-            </p>
-          </section>
-        )}
-      </div>
+      <PlayerStoryReader
+        manifestPath={runtime.manifestPath}
+        progressStorageKey="ocnoer:player-progress"
+        supabaseUrl={runtime.supabaseUrl}
+      />
     </main>
   );
 }
+

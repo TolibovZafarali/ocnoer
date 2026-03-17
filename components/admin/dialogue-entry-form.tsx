@@ -1,0 +1,202 @@
+"use client";
+
+import { useEffect, useMemo, useState } from "react";
+import { useFormStatus } from "react-dom";
+
+import { Button } from "@/components/ui/button";
+
+type SceneCharacterOption = {
+  id: string;
+  name: string;
+  emotions: Array<{
+    key: string;
+    label: string;
+  }>;
+};
+
+type DialogueEntryFormProps = {
+  action: (formData: FormData) => void | Promise<void>;
+  chapterId: string;
+  sceneId: string;
+  returnTo: string;
+  submitLabel: string;
+  sceneCharacters: SceneCharacterOption[];
+  initial?: {
+    dialogueEntryId?: string;
+    orderIndex: number;
+    text: string;
+    speakerType: "narrator" | "character";
+    characterId: string;
+    emotionKey: string;
+  };
+};
+
+function SubmitButton(props: { label: string }) {
+  const { pending } = useFormStatus();
+
+  return (
+    <Button type="submit" disabled={pending}>
+      {pending ? "Saving..." : props.label}
+    </Button>
+  );
+}
+
+export function DialogueEntryForm(props: DialogueEntryFormProps) {
+  const firstCharacter = props.sceneCharacters[0] ?? null;
+  const [speakerType, setSpeakerType] = useState<"narrator" | "character">(
+    props.initial?.speakerType ?? "narrator"
+  );
+  const [characterId, setCharacterId] = useState(
+    props.initial?.characterId || firstCharacter?.id || ""
+  );
+  const character = useMemo(
+    () => props.sceneCharacters.find((item) => item.id === characterId) ?? null,
+    [characterId, props.sceneCharacters]
+  );
+  const [emotionKey, setEmotionKey] = useState(
+    props.initial?.emotionKey || firstCharacter?.emotions[0]?.key || ""
+  );
+
+  useEffect(() => {
+    if (speakerType === "narrator") {
+      return;
+    }
+
+    if (!character && firstCharacter) {
+      setCharacterId(firstCharacter.id);
+      setEmotionKey(firstCharacter.emotions[0]?.key ?? "");
+      return;
+    }
+
+    if (
+      character &&
+      emotionKey &&
+      character.emotions.some((item) => item.key === emotionKey)
+    ) {
+      return;
+    }
+
+    setEmotionKey(character?.emotions[0]?.key ?? "");
+  }, [character, emotionKey, firstCharacter, speakerType]);
+
+  return (
+    <form
+      action={props.action}
+      className="space-y-4 rounded-2xl border border-slate-200 bg-slate-50/70 p-4"
+    >
+      <input type="hidden" name="chapterId" value={props.chapterId} />
+      <input type="hidden" name="sceneId" value={props.sceneId} />
+      <input type="hidden" name="returnTo" value={props.returnTo} />
+      {props.initial?.dialogueEntryId ? (
+        <input
+          type="hidden"
+          name="dialogueEntryId"
+          value={props.initial.dialogueEntryId}
+        />
+      ) : null}
+
+      <div className="grid gap-4 md:grid-cols-[140px_1fr_1fr]">
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-slate-800" htmlFor="orderIndex">
+            Order
+          </label>
+          <input
+            id="orderIndex"
+            name="orderIndex"
+            type="number"
+            defaultValue={props.initial?.orderIndex ?? 1}
+            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none ring-slate-200 transition focus:ring-2"
+            required
+          />
+        </div>
+
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-slate-800" htmlFor="speakerType">
+            Speaker
+          </label>
+          <select
+            id="speakerType"
+            name="speakerType"
+            value={speakerType}
+            onChange={(event) =>
+              setSpeakerType(event.target.value as "narrator" | "character")
+            }
+            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none ring-slate-200 transition focus:ring-2"
+          >
+            <option value="narrator">Narrator</option>
+            {props.sceneCharacters.length > 0 ? (
+              <option value="character">Character</option>
+            ) : null}
+          </select>
+        </div>
+
+        {speakerType === "character" ? (
+          <div className="space-y-2">
+            <label className="text-sm font-medium text-slate-800" htmlFor="characterId">
+              Scene Character
+            </label>
+            <select
+              id="characterId"
+              name="characterId"
+              value={characterId}
+              onChange={(event) => setCharacterId(event.target.value)}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none ring-slate-200 transition focus:ring-2"
+              required
+            >
+              {props.sceneCharacters.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+          </div>
+        ) : (
+          <input type="hidden" name="characterId" value="" />
+        )}
+      </div>
+
+      {speakerType === "character" ? (
+        <div className="space-y-2">
+          <label className="text-sm font-medium text-slate-800" htmlFor="emotionKey">
+            Emotion
+          </label>
+          <select
+            id="emotionKey"
+            name="emotionKey"
+            value={emotionKey}
+            onChange={(event) => setEmotionKey(event.target.value)}
+            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none ring-slate-200 transition focus:ring-2"
+            required
+          >
+            {(character?.emotions ?? []).map((emotion) => (
+              <option key={emotion.key} value={emotion.key}>
+                {emotion.label}
+              </option>
+            ))}
+          </select>
+        </div>
+      ) : (
+        <input type="hidden" name="emotionKey" value="" />
+      )}
+
+      <div className="space-y-2">
+        <label className="text-sm font-medium text-slate-800" htmlFor="text">
+          Dialogue Text
+        </label>
+        <textarea
+          id="text"
+          name="text"
+          defaultValue={props.initial?.text ?? ""}
+          rows={5}
+          className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none ring-slate-200 transition focus:ring-2"
+          required
+        />
+      </div>
+
+      <div className="flex justify-end">
+        <SubmitButton label={props.submitLabel} />
+      </div>
+    </form>
+  );
+}
+

@@ -2,165 +2,63 @@
 
 ## Purpose
 
-This document describes the intended repository structure for Ocnoer.
+This repository keeps player runtime, admin authoring, shared UI, and narrative reference material in one codebase.
 
-Milestone 1 has established the base application scaffold and target top-level directories.
+## Runtime Content Split
 
-## Current State
+Ocnoer now separates:
 
-The repository now contains:
+### Reference Lore
 
-- documentation in `/docs`
-- worldbuilding reference files in `/lore`
-- Next.js App Router bootstrap in `/app`
-- shared code folders: `/components`, `/lib`, `/prisma`, `/public`
+Files in `/lore` are worldbuilding and writing references only.
 
-Current lore material includes:
+### Authored Story Content
 
-- `lore/story-structure.md`
-- `lore/story-summary.md`
-- `lore/world-overview.md`
-- `lore/appendix.md`
-- `lore/world-map.jpg`
-
-## Canonical Content Separation
-
-Ocnoer should separate two kinds of content:
-
-### 1. Reference Lore
-
-Reference lore is static story context used by developers and AI agents.
-
-This belongs in `/lore`.
+Authored story content is file-based JSON stored in Supabase Storage, not in repo markdown and not in relational tables.
 
 Examples:
 
-- world overview
-- story summary
-- appendix
-- maps
-- naming references
+- characters and emotions
+- background image assets
+- background music tracks
+- chapters, scenes, and dialogue
 
-### 2. Runtime Story Content
+### Generated Runtime Content
 
-Runtime story content is the playable application data shown to the player.
-
-This does not live in markdown files for MVP. It should live in the database and be authored through the admin interface.
+Runtime story content is generated JSON stored in Supabase Storage and read by `/play`.
 
 Examples:
 
-- chapters
-- scenes
-- dialogue entries
-- player prompts
-- publication state
-- asset references
+- runtime manifest
+- runtime character manifest
+- runtime asset manifest
+- per-chapter runtime bundles
 
-## Target Repository Layout
+## Key Repo Areas
 
 ```text
 /
-├── README.md
-├── docs/
-│   ├── architecture.md
-│   ├── development-guide.md
-│   ├── game-flow.md
-│   ├── project-structure.md
-│   ├── roadmap.md
-│   └── tech-stack.md
-├── lore/
-│   ├── appendix.md
-│   ├── story-summary.md
-│   ├── story-structure.md
-│   ├── world-map.jpg
-│   └── world-overview.md
 ├── app/
-│   ├── (player)/
 │   ├── (admin)/
-│   ├── layout.tsx
-│   └── page.tsx
+│   ├── (player)/
+│   ├── admin/login/
+│   └── layout.tsx
 ├── components/
+│   ├── admin/
+│   └── ui/
+├── docs/
 ├── lib/
-├── prisma/
-│   └── schema.prisma
+│   ├── auth/
+│   ├── story/
+│   └── supabase/
+├── lore/
 ├── public/
-└── package.json
+└── README.md
 ```
 
-## Intended Responsibilities
+## Notes
 
-### `docs/`
+- `public/` is for repo-shipped static files only.
+- User-authored media does not belong in `public/`; it belongs in Supabase Storage.
+- Runtime chapter playback should keep reading from generated JSON bundles, not from live authoring state.
 
-Planning and implementation guidance for humans and AI agents.
-
-### `lore/`
-
-Canonical home for worldbuilding and narrative reference documents.
-
-Important rule:
-
-- `/lore` supports writing and implementation context
-- `/lore` is not the source of runtime chapter and scene records for MVP
-
-### `app/`
-
-The Next.js App Router application.
-
-Expected responsibilities:
-
-- player-facing routes
-- admin-facing routes
-- route-level auth boundaries
-- API endpoints or server actions where needed
-
-### `components/`
-
-Reusable UI components shared between player and admin surfaces.
-
-Expected examples:
-
-- dialogue box
-- portrait display
-- scene shell
-- admin form controls
-- tables and filters
-
-### `lib/`
-
-Shared application code and integrations.
-
-Expected examples:
-
-- auth helpers
-- database client setup
-- storage helpers
-- domain utilities
-- route guards
-
-### `prisma/`
-
-Database schema and migration history.
-
-Expected contents:
-
-- `schema.prisma`
-- migrations
-- optional seed scripts
-
-### `public/`
-
-Static files that belong in the repo and ship directly with the app.
-
-Use `public/` only for true static assets. User-authored scene media should live in Supabase Storage instead.
-
-## Structural Rules
-
-- Keep reference lore separate from runtime story records.
-- Keep player and admin experiences inside one Next.js application.
-- Do not build a second repo or second frontend for MVP.
-- Prefer shared domain utilities over duplicated logic between route areas.
-- Treat `/docs` as implementation guidance and `/lore` as narrative context.
-
-## Alignment Note
-
-The repository now matches the Milestone 1 structural baseline.

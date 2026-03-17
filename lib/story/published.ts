@@ -1,361 +1,302 @@
-import { DialogueKind } from "@prisma/client";
+import type {
+  BackgroundImageAsset,
+  BackgroundMusicTrack,
+  CharacterDefinition,
+  RuntimeAssetsManifest,
+  RuntimeBackgroundImage,
+  RuntimeBackgroundMusic,
+  RuntimeChapterBundle,
+  RuntimeCharacter,
+  RuntimeCharactersManifest,
+  RuntimeDialogueEntry,
+  RuntimeManifest,
+  RuntimeScene,
+  RuntimeStageCharacter,
+  StoryAuthoringSnapshot,
+  StoryRuntimeArtifacts
+} from "@/lib/story/types";
+import { STORY_SCHEMA_VERSION } from "@/lib/story/types";
 
-import type { ReaderChapter } from "@/lib/story/repository";
-import { toPublicMediaUrl } from "@/lib/story/reader";
+function toRuntimeCharacter(character: CharacterDefinition): RuntimeCharacter {
+  const defaultEmotion = character.emotions.find(
+    (emotion) => emotion.key === character.defaultEmotionKey
+  );
 
-export const PUBLISHED_STORY_SCHEMA_VERSION = 1;
-
-export type PublishedStoryManifestChapter = {
-  id: string;
-  slug: string;
-  title: string;
-  orderIndex: number;
-  bundleStoragePath: string;
-};
-
-export type PublishedStoryManifest = {
-  schemaVersion: typeof PUBLISHED_STORY_SCHEMA_VERSION;
-  publishedVersionId: string;
-  version: number;
-  firstChapterId: string | null;
-  generatedAt: string;
-  chapters: PublishedStoryManifestChapter[];
-};
-
-export type PublishedChapterBundle = {
-  schemaVersion: typeof PUBLISHED_STORY_SCHEMA_VERSION;
-  publishedVersionId: string;
-  version: number;
-  generatedAt: string;
-  chapter: ReaderChapter;
-  nextChapterId: string | null;
-};
-
-export type PublishedPromptContext = {
-  chapterPublicId: string;
-  chapterTitle: string;
-  chapterSlug: string;
-  chapterOrderIndex: number;
-  scenePublicId: string;
-  sceneTitle: string | null;
-  sceneOrderIndex: number;
-  dialogueEntryPublicId: string;
-  promptLabel: string | null;
-  promptText: string;
-};
-
-type AuthoringStoryGraph = {
-  chapters: Array<{
-    publicId: string;
-    title: string;
-    slug: string;
-    orderIndex: number;
-    imageAsset: {
-      storagePath: string;
-    };
-    scenes: Array<{
-      id: string;
-      publicId: string;
-      title: string | null;
-      orderIndex: number;
-      backgroundImageAsset: {
-        storagePath: string;
-      };
-      backgroundMusicAsset: {
-        storagePath: string;
-      } | null;
-      characterAppearances: Array<{
-        characterId: string;
-        portrait: {
-          storagePath: string;
-        } | null;
-      }>;
-      dialogueEntries: Array<{
-        publicId: string;
-        kind: DialogueKind;
-        orderIndex: number;
-        text: string;
-        promptLabel: string | null;
-        character: {
-          id: string;
-          publicId: string;
-          name: string;
-          slug: string;
-          portraits: Array<{
-            storagePath: string;
-          }>;
-        } | null;
-      }>;
-    }>;
-  }>;
-};
-
-export type PublishValidationResult = {
-  ok: boolean;
-  errors: string[];
-};
-
-export function getPublishedManifestObjectPath(storagePrefix: string) {
-  return `${storagePrefix}/manifest.json`;
-}
-
-export function getPublishedChapterBundleObjectPath(
-  storagePrefix: string,
-  chapterPublicId: string
-) {
-  return `${storagePrefix}/chapters/${chapterPublicId}.json`;
-}
-
-export function withBucketPath(bucket: string, objectPath: string) {
-  return `${bucket}/${objectPath}`;
-}
-
-function resolveCharacterPortraitPath(input: {
-  characterId: string;
-  appearanceMap: Map<string, string | null>;
-  defaultPortraitPath: string | null;
-}) {
-  if (input.appearanceMap.has(input.characterId)) {
-    return input.appearanceMap.get(input.characterId) ?? null;
-  }
-
-  return input.defaultPortraitPath;
-}
-
-export function validateStoryForPublish(
-  storyGraph: AuthoringStoryGraph
-): PublishValidationResult {
-  const errors: string[] = [];
-
-  if (storyGraph.chapters.length === 0) {
-    errors.push("Create at least one chapter before publishing.");
-  }
-
-  for (const chapter of storyGraph.chapters) {
-    if (!chapter.publicId) {
-      errors.push(`Chapter "${chapter.title}" is missing a runtime public id.`);
-    }
-
-    if (chapter.scenes.length === 0) {
-      errors.push(`Chapter "${chapter.title}" must include at least one scene.`);
-    }
-
-    for (const scene of chapter.scenes) {
-      if (!scene.publicId) {
-        errors.push(
-          `Scene ${scene.orderIndex} in "${chapter.title}" is missing a runtime public id.`
-        );
-      }
-
-      if (!scene.backgroundImageAsset?.storagePath) {
-        errors.push(
-          `Scene ${scene.orderIndex} in "${chapter.title}" is missing a background image.`
-        );
-      }
-
-      if (scene.dialogueEntries.length === 0) {
-        errors.push(
-          `Scene ${scene.orderIndex} in "${chapter.title}" must include at least one dialogue entry.`
-        );
-      }
-
-      for (const entry of scene.dialogueEntries) {
-        if (!entry.publicId) {
-          errors.push(
-            `A dialogue entry in scene ${scene.orderIndex} of "${chapter.title}" is missing a runtime public id.`
-          );
-        }
-
-        if (entry.kind === DialogueKind.player_prompt && entry.character) {
-          errors.push(
-            `Prompt entry ${entry.orderIndex} in scene ${scene.orderIndex} of "${chapter.title}" cannot have a character assignment.`
-          );
-        }
-
-        if (
-          entry.kind !== DialogueKind.narrator &&
-          entry.kind !== DialogueKind.player_prompt &&
-          entry.character &&
-          !entry.character.publicId
-        ) {
-          errors.push(
-            `Character on entry ${entry.orderIndex} in scene ${scene.orderIndex} of "${chapter.title}" is missing a runtime public id.`
-          );
-        }
-      }
-    }
+  if (!defaultEmotion) {
+    throw new Error(`Character "${character.name}" is missing its default emotion.`);
   }
 
   return {
-    ok: errors.length === 0,
-    errors
+    id: character.id,
+    name: character.name,
+    slug: character.slug,
+    bio: character.bio,
+    defaultEmotionKey: character.defaultEmotionKey,
+    defaultEmotionImagePath: defaultEmotion.imagePath,
+    emotions: character.emotions.map((emotion) => ({
+      key: emotion.key,
+      label: emotion.label,
+      imagePath: emotion.imagePath
+    }))
   };
 }
 
-export function compilePublishedStory(input: {
-  storyGraph: AuthoringStoryGraph;
-  bucket: string;
-  publishedVersionId: string;
-  version: number;
+function toRuntimeBackgroundImage(asset: BackgroundImageAsset): RuntimeBackgroundImage {
+  return {
+    id: asset.id,
+    label: asset.label,
+    slug: asset.slug,
+    altText: asset.altText,
+    filePath: asset.filePath
+  };
+}
+
+function toRuntimeBackgroundMusic(asset: BackgroundMusicTrack): RuntimeBackgroundMusic {
+  return {
+    id: asset.id,
+    label: asset.label,
+    slug: asset.slug,
+    filePath: asset.filePath
+  };
+}
+
+function cloneStageCharacter(
+  value: RuntimeStageCharacter | null
+): RuntimeStageCharacter | null {
+  return value ? { ...value } : null;
+}
+
+function createStageCharacter(
+  character: RuntimeCharacter,
+  emotionKey: string
+): RuntimeStageCharacter {
+  const emotion = character.emotions.find((item) => item.key === emotionKey);
+
+  if (!emotion) {
+    throw new Error(
+      `Character "${character.name}" is missing emotion "${emotionKey}".`
+    );
+  }
+
+  return {
+    characterId: character.id,
+    characterName: character.name,
+    characterSlug: character.slug,
+    emotionKey: emotion.key,
+    emotionLabel: emotion.label,
+    imagePath: emotion.imagePath
+  };
+}
+
+function compileScene(input: {
+  scene: StoryAuthoringSnapshot["chapters"][number]["scenes"][number];
+  charactersById: Map<string, RuntimeCharacter>;
+  backgroundImagesById: Map<string, RuntimeBackgroundImage>;
+  backgroundMusicById: Map<string, RuntimeBackgroundMusic>;
+}): RuntimeScene {
+  const backgroundImage = input.backgroundImagesById.get(
+    input.scene.backgroundImageAssetId
+  );
+
+  if (!backgroundImage) {
+    throw new Error(`Scene "${input.scene.title}" is missing its background image.`);
+  }
+
+  const backgroundMusic = input.scene.backgroundMusicAssetId
+    ? input.backgroundMusicById.get(input.scene.backgroundMusicAssetId) ?? null
+    : null;
+
+  const characterPool = input.scene.characterIds.map((characterId) => {
+    const character = input.charactersById.get(characterId);
+
+    if (!character) {
+      throw new Error(`Scene "${input.scene.title}" references an unknown character.`);
+    }
+
+    return character;
+  });
+
+  const ocnoer = characterPool.find((character) => character.slug === "ocnoer") ?? null;
+  let leftStage = ocnoer
+    ? createStageCharacter(ocnoer, ocnoer.defaultEmotionKey)
+    : null;
+  let rightStage: RuntimeStageCharacter | null = null;
+
+  const dialogue = [...input.scene.dialogue]
+    .sort((left, right) => left.orderIndex - right.orderIndex)
+    .map((entry): RuntimeDialogueEntry => {
+      if (entry.speaker.type === "narrator") {
+        return {
+          id: entry.id,
+          orderIndex: entry.orderIndex,
+          text: entry.text,
+          speaker: {
+            type: "narrator"
+          },
+          stage: {
+            left: cloneStageCharacter(leftStage),
+            right: cloneStageCharacter(rightStage)
+          }
+        };
+      }
+
+      const speakingCharacter = input.charactersById.get(entry.speaker.characterId);
+
+      if (!speakingCharacter) {
+        throw new Error(`Dialogue entry "${entry.id}" references an unknown character.`);
+      }
+
+      const stageCharacter = createStageCharacter(
+        speakingCharacter,
+        entry.speaker.emotionKey
+      );
+
+      if (speakingCharacter.slug === "ocnoer") {
+        leftStage = stageCharacter;
+      } else {
+        if (ocnoer && (!leftStage || leftStage.characterId !== ocnoer.id)) {
+          leftStage = createStageCharacter(
+            ocnoer,
+            leftStage?.characterId === ocnoer.id
+              ? leftStage.emotionKey
+              : ocnoer.defaultEmotionKey
+          );
+        }
+
+        rightStage = stageCharacter;
+      }
+
+      return {
+        id: entry.id,
+        orderIndex: entry.orderIndex,
+        text: entry.text,
+        speaker: {
+          type: "character",
+          characterId: speakingCharacter.id,
+          characterName: speakingCharacter.name,
+          characterSlug: speakingCharacter.slug,
+          emotionKey: stageCharacter.emotionKey,
+          emotionLabel: stageCharacter.emotionLabel,
+          emotionImagePath: stageCharacter.imagePath
+        },
+        stage: {
+          left: cloneStageCharacter(leftStage),
+          right: cloneStageCharacter(rightStage)
+        }
+      };
+    });
+
+  return {
+    id: input.scene.id,
+    title: input.scene.title,
+    orderIndex: input.scene.orderIndex,
+    backgroundImage,
+    backgroundMusic,
+    characterPool,
+    dialogue
+  };
+}
+
+export function compileRuntimeStory(input: {
+  snapshot: StoryAuthoringSnapshot;
   generatedAt?: string;
-  storagePrefix: string;
-}) {
+  bucket: string;
+  runtimePrefix: string;
+}): StoryRuntimeArtifacts {
   const generatedAt = input.generatedAt ?? new Date().toISOString();
-  const sortedChapters = [...input.storyGraph.chapters].sort(
+  const characters = [...input.snapshot.characters]
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map(toRuntimeCharacter);
+  const backgroundImages = [...input.snapshot.backgroundImages]
+    .sort((left, right) => left.label.localeCompare(right.label))
+    .map(toRuntimeBackgroundImage);
+  const backgroundMusicTracks = [...input.snapshot.backgroundMusicTracks]
+    .sort((left, right) => left.label.localeCompare(right.label))
+    .map(toRuntimeBackgroundMusic);
+
+  const charactersById = new Map(
+    characters.map((character) => [character.id, character])
+  );
+  const backgroundImagesById = new Map(
+    backgroundImages.map((asset) => [asset.id, asset])
+  );
+  const backgroundMusicById = new Map(
+    backgroundMusicTracks.map((asset) => [asset.id, asset])
+  );
+
+  const sortedChapters = [...input.snapshot.chapters].sort(
     (left, right) => left.orderIndex - right.orderIndex
   );
 
-  const chapterBundles = sortedChapters.map((chapter, chapterIndex) => {
-    const chapterData: ReaderChapter = {
-      id: chapter.publicId,
-      title: chapter.title,
-      slug: chapter.slug,
-      orderIndex: chapter.orderIndex,
-      imagePath: chapter.imageAsset.storagePath,
-      scenes: [...chapter.scenes]
-        .sort((left, right) => left.orderIndex - right.orderIndex)
-        .map((scene) => {
-        const appearanceMap = new Map(
-          scene.characterAppearances.map((appearance) => [
-            appearance.characterId,
-            appearance.portrait?.storagePath ?? null
-          ])
-        );
-
-        return {
-          id: scene.publicId,
-          title: scene.title,
-          orderIndex: scene.orderIndex,
-          media: {
-            backgroundImagePath: scene.backgroundImageAsset.storagePath,
-            backgroundMusicPath: scene.backgroundMusicAsset?.storagePath ?? null
-          },
-          entries: [...scene.dialogueEntries]
-            .sort((left, right) => left.orderIndex - right.orderIndex)
-            .map((entry) => ({
-              id: entry.publicId,
-              kind: entry.kind,
-              orderIndex: entry.orderIndex,
-              text: entry.text,
-              promptLabel: entry.promptLabel,
-              character: entry.character
-                ? {
-                    id: entry.character.publicId,
-                    name: entry.character.name,
-                    slug: entry.character.slug,
-                    portraitPath: resolveCharacterPortraitPath({
-                      characterId: entry.character.id,
-                      appearanceMap,
-                      defaultPortraitPath:
-                        entry.character.portraits[0]?.storagePath ?? null
-                    })
-                  }
-                : null
-            }))
-        };
-      })
-    };
+  const chapterBundles = sortedChapters.map((chapter, index) => {
+    const path = `${input.bucket}/${input.runtimePrefix}/chapters/${chapter.id}.json`;
+    const scenes = [...chapter.scenes]
+      .sort((left, right) => left.orderIndex - right.orderIndex)
+      .map((scene) =>
+        compileScene({
+          scene,
+          charactersById,
+          backgroundImagesById,
+          backgroundMusicById
+        })
+      );
 
     return {
-      chapterId: chapter.publicId,
-      bundleStoragePath: withBucketPath(
-        input.bucket,
-        getPublishedChapterBundleObjectPath(input.storagePrefix, chapter.publicId)
-      ),
+      chapterId: chapter.id,
+      path,
       bundle: {
-        schemaVersion: PUBLISHED_STORY_SCHEMA_VERSION,
-        publishedVersionId: input.publishedVersionId,
-        version: input.version,
+        schemaVersion: STORY_SCHEMA_VERSION,
         generatedAt,
-        chapter: chapterData,
-        nextChapterId: sortedChapters[chapterIndex + 1]?.publicId ?? null
-      } satisfies PublishedChapterBundle
+        chapter: {
+          id: chapter.id,
+          title: chapter.title,
+          slug: chapter.slug,
+          orderIndex: chapter.orderIndex,
+          scenes
+        },
+        nextChapterId: sortedChapters[index + 1]?.id ?? null
+      } satisfies RuntimeChapterBundle
     };
   });
 
-  const manifest: PublishedStoryManifest = {
-    schemaVersion: PUBLISHED_STORY_SCHEMA_VERSION,
-    publishedVersionId: input.publishedVersionId,
-    version: input.version,
-    firstChapterId: sortedChapters[0]?.publicId ?? null,
+  const charactersPath = `${input.bucket}/${input.runtimePrefix}/characters.json`;
+  const assetsPath = `${input.bucket}/${input.runtimePrefix}/assets.json`;
+  const chaptersPath = `${input.bucket}/${input.runtimePrefix}/manifest.json`;
+
+  const manifest: RuntimeManifest = {
+    schemaVersion: STORY_SCHEMA_VERSION,
     generatedAt,
+    firstChapterId: sortedChapters[0]?.id ?? null,
+    chaptersPath,
+    charactersPath,
+    assetsPath,
     chapters: sortedChapters.map((chapter) => ({
-      id: chapter.publicId,
-      slug: chapter.slug,
+      id: chapter.id,
       title: chapter.title,
+      slug: chapter.slug,
       orderIndex: chapter.orderIndex,
-      bundleStoragePath: withBucketPath(
-        input.bucket,
-        getPublishedChapterBundleObjectPath(input.storagePrefix, chapter.publicId)
-      )
+      bundlePath: `${input.bucket}/${input.runtimePrefix}/chapters/${chapter.id}.json`
     }))
+  };
+
+  const charactersManifest: RuntimeCharactersManifest = {
+    schemaVersion: STORY_SCHEMA_VERSION,
+    generatedAt,
+    characters
+  };
+
+  const assetsManifest: RuntimeAssetsManifest = {
+    schemaVersion: STORY_SCHEMA_VERSION,
+    generatedAt,
+    backgroundImages,
+    backgroundMusicTracks
   };
 
   return {
     manifest,
-    manifestStoragePath: withBucketPath(
-      input.bucket,
-      getPublishedManifestObjectPath(input.storagePrefix)
-    ),
+    charactersManifest,
+    assetsManifest,
     chapterBundles
   };
 }
 
-export function getManifestChapterById(
-  manifest: PublishedStoryManifest,
-  chapterPublicId: string
-) {
-  return manifest.chapters.find((chapter) => chapter.id === chapterPublicId) ?? null;
-}
-
-export async function fetchPublishedJson<T>(
-  supabaseUrl: string,
-  storagePath: string
-): Promise<T> {
-  const url = toPublicMediaUrl(supabaseUrl, storagePath);
-
-  if (!url) {
-    throw new Error("Published storage path is invalid.");
-  }
-
-  const response = await fetch(url, {
-    cache: "force-cache"
-  });
-
-  if (!response.ok) {
-    throw new Error(`Unable to load published artifact (${response.status}).`);
-  }
-
-  return (await response.json()) as T;
-}
-
-export function resolvePromptContext(
-  bundle: PublishedChapterBundle,
-  scenePublicId: string,
-  dialogueEntryPublicId: string
-): PublishedPromptContext | null {
-  const scene = bundle.chapter.scenes.find((candidate) => candidate.id === scenePublicId);
-
-  if (!scene) {
-    return null;
-  }
-
-  const entry = scene.entries.find((candidate) => candidate.id === dialogueEntryPublicId);
-
-  if (!entry || entry.kind !== DialogueKind.player_prompt) {
-    return null;
-  }
-
-  return {
-    chapterPublicId: bundle.chapter.id,
-    chapterTitle: bundle.chapter.title,
-    chapterSlug: bundle.chapter.slug,
-    chapterOrderIndex: bundle.chapter.orderIndex,
-    scenePublicId: scene.id,
-    sceneTitle: scene.title,
-    sceneOrderIndex: scene.orderIndex,
-    dialogueEntryPublicId: entry.id,
-    promptLabel: entry.promptLabel,
-    promptText: entry.text
-  };
-}

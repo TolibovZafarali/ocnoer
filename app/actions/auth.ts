@@ -2,12 +2,9 @@
 
 import { redirect } from "next/navigation";
 
-import { createServerSupabaseClient } from "@/lib/supabase/server";
+import { clearAdminSession } from "@/lib/auth/admin";
 
 export async function signOutAction() {
-  const supabase = await createServerSupabaseClient();
-
-  await supabase.auth.signOut();
-
-  redirect("/sign-in");
+  await clearAdminSession();
+  redirect("/admin/login");
 }

@@ -1,13 +1,13 @@
 import type { ReactNode } from "react";
 
-import { requireRole } from "@/lib/auth/guards";
+import { requireAdminSession } from "@/lib/auth/admin";
 
 type AdminLayoutProps = {
   children: ReactNode;
 };
 
 export default async function AdminLayout({ children }: AdminLayoutProps) {
-  await requireRole("admin");
+  await requireAdminSession();
 
   return <>{children}</>;
 }

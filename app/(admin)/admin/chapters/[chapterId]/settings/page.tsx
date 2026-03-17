@@ -1,7 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
-import { updateChapterAction } from "@/app/(admin)/admin/actions";
+import {
+  deleteChapterAction,
+  updateChapterAction
+} from "@/app/(admin)/admin/actions";
 import {
   AdminPageShell,
   Field,
@@ -97,6 +100,25 @@ export default async function ChapterSettingsPage({
               <Button type="submit">Save Chapter</Button>
             </div>
           </form>
+        </SectionCard>
+
+        <SectionCard
+          title="Delete Chapter"
+          description="Deleting a chapter permanently removes the chapter and every scene and dialogue entry inside it."
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Use this only when the full chapter subtree should be removed from
+              the story authoring flow.
+            </p>
+            <form action={deleteChapterAction} className="flex justify-end">
+              <input type="hidden" name="chapterId" value={chapter.id} />
+              <input type="hidden" name="returnTo" value={returnTo} />
+              <Button type="submit" variant="destructive">
+                Delete Chapter
+              </Button>
+            </form>
+          </div>
         </SectionCard>
       </div>
     </AdminPageShell>

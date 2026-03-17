@@ -5,8 +5,11 @@ import { notFound } from "next/navigation";
 
 import {
   addCharacterEmotionAction,
+  deleteCharacterAction,
+  deleteCharacterEmotionAction,
   setDefaultCharacterEmotionAction,
-  updateCharacterAction
+  updateCharacterAction,
+  updateCharacterEmotionAction
 } from "@/app/(admin)/admin/actions";
 import {
   AdminCard,
@@ -71,6 +74,7 @@ export default async function CharacterDetailPage({
     supabaseUrl,
     defaultEmotion?.imagePath ?? null
   );
+  const isSingleEmotion = character.emotions.length === 1;
 
   return (
     <AdminPageShell>
@@ -199,7 +203,8 @@ export default async function CharacterDetailPage({
             <h2 className="text-lg font-semibold text-slate-950">Emotions</h2>
             <p className="text-sm text-slate-600">
               Emotion cards show the image, label, key, and current default
-              state. Default switching happens here on the detail page.
+              state. Default switching stays visible, while edit and delete
+              actions live in a secondary panel on each card.
             </p>
           </div>
 
@@ -236,35 +241,151 @@ export default async function CharacterDetailPage({
                       )
                     }
                     description={
-                      <div className="space-y-3">
-                        <p>
-                          Emotion key:{" "}
-                          <span className="font-medium text-slate-700">
-                            {emotion.key}
-                          </span>
-                        </p>
-                        {!isDefault ? (
-                          <form action={setDefaultCharacterEmotionAction}>
-                            <input
-                              type="hidden"
-                              name="characterId"
-                              value={character.id}
-                            />
-                            <input
-                              type="hidden"
-                              name="emotionId"
-                              value={emotion.id}
-                            />
-                            <input
-                              type="hidden"
-                              name="returnTo"
-                              value={returnTo}
-                            />
-                            <Button type="submit" size="sm" variant="outline">
-                              Set As Default
-                            </Button>
-                          </form>
-                        ) : null}
+                      <div className="space-y-4">
+                        <div className="space-y-3">
+                          <p>
+                            Emotion key:{" "}
+                            <span className="font-medium text-slate-700">
+                              {emotion.key}
+                            </span>
+                          </p>
+
+                          {!isDefault ? (
+                            <form action={setDefaultCharacterEmotionAction}>
+                              <input
+                                type="hidden"
+                                name="characterId"
+                                value={character.id}
+                              />
+                              <input
+                                type="hidden"
+                                name="emotionId"
+                                value={emotion.id}
+                              />
+                              <input
+                                type="hidden"
+                                name="returnTo"
+                                value={returnTo}
+                              />
+                              <Button type="submit" size="sm" variant="outline">
+                                Set As Default
+                              </Button>
+                            </form>
+                          ) : null}
+                        </div>
+
+                        <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <summary className="cursor-pointer text-sm font-medium text-slate-800">
+                            Edit or delete emotion
+                          </summary>
+
+                          <div className="mt-3 space-y-4">
+                            <form
+                              action={updateCharacterEmotionAction}
+                              className="space-y-3"
+                              encType="multipart/form-data"
+                            >
+                              <input
+                                type="hidden"
+                                name="characterId"
+                                value={character.id}
+                              />
+                              <input
+                                type="hidden"
+                                name="emotionId"
+                                value={emotion.id}
+                              />
+                              <input
+                                type="hidden"
+                                name="returnTo"
+                                value={returnTo}
+                              />
+
+                              <Field
+                                label="Emotion Key"
+                                htmlFor={`emotion-key-${emotion.id}`}
+                              >
+                                <TextInput
+                                  id={`emotion-key-${emotion.id}`}
+                                  name="emotionKey"
+                                  defaultValue={emotion.key}
+                                  required
+                                />
+                              </Field>
+
+                              <Field
+                                label="Emotion Label"
+                                htmlFor={`emotion-label-${emotion.id}`}
+                              >
+                                <TextInput
+                                  id={`emotion-label-${emotion.id}`}
+                                  name="emotionLabel"
+                                  defaultValue={emotion.label}
+                                  required
+                                />
+                              </Field>
+
+                              <Field
+                                label="Replace Image"
+                                htmlFor={`emotion-file-${emotion.id}`}
+                                hint="Optional."
+                              >
+                                <TextInput
+                                  id={`emotion-file-${emotion.id}`}
+                                  name="imageFile"
+                                  type="file"
+                                  accept="image/*"
+                                />
+                              </Field>
+
+                              <div className="flex justify-end">
+                                <Button
+                                  type="submit"
+                                  size="sm"
+                                  variant="outline"
+                                >
+                                  Save Emotion
+                                </Button>
+                              </div>
+                            </form>
+
+                            <div className="border-t border-slate-200 pt-4">
+                              <p className="text-sm text-slate-600">
+                                {isSingleEmotion
+                                  ? "A character must always keep at least one emotion, so deletion is unavailable until another emotion exists."
+                                  : "Delete can be blocked if scene dialogue still references this emotion."}
+                              </p>
+                              <form
+                                action={deleteCharacterEmotionAction}
+                                className="mt-3 flex justify-end"
+                              >
+                                <input
+                                  type="hidden"
+                                  name="characterId"
+                                  value={character.id}
+                                />
+                                <input
+                                  type="hidden"
+                                  name="emotionId"
+                                  value={emotion.id}
+                                />
+                                <input
+                                  type="hidden"
+                                  name="returnTo"
+                                  value={returnTo}
+                                />
+                                <Button
+                                  type="submit"
+                                  size="sm"
+                                  variant="destructive"
+                                  disabled={isSingleEmotion}
+                                >
+                                  Delete Emotion
+                                </Button>
+                              </form>
+                            </div>
+                          </div>
+                        </details>
                       </div>
                     }
                     footer={
@@ -280,6 +401,25 @@ export default async function CharacterDetailPage({
             </AdminCardGrid>
           )}
         </section>
+
+        <SectionCard
+          title="Delete Character"
+          description="Deleting a character is blocked while scenes or dialogue still reference that character."
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Remove this character only when it is no longer used in any scene
+              cast or dialogue speaker entry.
+            </p>
+            <form action={deleteCharacterAction} className="flex justify-end">
+              <input type="hidden" name="characterId" value={character.id} />
+              <input type="hidden" name="returnTo" value={returnTo} />
+              <Button type="submit" variant="destructive">
+                Delete Character
+              </Button>
+            </form>
+          </div>
+        </SectionCard>
       </div>
     </AdminPageShell>
   );

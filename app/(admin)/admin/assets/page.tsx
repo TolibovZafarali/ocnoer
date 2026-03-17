@@ -5,6 +5,8 @@ import Link from "next/link";
 import {
   createBackgroundImageAssetAction,
   createBackgroundMusicTrackAction,
+  deleteBackgroundImageAssetAction,
+  deleteBackgroundMusicTrackAction,
   updateBackgroundImageAssetAction,
   updateBackgroundMusicTrackAction
 } from "@/app/(admin)/admin/actions";
@@ -249,6 +251,35 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
                                 </Button>
                               </div>
                             </form>
+
+                            <div className="mt-4 border-t border-slate-200 pt-4">
+                              <p className="text-sm text-slate-600">
+                                Delete is blocked while scenes still reference
+                                this background image.
+                              </p>
+                              <form
+                                action={deleteBackgroundImageAssetAction}
+                                className="mt-3 flex justify-end"
+                              >
+                                <input
+                                  type="hidden"
+                                  name="assetId"
+                                  value={asset.id}
+                                />
+                                <input
+                                  type="hidden"
+                                  name="returnTo"
+                                  value={backgroundReturnTo}
+                                />
+                                <Button
+                                  type="submit"
+                                  size="sm"
+                                  variant="destructive"
+                                >
+                                  Delete Background Image
+                                </Button>
+                              </form>
+                            </div>
                           </details>
                         </div>
                       }
@@ -396,6 +427,35 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
                                 </Button>
                               </div>
                             </form>
+
+                            <div className="mt-4 border-t border-slate-200 pt-4">
+                              <p className="text-sm text-slate-600">
+                                Delete is blocked while scenes still reference
+                                this music track.
+                              </p>
+                              <form
+                                action={deleteBackgroundMusicTrackAction}
+                                className="mt-3 flex justify-end"
+                              >
+                                <input
+                                  type="hidden"
+                                  name="assetId"
+                                  value={track.id}
+                                />
+                                <input
+                                  type="hidden"
+                                  name="returnTo"
+                                  value={musicReturnTo}
+                                />
+                                <Button
+                                  type="submit"
+                                  size="sm"
+                                  variant="destructive"
+                                >
+                                  Delete Music Track
+                                </Button>
+                              </form>
+                            </div>
                           </details>
                         </div>
                       }

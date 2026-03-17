@@ -322,6 +322,8 @@ export async function deleteCharacterAction(formData: FormData) {
       await deleteCharacter(
         getRequiredString(formData, "characterId", "Character id")
       );
+
+      return withStatus("/admin/characters", "success", "Character deleted.");
     }
   });
 }

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const requireAdminSessionMock = vi.fn();
 const createChapterMock = vi.fn();
+const deleteCharacterMock = vi.fn();
 const getAdminStoryDataMock = vi.fn();
 const redirectMock = vi.fn((path: string) => {
   throw new Error(`REDIRECT:${path}`);
@@ -34,7 +35,7 @@ vi.mock("@/lib/story/repository", () => ({
   deleteBackgroundImageAsset: vi.fn(),
   deleteBackgroundMusicTrack: vi.fn(),
   deleteChapter: vi.fn(),
-  deleteCharacter: vi.fn(),
+  deleteCharacter: deleteCharacterMock,
   deleteCharacterEmotion: vi.fn(),
   deleteDialogueEntry: vi.fn(),
   deleteScene: vi.fn(),
@@ -49,7 +50,8 @@ vi.mock("@/lib/story/repository", () => ({
   updateScene: vi.fn()
 }));
 
-const { createChapterAction } = await import("@/app/(admin)/admin/actions");
+const { createChapterAction, deleteCharacterAction } =
+  await import("@/app/(admin)/admin/actions");
 
 describe("createChapterAction", () => {
   beforeEach(() => {
@@ -85,6 +87,36 @@ describe("createChapterAction", () => {
     );
     expect(redirectMock).toHaveBeenCalledWith(
       "/admin/chapters/chapter_123/scenes?status=success&message=Chapter+created."
+    );
+  });
+});
+
+describe("deleteCharacterAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireAdminSessionMock.mockResolvedValue(undefined);
+    deleteCharacterMock.mockResolvedValue(undefined);
+    unstableRethrowMock.mockImplementation(() => {});
+  });
+
+  it("always redirects successful deletes to the character index", async () => {
+    const formData = new FormData();
+    formData.set("characterId", "character_123");
+    formData.set("returnTo", "/admin/characters/character_123");
+
+    await expect(deleteCharacterAction(formData)).rejects.toThrow(
+      "REDIRECT:/admin/characters?status=success&message=Character+deleted."
+    );
+
+    expect(deleteCharacterMock).toHaveBeenCalledWith("character_123");
+    expect(revalidatePathMock).toHaveBeenCalledWith(
+      "/admin/characters/character_123"
+    );
+    expect(revalidatePathMock).toHaveBeenCalledWith(
+      "/admin/characters?status=success&message=Character+deleted."
+    );
+    expect(redirectMock).toHaveBeenCalledWith(
+      "/admin/characters?status=success&message=Character+deleted."
     );
   });
 });

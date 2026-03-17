@@ -19,6 +19,7 @@ type DialogueEntryFormProps = {
   chapterId: string;
   sceneId: string;
   returnTo: string;
+  idPrefix?: string;
   submitLabel: string;
   sceneCharacters: SceneCharacterOption[];
   initial?: {
@@ -43,6 +44,13 @@ function SubmitButton(props: { label: string }) {
 
 export function DialogueEntryForm(props: DialogueEntryFormProps) {
   const firstCharacter = props.sceneCharacters[0] ?? null;
+  const prefix =
+    props.idPrefix ??
+    `dialogue-${props.sceneId}-${props.initial?.dialogueEntryId ?? "new"}`;
+  const speakerTypeId = `${prefix}-speaker-type`;
+  const characterIdField = `${prefix}-character`;
+  const emotionKeyId = `${prefix}-emotion`;
+  const textId = `${prefix}-text`;
   const [speakerType, setSpeakerType] = useState<"narrator" | "character">(
     props.initial?.speakerType ?? "narrator"
   );
@@ -113,12 +121,12 @@ export function DialogueEntryForm(props: DialogueEntryFormProps) {
         <div className="space-y-2">
           <label
             className="text-sm font-medium text-slate-800"
-            htmlFor="speakerType"
+            htmlFor={speakerTypeId}
           >
             Speaker
           </label>
           <select
-            id="speakerType"
+            id={speakerTypeId}
             name="speakerType"
             value={speakerType}
             onChange={(event) =>
@@ -137,12 +145,12 @@ export function DialogueEntryForm(props: DialogueEntryFormProps) {
           <div className="space-y-2">
             <label
               className="text-sm font-medium text-slate-800"
-              htmlFor="characterId"
+              htmlFor={characterIdField}
             >
               Scene Character
             </label>
             <select
-              id="characterId"
+              id={characterIdField}
               name="characterId"
               value={characterId}
               onChange={(event) => setCharacterId(event.target.value)}
@@ -165,12 +173,12 @@ export function DialogueEntryForm(props: DialogueEntryFormProps) {
         <div className="space-y-2">
           <label
             className="text-sm font-medium text-slate-800"
-            htmlFor="emotionKey"
+            htmlFor={emotionKeyId}
           >
             Emotion
           </label>
           <select
-            id="emotionKey"
+            id={emotionKeyId}
             name="emotionKey"
             value={emotionKey}
             onChange={(event) => setEmotionKey(event.target.value)}
@@ -189,11 +197,11 @@ export function DialogueEntryForm(props: DialogueEntryFormProps) {
       )}
 
       <div className="space-y-2">
-        <label className="text-sm font-medium text-slate-800" htmlFor="text">
+        <label className="text-sm font-medium text-slate-800" htmlFor={textId}>
           Dialogue Text
         </label>
         <textarea
-          id="text"
+          id={textId}
           name="text"
           defaultValue={props.initial?.text ?? ""}
           rows={5}

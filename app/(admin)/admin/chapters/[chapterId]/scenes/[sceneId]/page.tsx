@@ -5,6 +5,9 @@ import { notFound } from "next/navigation";
 
 import {
   createDialogueEntryAction,
+  deleteDialogueEntryAction,
+  deleteSceneAction,
+  updateDialogueEntryAction,
   updateSceneAction
 } from "@/app/(admin)/admin/actions";
 import { AdminCard, AdminEmptyState } from "@/components/admin/cards";
@@ -252,6 +255,7 @@ export default async function SceneDetailPage({
             chapterId={chapter.id}
             sceneId={scene.id}
             returnTo={returnTo}
+            idPrefix={`dialogue-create-${scene.id}`}
             submitLabel="Add Dialogue Entry"
             sceneCharacters={sceneCharacters}
           />
@@ -262,7 +266,8 @@ export default async function SceneDetailPage({
             <h2 className="text-lg font-semibold text-slate-950">Dialogue</h2>
             <p className="text-sm text-slate-600">
               Dialogue cards stay in runtime order and surface speaker context
-              only.
+              first. Editing and deletion stay tucked into a secondary panel on
+              each card.
             </p>
           </div>
 
@@ -298,9 +303,82 @@ export default async function SceneDetailPage({
                     title={speakerName}
                     eyebrow={`Dialogue ${entry.orderIndex}`}
                     description={
-                      <p className="whitespace-pre-wrap text-slate-700">
-                        {getDialoguePreview(entry.text)}
-                      </p>
+                      <div className="space-y-4">
+                        <p className="whitespace-pre-wrap text-slate-700">
+                          {getDialoguePreview(entry.text)}
+                        </p>
+
+                        <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                          <summary className="cursor-pointer text-sm font-medium text-slate-800">
+                            Edit or delete dialogue entry
+                          </summary>
+
+                          <div className="mt-3 space-y-4">
+                            <DialogueEntryForm
+                              action={updateDialogueEntryAction}
+                              chapterId={chapter.id}
+                              sceneId={scene.id}
+                              returnTo={returnTo}
+                              idPrefix={`dialogue-edit-${entry.id}`}
+                              submitLabel="Save Dialogue"
+                              sceneCharacters={sceneCharacters}
+                              initial={{
+                                dialogueEntryId: entry.id,
+                                orderIndex: entry.orderIndex,
+                                text: entry.text,
+                                speakerType: entry.speaker.type,
+                                characterId:
+                                  entry.speaker.type === "character"
+                                    ? entry.speaker.characterId
+                                    : "",
+                                emotionKey:
+                                  entry.speaker.type === "character"
+                                    ? entry.speaker.emotionKey
+                                    : ""
+                              }}
+                            />
+
+                            <div className="border-t border-slate-200 pt-4">
+                              <p className="text-sm text-slate-600">
+                                Delete permanently removes this dialogue entry
+                                from the scene order.
+                              </p>
+                              <form
+                                action={deleteDialogueEntryAction}
+                                className="mt-3 flex justify-end"
+                              >
+                                <input
+                                  type="hidden"
+                                  name="chapterId"
+                                  value={chapter.id}
+                                />
+                                <input
+                                  type="hidden"
+                                  name="sceneId"
+                                  value={scene.id}
+                                />
+                                <input
+                                  type="hidden"
+                                  name="dialogueEntryId"
+                                  value={entry.id}
+                                />
+                                <input
+                                  type="hidden"
+                                  name="returnTo"
+                                  value={returnTo}
+                                />
+                                <Button
+                                  type="submit"
+                                  size="sm"
+                                  variant="destructive"
+                                >
+                                  Delete Dialogue
+                                </Button>
+                              </form>
+                            </div>
+                          </div>
+                        </details>
+                      </div>
                     }
                     footer={
                       <>
@@ -315,6 +393,29 @@ export default async function SceneDetailPage({
             </div>
           )}
         </section>
+
+        <SectionCard
+          title="Delete Scene"
+          description="Deleting a scene permanently removes the scene and all dialogue inside it."
+        >
+          <div className="space-y-4">
+            <p className="text-sm text-slate-600">
+              Use this only when the scene should be removed from{" "}
+              <span className="font-medium text-slate-800">
+                {chapter.title}
+              </span>
+              .
+            </p>
+            <form action={deleteSceneAction} className="flex justify-end">
+              <input type="hidden" name="chapterId" value={chapter.id} />
+              <input type="hidden" name="sceneId" value={scene.id} />
+              <input type="hidden" name="returnTo" value={returnTo} />
+              <Button type="submit" variant="destructive">
+                Delete Scene
+              </Button>
+            </form>
+          </div>
+        </SectionCard>
       </div>
     </AdminPageShell>
   );

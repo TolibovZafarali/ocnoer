@@ -2,6 +2,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import {
+  type MouseEvent,
   type ReactNode,
   useCallback,
   useEffect,
@@ -12,13 +13,12 @@ import {
 
 import { Button } from "@/components/ui/button";
 import {
-  advanceReaderState,
-  createInitialProgressForChapter,
-  createReaderStateFromProgress,
+  advanceRuntimePosition,
   createStoredProgress,
   getCurrentDialogue,
   getCurrentScene,
   getManifestChapterById,
+  resolvePlayableRuntimePosition,
   type PlayerProgress,
   type ReaderState
 } from "@/lib/story/reader";
@@ -30,6 +30,24 @@ type PlayerStoryReaderProps = {
   progressStorageKey: string;
   supabaseUrl: string;
 };
+
+type PlayerBoundaryState =
+  | {
+      type: "scene-transition";
+      sceneTitle: string;
+    }
+  | {
+      type: "chapter-break";
+      chapterTitle: string;
+      chapterIndex: number;
+      chapterCount: number;
+    }
+  | {
+      type: "story-finished";
+      chapterTitle: string;
+      chapterIndex: number;
+      chapterCount: number;
+    };
 
 function readStoredProgress(storageKey: string) {
   if (typeof window === "undefined") {
@@ -60,7 +78,12 @@ function readStoredProgress(storageKey: string) {
 }
 
 function persistProgress(storageKey: string, progress: PlayerProgress | null) {
-  if (typeof window === "undefined" || !progress) {
+  if (typeof window === "undefined") {
+    return;
+  }
+
+  if (!progress) {
+    window.localStorage.removeItem(storageKey);
     return;
   }
 
@@ -78,42 +101,29 @@ function getRuntimeAvailability(input: {
 }) {
   if (!input.manifest?.firstChapterId) {
     return {
-      title: "No authored story content yet",
+      title: "No story available yet",
+      description: "The opening chapter has not been published yet."
+    };
+  }
+
+  if (!input.bundle || !input.readerState || !input.scene || !input.entry) {
+    return {
+      title: "This story is not ready to play",
       description:
-        "Create the first chapter, scene, and dialogue entry in admin before opening the player."
-    };
-  }
-
-  if (!input.bundle) {
-    return {
-      title: "Story runtime is incomplete",
-      description:
-        "A chapter is published in the manifest, but its runtime bundle could not be loaded."
-    };
-  }
-
-  if (input.bundle.chapter.scenes.length === 0) {
-    return {
-      title: "Story content is incomplete",
-      description: `Chapter "${input.bundle.chapter.title}" exists, but it has no scenes yet. Add a scene in admin before trying to play it.`
-    };
-  }
-
-  if (!input.scene) {
-    return {
-      title: "Story content is incomplete",
-      description: `Chapter "${input.bundle.chapter.title}" has scenes, but the current playback position no longer points at a playable scene.`
-    };
-  }
-
-  if (input.scene.dialogue.length === 0 || !input.readerState || !input.entry) {
-    return {
-      title: "Story content is incomplete",
-      description: `Scene "${input.scene.title}" in chapter "${input.bundle.chapter.title}" has no dialogue yet. Add at least one dialogue row in admin before playing.`
+        "Some chapters or scenes are still missing playable dialogue."
     };
   }
 
   return null;
+}
+
+function isAdvanceGestureTarget(target: EventTarget | null) {
+  return (
+    target instanceof HTMLElement &&
+    Boolean(
+      target.closest("a, audio, button, input, select, summary, textarea")
+    )
+  );
 }
 
 export function PlayerStoryReader({
@@ -129,6 +139,8 @@ export function PlayerStoryReader({
   const [branchFlags, setBranchFlags] = useState<
     Record<string, boolean | number | string>
   >({});
+  const [boundaryState, setBoundaryState] =
+    useState<PlayerBoundaryState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingChapter, setIsLoadingChapter] = useState(false);
@@ -185,35 +197,37 @@ export function PlayerStoryReader({
           setManifest(loadedManifest);
           setBundle(null);
           setReaderState(null);
+          setBoundaryState(null);
           setBranchFlags({});
           setIsLoading(false);
           return;
         }
 
         const storedProgress = readStoredProgress(progressStorageKey);
-        const targetChapterId =
-          storedProgress &&
-          loadedManifest.chapters.some(
-            (chapter) => chapter.id === storedProgress.chapterId
-          )
-            ? storedProgress.chapterId
-            : loadedManifest.firstChapterId;
-        const loadedBundle = await loadBundle(loadedManifest, targetChapterId);
+        const resolvedRuntime = await resolvePlayableRuntimePosition({
+          manifest: loadedManifest,
+          loadChapter: loadBundle,
+          progress: storedProgress,
+          startChapterId: loadedManifest.firstChapterId
+        });
 
         if (cancelled) {
           return;
         }
 
-        const initialProgress =
-          storedProgress && storedProgress.chapterId === loadedBundle.chapter.id
-            ? storedProgress
-            : createInitialProgressForChapter(loadedBundle.chapter);
-
         setManifest(loadedManifest);
-        setBundle(loadedBundle);
-        setReaderState(
-          createReaderStateFromProgress(loadedBundle.chapter, initialProgress)
-        );
+        setBoundaryState(null);
+
+        if (!resolvedRuntime) {
+          setBundle(null);
+          setReaderState(null);
+          setBranchFlags({});
+          setIsLoading(false);
+          return;
+        }
+
+        setBundle(resolvedRuntime.bundle);
+        setReaderState(resolvedRuntime.state);
         setBranchFlags(storedProgress?.branchFlags ?? {});
         setIsLoading(false);
       } catch (caughtError) {
@@ -301,34 +315,74 @@ export function PlayerStoryReader({
   }, [backgroundMusicUrl]);
 
   const handleAdvance = useCallback(async () => {
+    if (isLoadingChapter) {
+      return;
+    }
+
+    if (boundaryState) {
+      if (boundaryState.type !== "story-finished") {
+        setBoundaryState(null);
+      }
+
+      return;
+    }
+
     if (!bundle || !readerState || !manifest) {
-      return;
-    }
-
-    const nextState = advanceReaderState(bundle.chapter, readerState);
-
-    if (!nextState.isChapterComplete) {
-      setReaderState(nextState);
-      return;
-    }
-
-    if (!bundle.nextChapterId) {
-      setReaderState(nextState);
       return;
     }
 
     setIsLoadingChapter(true);
 
     try {
-      const nextBundle = await loadBundle(manifest, bundle.nextChapterId);
-      const initialProgress = createInitialProgressForChapter(
-        nextBundle.chapter
+      const result = await advanceRuntimePosition({
+        manifest,
+        bundle,
+        state: readerState,
+        loadChapter: loadBundle
+      });
+
+      if (result.type === "line") {
+        setReaderState(result.state);
+        return;
+      }
+
+      if (result.type === "scene-transition") {
+        const nextScene = getCurrentScene(bundle.chapter, result.state);
+
+        setReaderState(result.state);
+        setBoundaryState({
+          type: "scene-transition",
+          sceneTitle: nextScene?.title ?? "Next Scene"
+        });
+        return;
+      }
+
+      if (result.type === "chapter-break") {
+        const chapterIndex = manifest.chapters.findIndex(
+          (chapter) => chapter.id === result.bundle.chapter.id
+        );
+
+        setBundle(result.bundle);
+        setReaderState(result.state);
+        setBoundaryState({
+          type: "chapter-break",
+          chapterTitle: result.bundle.chapter.title,
+          chapterIndex: chapterIndex + 1,
+          chapterCount: manifest.chapters.length
+        });
+        return;
+      }
+
+      const chapterIndex = manifest.chapters.findIndex(
+        (chapter) => chapter.id === bundle.chapter.id
       );
 
-      setBundle(nextBundle);
-      setReaderState(
-        createReaderStateFromProgress(nextBundle.chapter, initialProgress)
-      );
+      setBoundaryState({
+        type: "story-finished",
+        chapterTitle: bundle.chapter.title,
+        chapterIndex: chapterIndex + 1,
+        chapterCount: manifest.chapters.length
+      });
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
@@ -338,7 +392,14 @@ export function PlayerStoryReader({
     } finally {
       setIsLoadingChapter(false);
     }
-  }, [bundle, loadBundle, manifest, readerState]);
+  }, [
+    boundaryState,
+    bundle,
+    isLoadingChapter,
+    loadBundle,
+    manifest,
+    readerState
+  ]);
 
   const handleRestart = useCallback(async () => {
     if (!manifest?.firstChapterId) {
@@ -346,17 +407,24 @@ export function PlayerStoryReader({
     }
 
     try {
-      const firstBundle = await loadBundle(manifest, manifest.firstChapterId);
-      const initialProgress = createInitialProgressForChapter(
-        firstBundle.chapter
-      );
+      const resolvedRuntime = await resolvePlayableRuntimePosition({
+        manifest,
+        loadChapter: loadBundle,
+        progress: null,
+        startChapterId: manifest.firstChapterId
+      });
 
-      setBundle(firstBundle);
-      setReaderState(
-        createReaderStateFromProgress(firstBundle.chapter, initialProgress)
-      );
+      setBoundaryState(null);
       setBranchFlags({});
-      persistProgress(progressStorageKey, initialProgress);
+
+      if (!resolvedRuntime) {
+        setBundle(null);
+        setReaderState(null);
+        return;
+      }
+
+      setBundle(resolvedRuntime.bundle);
+      setReaderState(resolvedRuntime.state);
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
@@ -364,7 +432,55 @@ export function PlayerStoryReader({
           : "Unable to restart the story."
       );
     }
-  }, [loadBundle, manifest, progressStorageKey]);
+  }, [loadBundle, manifest]);
+
+  const handleReaderCardClick = useCallback(
+    (event: MouseEvent<HTMLDivElement>) => {
+      if (
+        isLoadingChapter ||
+        boundaryState?.type === "story-finished" ||
+        isAdvanceGestureTarget(event.target)
+      ) {
+        return;
+      }
+
+      void handleAdvance();
+    },
+    [boundaryState?.type, handleAdvance, isLoadingChapter]
+  );
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (
+        event.defaultPrevented ||
+        event.altKey ||
+        event.ctrlKey ||
+        event.metaKey ||
+        event.shiftKey ||
+        isLoadingChapter ||
+        boundaryState?.type === "story-finished"
+      ) {
+        return;
+      }
+
+      if (event.key !== "Enter" && event.key !== " ") {
+        return;
+      }
+
+      if (isAdvanceGestureTarget(event.target)) {
+        return;
+      }
+
+      event.preventDefault();
+      void handleAdvance();
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [boundaryState?.type, handleAdvance, isLoadingChapter]);
 
   if (isLoading) {
     return (
@@ -416,8 +532,16 @@ export function PlayerStoryReader({
   const manifestChapterIndex = activeManifest.chapters.findIndex(
     (chapter) => chapter.id === activeBundle.chapter.id
   );
-  const isAtStoryEnd =
-    activeReaderState.isChapterComplete && !activeBundle.nextChapterId;
+  const continueHint = "Press Enter, Space, or click the panel to continue.";
+  const sceneTransitionState =
+    boundaryState?.type === "scene-transition" ? boundaryState : null;
+  const chapterBreakState =
+    boundaryState?.type === "chapter-break" ? boundaryState : null;
+  const storyFinishedState =
+    boundaryState?.type === "story-finished" ? boundaryState : null;
+  const isTransitionCard = Boolean(sceneTransitionState);
+  const isChapterBreakCard = Boolean(chapterBreakState);
+  const isStoryFinishedCard = Boolean(storyFinishedState);
 
   return (
     <div className="mx-auto w-full max-w-7xl px-6 pb-10">
@@ -502,47 +626,137 @@ export function PlayerStoryReader({
             </div>
           </div>
 
-          <div className="mt-8 rounded-[28px] border border-white/10 bg-slate-950/80 p-5 backdrop-blur">
-            <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <div
+            className={`mt-8 rounded-[28px] border border-white/10 bg-slate-950/80 p-5 backdrop-blur ${
+              isStoryFinishedCard ? "" : "cursor-pointer"
+            }`}
+            onClick={handleReaderCardClick}
+          >
+            {isTransitionCard ? (
               <div>
-                <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
-                  {activeEntry.speaker.type === "narrator"
-                    ? "Narrator"
-                    : activeEntry.speaker.characterName}
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
+                      Scene Transition
+                    </p>
+                    <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-50">
+                      {sceneTransitionState?.sceneTitle}
+                    </h2>
+                  </div>
+                  <PillLike>Scene {activeReaderState.sceneIndex + 1}</PillLike>
+                </div>
+
+                <p className="max-w-3xl text-base leading-7 text-slate-300">
+                  The next scene is ready.
                 </p>
-                {activeEntry.speaker.type === "character" ? (
-                  <p className="mt-1 text-xs text-slate-500">
-                    Emotion: {activeEntry.speaker.emotionLabel}
-                  </p>
-                ) : null}
-              </div>
-              <PillLike>
-                Scene {activeReaderState.sceneIndex + 1}, line{" "}
-                {activeReaderState.dialogueIndex + 1}
-              </PillLike>
-            </div>
 
-            <p className="max-w-4xl text-lg leading-8 text-slate-100">
-              {activeEntry.text}
-            </p>
-
-            <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-              <div className="text-sm text-slate-400">
-                Progress is saved in localStorage using stable dialogue IDs.
+                <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-sm text-slate-400">{continueHint}</div>
+                  <Button
+                    onClick={() => void handleAdvance()}
+                    disabled={isLoadingChapter}
+                  >
+                    Continue
+                  </Button>
+                </div>
               </div>
-              <Button
-                onClick={() => void handleAdvance()}
-                disabled={isLoadingChapter}
-              >
-                {isAtStoryEnd
-                  ? "Story Complete"
-                  : activeReaderState.isChapterComplete
-                    ? isLoadingChapter
-                      ? "Loading Chapter..."
-                      : "Next Chapter"
-                    : "Next Line"}
-              </Button>
-            </div>
+            ) : isChapterBreakCard ? (
+              <div>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
+                      Chapter Break
+                    </p>
+                    <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-50">
+                      {chapterBreakState?.chapterTitle}
+                    </h2>
+                  </div>
+                  <PillLike>
+                    Chapter {chapterBreakState?.chapterIndex} of{" "}
+                    {chapterBreakState?.chapterCount}
+                  </PillLike>
+                </div>
+
+                <p className="max-w-3xl text-base leading-7 text-slate-300">
+                  The previous chapter is complete. Continue when you are ready
+                  to begin the next chapter.
+                </p>
+
+                <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-sm text-slate-400">{continueHint}</div>
+                  <Button
+                    onClick={() => void handleAdvance()}
+                    disabled={isLoadingChapter}
+                  >
+                    Begin Chapter
+                  </Button>
+                </div>
+              </div>
+            ) : isStoryFinishedCard ? (
+              <div>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
+                      Story Complete
+                    </p>
+                    <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-50">
+                      You reached the end of the current story.
+                    </h2>
+                  </div>
+                  <PillLike>
+                    Chapter {storyFinishedState?.chapterIndex} of{" "}
+                    {storyFinishedState?.chapterCount}
+                  </PillLike>
+                </div>
+
+                <p className="max-w-3xl text-base leading-7 text-slate-300">
+                  {storyFinishedState?.chapterTitle} is the current ending
+                  point. Restart to read from the beginning again.
+                </p>
+
+                <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-sm text-slate-400">
+                    The published story ends here for now.
+                  </div>
+                  <Button onClick={handleRestart}>Restart Story</Button>
+                </div>
+              </div>
+            ) : (
+              <div>
+                <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
+                      {activeEntry.speaker.type === "narrator"
+                        ? "Narrator"
+                        : activeEntry.speaker.characterName}
+                    </p>
+                    {activeEntry.speaker.type === "character" ? (
+                      <p className="mt-1 text-xs text-slate-500">
+                        Emotion: {activeEntry.speaker.emotionLabel}
+                      </p>
+                    ) : null}
+                  </div>
+                  <PillLike>
+                    Scene {activeReaderState.sceneIndex + 1}, line{" "}
+                    {activeReaderState.dialogueIndex + 1}
+                  </PillLike>
+                </div>
+
+                <p className="max-w-4xl text-lg leading-8 text-slate-100">
+                  {activeEntry.text}
+                </p>
+
+                <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                  <div className="text-sm text-slate-400">{continueHint}</div>
+                  <Button
+                    onClick={() => void handleAdvance()}
+                    disabled={isLoadingChapter}
+                  >
+                    {isLoadingChapter ? "Loading..." : "Continue"}
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

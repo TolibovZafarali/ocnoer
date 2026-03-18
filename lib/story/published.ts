@@ -177,6 +177,15 @@ function compileScene(input: {
 
       if (isPrimaryLeftStageCharacter(speakingCharacter)) {
         leftStage = stageCharacter;
+      } else if (!leftStageAnchor) {
+        if (
+          !leftStage ||
+          leftStage.characterId === stageCharacter.characterId
+        ) {
+          leftStage = stageCharacter;
+        } else {
+          rightStage = stageCharacter;
+        }
       } else {
         if (
           leftStageAnchor &&

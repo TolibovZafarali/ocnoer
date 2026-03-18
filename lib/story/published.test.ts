@@ -170,5 +170,68 @@ describe("compileRuntimeStory", () => {
       );
     }
   });
-});
 
+  it("falls back to the left stage when Ocnoer is absent from a scene", () => {
+    const compiled = compileRuntimeStory({
+      snapshot: {
+        ...snapshot,
+        chapters: [
+          {
+            id: "chapter_two",
+            title: "Chapter Two",
+            slug: "chapter-two",
+            orderIndex: 1,
+            createdAt: "2026-03-16T00:00:00.000Z",
+            updatedAt: "2026-03-16T00:00:00.000Z",
+            scenes: [
+              {
+                id: "scene_two",
+                title: "Ren Alone",
+                orderIndex: 1,
+                backgroundImageAssetId: "bg_hall",
+                backgroundMusicAssetId: null,
+                characterIds: ["character_ren"],
+                createdAt: "2026-03-16T00:00:00.000Z",
+                updatedAt: "2026-03-16T00:00:00.000Z",
+                dialogue: [
+                  {
+                    id: "dialogue_intro",
+                    orderIndex: 1,
+                    text: "A quiet room settles around Ren.",
+                    speaker: {
+                      type: "narrator"
+                    },
+                    createdAt: "2026-03-16T00:00:00.000Z",
+                    updatedAt: "2026-03-16T00:00:00.000Z"
+                  },
+                  {
+                    id: "dialogue_ren_first",
+                    orderIndex: 2,
+                    text: "I have to keep moving.",
+                    speaker: {
+                      type: "character",
+                      characterId: "character_ren",
+                      emotionKey: "neutral"
+                    },
+                    createdAt: "2026-03-16T00:00:00.000Z",
+                    updatedAt: "2026-03-16T00:00:00.000Z"
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      bucket: "runtime",
+      runtimePrefix: "runtime",
+      generatedAt: "2026-03-16T01:00:00.000Z"
+    });
+
+    const bundle = compiled.chapterBundles[0]?.bundle;
+    const renEntry = bundle?.chapter.scenes[0]?.dialogue[1];
+
+    expect(renEntry?.speaker.type).toBe("character");
+    expect(renEntry?.stage.left?.characterSlug).toBe("ren");
+    expect(renEntry?.stage.right).toBeNull();
+  });
+});

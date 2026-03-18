@@ -167,7 +167,6 @@ export default async function SceneDetailPage({
             <form action={updateSceneAction} className="space-y-4">
               <input type="hidden" name="chapterId" value={chapter.id} />
               <input type="hidden" name="sceneId" value={scene.id} />
-              <input type="hidden" name="orderIndex" value={scene.orderIndex} />
               <input type="hidden" name="returnTo" value={returnTo} />
 
               <div className="flex flex-wrap gap-2">
@@ -181,14 +180,32 @@ export default async function SceneDetailPage({
                 {sceneReadiness.description}
               </p>
 
-              <Field label="Scene Title" htmlFor="scene-title">
-                <TextInput
-                  id="scene-title"
-                  name="title"
-                  defaultValue={scene.title}
-                  required
-                />
-              </Field>
+              <div className="grid gap-4 md:grid-cols-[1fr_140px]">
+                <Field label="Scene Title" htmlFor="scene-title">
+                  <TextInput
+                    id="scene-title"
+                    name="title"
+                    defaultValue={scene.title}
+                    required
+                  />
+                </Field>
+
+                <Field
+                  label="Order"
+                  htmlFor="scene-order"
+                  hint="1 is first in chapter order."
+                >
+                  <TextInput
+                    id="scene-order"
+                    name="orderIndex"
+                    type="number"
+                    min={1}
+                    step={1}
+                    defaultValue={scene.orderIndex}
+                    required
+                  />
+                </Field>
+              </div>
 
               <Field label="Background Image" htmlFor="scene-background-image">
                 <SelectInput

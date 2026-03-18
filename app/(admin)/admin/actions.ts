@@ -58,14 +58,21 @@ function getRequiredString(formData: FormData, key: string, label: string) {
   return String(value).trim();
 }
 
-function getOptionalInteger(formData: FormData, key: string, label: string) {
+function getOptionalInteger(
+  formData: FormData,
+  key: string,
+  label: string,
+  options?: {
+    min?: number;
+  }
+) {
   const value = formData.get(key);
 
   if (value == null || value === "") {
     return null;
   }
 
-  const parsed = parseIntegerField(value, label);
+  const parsed = parseIntegerField(value, label, options);
 
   if (!parsed.ok) {
     throw new StoryRepositoryError(parsed.message);
@@ -128,7 +135,9 @@ function getNextOrderIndex(items: Array<{ orderIndex: number }>) {
 }
 
 async function resolveChapterOrderIndex(formData: FormData) {
-  const explicit = getOptionalInteger(formData, "orderIndex", "Chapter order");
+  const explicit = getOptionalInteger(formData, "orderIndex", "Chapter order", {
+    min: 1
+  });
 
   if (explicit != null) {
     return explicit;
@@ -151,7 +160,9 @@ async function resolveExistingChapterOrderIndex(chapterId: string) {
 }
 
 async function resolveSceneOrderIndex(formData: FormData, chapterId: string) {
-  const explicit = getOptionalInteger(formData, "orderIndex", "Scene order");
+  const explicit = getOptionalInteger(formData, "orderIndex", "Scene order", {
+    min: 1
+  });
 
   if (explicit != null) {
     return explicit;
@@ -187,7 +198,14 @@ async function resolveDialogueOrderIndex(
   chapterId: string,
   sceneId: string
 ) {
-  const explicit = getOptionalInteger(formData, "orderIndex", "Dialogue order");
+  const explicit = getOptionalInteger(
+    formData,
+    "orderIndex",
+    "Dialogue order",
+    {
+      min: 1
+    }
+  );
 
   if (explicit != null) {
     return explicit;
@@ -579,8 +597,9 @@ export async function updateChapterAction(formData: FormData) {
         title,
         slug: getOptionalString(formData, "slug") ?? title,
         orderIndex:
-          getOptionalInteger(formData, "orderIndex", "Chapter order") ??
-          (await resolveExistingChapterOrderIndex(chapterId))
+          getOptionalInteger(formData, "orderIndex", "Chapter order", {
+            min: 1
+          }) ?? (await resolveExistingChapterOrderIndex(chapterId))
       });
 
       return withStatus(
@@ -654,8 +673,9 @@ export async function updateSceneAction(formData: FormData) {
         sceneId,
         title: getRequiredString(formData, "title", "Scene title"),
         orderIndex:
-          getOptionalInteger(formData, "orderIndex", "Scene order") ??
-          (await resolveExistingSceneOrderIndex(chapterId, sceneId)),
+          getOptionalInteger(formData, "orderIndex", "Scene order", {
+            min: 1
+          }) ?? (await resolveExistingSceneOrderIndex(chapterId, sceneId)),
         backgroundImageAssetId: getRequiredString(
           formData,
           "backgroundImageAssetId",
@@ -754,7 +774,9 @@ export async function updateDialogueEntryAction(formData: FormData) {
         sceneId,
         dialogueEntryId,
         orderIndex:
-          getOptionalInteger(formData, "orderIndex", "Dialogue order") ??
+          getOptionalInteger(formData, "orderIndex", "Dialogue order", {
+            min: 1
+          }) ??
           (await resolveExistingDialogueOrderIndex(
             chapterId,
             sceneId,

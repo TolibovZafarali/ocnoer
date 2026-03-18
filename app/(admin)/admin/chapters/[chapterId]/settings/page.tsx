@@ -86,7 +86,6 @@ export default async function ChapterSettingsPage({
           <form action={updateChapterAction} className="space-y-4">
             <input type="hidden" name="chapterId" value={chapter.id} />
             <input type="hidden" name="slug" value={chapter.slug} />
-            <input type="hidden" name="orderIndex" value={chapter.orderIndex} />
             <input type="hidden" name="returnTo" value={returnTo} />
 
             <div className="flex flex-wrap gap-2">
@@ -95,14 +94,32 @@ export default async function ChapterSettingsPage({
               <Pill>{chapter.slug}</Pill>
             </div>
 
-            <Field label="Chapter Title" htmlFor="chapter-title">
-              <TextInput
-                id="chapter-title"
-                name="title"
-                defaultValue={chapter.title}
-                required
-              />
-            </Field>
+            <div className="grid gap-4 md:grid-cols-[1fr_140px]">
+              <Field label="Chapter Title" htmlFor="chapter-title">
+                <TextInput
+                  id="chapter-title"
+                  name="title"
+                  defaultValue={chapter.title}
+                  required
+                />
+              </Field>
+
+              <Field
+                label="Order"
+                htmlFor="chapter-order"
+                hint="1 is first in story order."
+              >
+                <TextInput
+                  id="chapter-order"
+                  name="orderIndex"
+                  type="number"
+                  min={1}
+                  step={1}
+                  defaultValue={chapter.orderIndex}
+                  required
+                />
+              </Field>
+            </div>
 
             <div className="flex justify-end">
               <Button type="submit">Save Chapter</Button>

@@ -49,6 +49,32 @@ function sortByOrderIndex<T extends { orderIndex: number }>(items: T[]) {
   return [...items].sort((left, right) => left.orderIndex - right.orderIndex);
 }
 
+function moveItemWithinOrderedScope<
+  T extends { id: string; orderIndex: number }
+>(items: T[], itemId: string, requestedOrderIndex: number) {
+  if (!Number.isInteger(requestedOrderIndex) || requestedOrderIndex < 1) {
+    throw new StoryRepositoryError("Order must be a positive integer.");
+  }
+
+  const orderedItems = sortByOrderIndex(items);
+  const currentIndex = orderedItems.findIndex((item) => item.id === itemId);
+
+  if (currentIndex < 0) {
+    throw new StoryRepositoryError("Ordered item not found.");
+  }
+
+  const [movedItem] = orderedItems.splice(currentIndex, 1);
+  const targetIndex =
+    Math.min(requestedOrderIndex, orderedItems.length + 1) - 1;
+
+  orderedItems.splice(targetIndex, 0, movedItem);
+  orderedItems.forEach((item, index) => {
+    item.orderIndex = index + 1;
+  });
+
+  return orderedItems;
+}
+
 function sortSnapshot(
   snapshot: StoryAuthoringSnapshot
 ): StoryAuthoringSnapshot {
@@ -1161,14 +1187,27 @@ export async function updateChapter(input: {
   const snapshot = await loadAuthoringSnapshot();
   const chapter = findChapterOrThrow(snapshot, input.chapterId);
   const normalizedSlug = normalizeSlugInput(input.slug, input.title);
+  const orderChanged = input.orderIndex !== chapter.orderIndex;
 
   ensureUniqueChapterSlug(snapshot, normalizedSlug, chapter.id);
-  ensureUniqueChapterOrder(snapshot, input.orderIndex, chapter.id);
+
+  if (!orderChanged) {
+    ensureUniqueChapterOrder(snapshot, input.orderIndex, chapter.id);
+  }
 
   chapter.title = input.title.trim();
   chapter.slug = normalizedSlug;
-  chapter.orderIndex = input.orderIndex;
   chapter.updatedAt = nowIsoString();
+
+  if (orderChanged) {
+    snapshot.chapters = moveItemWithinOrderedScope(
+      snapshot.chapters,
+      chapter.id,
+      input.orderIndex
+    );
+  } else {
+    chapter.orderIndex = input.orderIndex;
+  }
 
   await commitSnapshot(snapshot);
 
@@ -1238,8 +1277,11 @@ export async function updateScene(input: {
   const chapter = findChapterOrThrow(snapshot, input.chapterId);
   const scene = findSceneOrThrow(chapter, input.sceneId);
   const nextCharacterIds = [...new Set(input.characterIds)];
+  const orderChanged = input.orderIndex !== scene.orderIndex;
 
-  ensureUniqueSceneOrder(chapter, input.orderIndex, scene.id);
+  if (!orderChanged) {
+    ensureUniqueSceneOrder(chapter, input.orderIndex, scene.id);
+  }
   findBackgroundImageOrThrow(snapshot, input.backgroundImageAssetId);
 
   if (input.backgroundMusicAssetId) {
@@ -1250,12 +1292,21 @@ export async function updateScene(input: {
   assertSceneDialogueStillValid(snapshot, scene, nextCharacterIds);
 
   scene.title = input.title.trim();
-  scene.orderIndex = input.orderIndex;
   scene.backgroundImageAssetId = input.backgroundImageAssetId;
   scene.backgroundMusicAssetId = input.backgroundMusicAssetId;
   scene.characterIds = nextCharacterIds;
   scene.updatedAt = nowIsoString();
   chapter.updatedAt = nowIsoString();
+
+  if (orderChanged) {
+    chapter.scenes = moveItemWithinOrderedScope(
+      chapter.scenes,
+      scene.id,
+      input.orderIndex
+    );
+  } else {
+    scene.orderIndex = input.orderIndex;
+  }
 
   await commitSnapshot(snapshot);
 
@@ -1336,8 +1387,11 @@ export async function updateDialogueEntry(input: {
   const chapter = findChapterOrThrow(snapshot, input.chapterId);
   const scene = findSceneOrThrow(chapter, input.sceneId);
   const entry = findDialogueEntryOrThrow(scene, input.dialogueEntryId);
+  const orderChanged = input.orderIndex !== entry.orderIndex;
 
-  ensureUniqueDialogueOrder(scene, input.orderIndex, entry.id);
+  if (!orderChanged) {
+    ensureUniqueDialogueOrder(scene, input.orderIndex, entry.id);
+  }
   assertSpeakerSelection({
     snapshot,
     scene,
@@ -1346,7 +1400,6 @@ export async function updateDialogueEntry(input: {
     emotionKey: input.emotionKey
   });
 
-  entry.orderIndex = input.orderIndex;
   entry.text = input.text.trim();
   entry.speaker =
     input.speakerType === "narrator"
@@ -1361,6 +1414,16 @@ export async function updateDialogueEntry(input: {
   entry.updatedAt = nowIsoString();
   scene.updatedAt = nowIsoString();
   chapter.updatedAt = nowIsoString();
+
+  if (orderChanged) {
+    scene.dialogue = moveItemWithinOrderedScope(
+      scene.dialogue,
+      entry.id,
+      input.orderIndex
+    );
+  } else {
+    entry.orderIndex = input.orderIndex;
+  }
 
   await commitSnapshot(snapshot);
 

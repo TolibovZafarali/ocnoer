@@ -27,7 +27,10 @@ export function validateRequiredText(
 
 export function parseIntegerField(
   value: unknown,
-  field: string
+  field: string,
+  options?: {
+    min?: number;
+  }
 ): { ok: true; value: number } | { ok: false; message: string } {
   const parsed = Number.parseInt(String(value), 10);
 
@@ -35,6 +38,13 @@ export function parseIntegerField(
     return {
       ok: false,
       message: `${field} must be an integer.`
+    };
+  }
+
+  if (options?.min != null && parsed < options.min) {
+    return {
+      ok: false,
+      message: `${field} must be at least ${options.min}.`
     };
   }
 

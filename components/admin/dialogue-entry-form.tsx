@@ -44,9 +44,11 @@ function SubmitButton(props: { label: string }) {
 
 export function DialogueEntryForm(props: DialogueEntryFormProps) {
   const firstCharacter = props.sceneCharacters[0] ?? null;
+  const isEditMode = Boolean(props.initial?.dialogueEntryId);
   const prefix =
     props.idPrefix ??
     `dialogue-${props.sceneId}-${props.initial?.dialogueEntryId ?? "new"}`;
+  const orderId = `${prefix}-order`;
   const speakerTypeId = `${prefix}-speaker-type`;
   const characterIdField = `${prefix}-character`;
   const emotionKeyId = `${prefix}-emotion`;
@@ -100,14 +102,6 @@ export function DialogueEntryForm(props: DialogueEntryFormProps) {
           type="hidden"
           name="dialogueEntryId"
           value={props.initial.dialogueEntryId}
-        />
-      ) : null}
-
-      {props.initial?.orderIndex != null ? (
-        <input
-          type="hidden"
-          name="orderIndex"
-          value={props.initial.orderIndex}
         />
       ) : null}
 
@@ -195,6 +189,28 @@ export function DialogueEntryForm(props: DialogueEntryFormProps) {
       ) : (
         <input type="hidden" name="emotionKey" value="" />
       )}
+
+      {isEditMode ? (
+        <div className="space-y-2">
+          <label
+            className="text-sm font-medium text-slate-800"
+            htmlFor={orderId}
+          >
+            Order
+          </label>
+          <input
+            id={orderId}
+            name="orderIndex"
+            type="number"
+            min={1}
+            step={1}
+            defaultValue={props.initial?.orderIndex}
+            className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none ring-slate-200 transition focus:ring-2"
+            required
+          />
+          <p className="text-xs text-slate-500">1 is first in scene order.</p>
+        </div>
+      ) : null}
 
       <div className="space-y-2">
         <label className="text-sm font-medium text-slate-800" htmlFor={textId}>

@@ -1430,6 +1430,30 @@ export async function updateDialogueEntry(input: {
   return entry;
 }
 
+export async function reorderDialogueEntry(input: {
+  chapterId: string;
+  sceneId: string;
+  dialogueEntryId: string;
+  targetOrderIndex: number;
+}) {
+  const snapshot = await loadAuthoringSnapshot();
+  const chapter = findChapterOrThrow(snapshot, input.chapterId);
+  const scene = findSceneOrThrow(chapter, input.sceneId);
+  const entry = findDialogueEntryOrThrow(scene, input.dialogueEntryId);
+
+  scene.dialogue = moveItemWithinOrderedScope(
+    scene.dialogue,
+    entry.id,
+    input.targetOrderIndex
+  );
+  scene.updatedAt = nowIsoString();
+  chapter.updatedAt = nowIsoString();
+
+  await commitSnapshot(snapshot);
+
+  return entry;
+}
+
 export async function deleteDialogueEntry(input: {
   chapterId: string;
   sceneId: string;

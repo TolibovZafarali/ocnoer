@@ -7,11 +7,13 @@ import {
   createDialogueEntryAction,
   deleteDialogueEntryAction,
   deleteSceneAction,
+  reorderDialogueEntryAction,
   updateDialogueEntryAction,
   updateSceneAction
 } from "@/app/(admin)/admin/actions";
-import { AdminCard, AdminEmptyState } from "@/components/admin/cards";
+import { AdminEmptyState } from "@/components/admin/cards";
 import { DialogueEntryForm } from "@/components/admin/dialogue-entry-form";
+import { DialogueSortableList } from "@/components/admin/dialogue-sortable-list";
 import {
   AdminPageShell,
   Field,
@@ -35,10 +37,6 @@ type SceneDetailPageProps = {
   }>;
   searchParams?: Promise<Record<string, string | string[] | undefined>>;
 };
-
-function getDialoguePreview(text: string) {
-  return text.length > 220 ? `${text.slice(0, 217).trimEnd()}...` : text;
-}
 
 function getParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
@@ -111,6 +109,36 @@ export default async function SceneDetailPage({
     scene.dialogue.length === 1
       ? "1 dialogue row"
       : `${scene.dialogue.length} dialogue rows`;
+  const dialogueItems = scene.dialogue.map((entry) => {
+    let speakerName = "Narrator";
+    let emotionLabel: string | null = null;
+    const speaker = entry.speaker;
+
+    if (speaker.type === "character") {
+      const character =
+        story.characters.find((item) => item.id === speaker.characterId) ??
+        null;
+      const emotion =
+        character?.emotions.find((item) => item.key === speaker.emotionKey) ??
+        null;
+
+      speakerName = character?.name ?? "Unknown Character";
+      emotionLabel = emotion?.label ?? speaker.emotionKey;
+    }
+
+    return {
+      id: entry.id,
+      orderIndex: entry.orderIndex,
+      speakerName,
+      emotionLabel,
+      text: entry.text,
+      speakerType: entry.speaker.type,
+      characterId:
+        entry.speaker.type === "character" ? entry.speaker.characterId : "",
+      emotionKey:
+        entry.speaker.type === "character" ? entry.speaker.emotionKey : ""
+    };
+  });
 
   return (
     <AdminPageShell>
@@ -322,120 +350,16 @@ export default async function SceneDetailPage({
               description="Create the first dialogue entry above."
             />
           ) : (
-            <div className="space-y-4">
-              {scene.dialogue.map((entry) => {
-                let speakerName = "Narrator";
-                let emotionLabel: string | null = null;
-                const speaker = entry.speaker;
-
-                if (speaker.type === "character") {
-                  const character =
-                    story.characters.find(
-                      (item) => item.id === speaker.characterId
-                    ) ?? null;
-                  const emotion =
-                    character?.emotions.find(
-                      (item) => item.key === speaker.emotionKey
-                    ) ?? null;
-
-                  speakerName = character?.name ?? "Unknown Character";
-                  emotionLabel = emotion?.label ?? speaker.emotionKey;
-                }
-
-                return (
-                  <AdminCard
-                    key={entry.id}
-                    title={speakerName}
-                    eyebrow={`Dialogue ${entry.orderIndex}`}
-                    description={
-                      <div className="space-y-4">
-                        <p className="whitespace-pre-wrap text-slate-700">
-                          {getDialoguePreview(entry.text)}
-                        </p>
-
-                        <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
-                          <summary className="cursor-pointer text-sm font-medium text-slate-800">
-                            Edit or delete dialogue entry
-                          </summary>
-
-                          <div className="mt-3 space-y-4">
-                            <DialogueEntryForm
-                              action={updateDialogueEntryAction}
-                              chapterId={chapter.id}
-                              sceneId={scene.id}
-                              returnTo={returnTo}
-                              idPrefix={`dialogue-edit-${entry.id}`}
-                              submitLabel="Save Dialogue"
-                              sceneCharacters={sceneCharacters}
-                              initial={{
-                                dialogueEntryId: entry.id,
-                                orderIndex: entry.orderIndex,
-                                text: entry.text,
-                                speakerType: entry.speaker.type,
-                                characterId:
-                                  entry.speaker.type === "character"
-                                    ? entry.speaker.characterId
-                                    : "",
-                                emotionKey:
-                                  entry.speaker.type === "character"
-                                    ? entry.speaker.emotionKey
-                                    : ""
-                              }}
-                            />
-
-                            <div className="border-t border-slate-200 pt-4">
-                              <p className="text-sm text-slate-600">
-                                Delete permanently removes this dialogue entry
-                                from the scene order.
-                              </p>
-                              <form
-                                action={deleteDialogueEntryAction}
-                                className="mt-3 flex justify-end"
-                              >
-                                <input
-                                  type="hidden"
-                                  name="chapterId"
-                                  value={chapter.id}
-                                />
-                                <input
-                                  type="hidden"
-                                  name="sceneId"
-                                  value={scene.id}
-                                />
-                                <input
-                                  type="hidden"
-                                  name="dialogueEntryId"
-                                  value={entry.id}
-                                />
-                                <input
-                                  type="hidden"
-                                  name="returnTo"
-                                  value={returnTo}
-                                />
-                                <Button
-                                  type="submit"
-                                  size="sm"
-                                  variant="destructive"
-                                >
-                                  Delete Dialogue
-                                </Button>
-                              </form>
-                            </div>
-                          </div>
-                        </details>
-                      </div>
-                    }
-                    footer={
-                      <>
-                        <Pill>Order {entry.orderIndex}</Pill>
-                        <Pill>{speakerName}</Pill>
-                        {emotionLabel ? <Pill>{emotionLabel}</Pill> : null}
-                      </>
-                    }
-                  />
-                );
-              })}
-            </div>
+            <DialogueSortableList
+              chapterId={chapter.id}
+              sceneId={scene.id}
+              returnTo={returnTo}
+              items={dialogueItems}
+              sceneCharacters={sceneCharacters}
+              reorderAction={reorderDialogueEntryAction}
+              updateAction={updateDialogueEntryAction}
+              deleteAction={deleteDialogueEntryAction}
+            />
           )}
         </section>
 

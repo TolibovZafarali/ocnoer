@@ -4,6 +4,7 @@ const requireAdminSessionMock = vi.fn();
 const createChapterMock = vi.fn();
 const deleteCharacterMock = vi.fn();
 const getAdminStoryDataMock = vi.fn();
+const reorderDialogueEntryMock = vi.fn();
 const redirectMock = vi.fn((path: string) => {
   throw new Error(`REDIRECT:${path}`);
 });
@@ -40,6 +41,7 @@ vi.mock("@/lib/story/repository", () => ({
   deleteDialogueEntry: vi.fn(),
   deleteScene: vi.fn(),
   getAdminStoryData: getAdminStoryDataMock,
+  reorderDialogueEntry: reorderDialogueEntryMock,
   setDefaultCharacterEmotion: vi.fn(),
   updateBackgroundImageAsset: vi.fn(),
   updateBackgroundMusicTrack: vi.fn(),
@@ -50,8 +52,11 @@ vi.mock("@/lib/story/repository", () => ({
   updateScene: vi.fn()
 }));
 
-const { createChapterAction, deleteCharacterAction } =
-  await import("@/app/(admin)/admin/actions");
+const {
+  createChapterAction,
+  deleteCharacterAction,
+  reorderDialogueEntryAction
+} = await import("@/app/(admin)/admin/actions");
 
 describe("createChapterAction", () => {
   beforeEach(() => {
@@ -118,5 +123,39 @@ describe("deleteCharacterAction", () => {
     expect(redirectMock).toHaveBeenCalledWith(
       "/admin/characters?status=success&message=Character+deleted."
     );
+  });
+});
+
+describe("reorderDialogueEntryAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireAdminSessionMock.mockResolvedValue(undefined);
+    reorderDialogueEntryMock.mockResolvedValue({ id: "dialogue_456" });
+    unstableRethrowMock.mockImplementation(() => {});
+  });
+
+  it("reorders within the scene and revalidates the server-rendered page", async () => {
+    const formData = new FormData();
+    formData.set("chapterId", "chapter_123");
+    formData.set("sceneId", "scene_456");
+    formData.set("dialogueEntryId", "dialogue_789");
+    formData.set("targetOrderIndex", "2");
+
+    await expect(reorderDialogueEntryAction(formData)).resolves.toEqual({
+      ok: true
+    });
+
+    expect(reorderDialogueEntryMock).toHaveBeenCalledWith({
+      chapterId: "chapter_123",
+      sceneId: "scene_456",
+      dialogueEntryId: "dialogue_789",
+      targetOrderIndex: 2
+    });
+    expect(revalidatePathMock).toHaveBeenCalledWith("/admin");
+    expect(revalidatePathMock).toHaveBeenCalledWith("/play");
+    expect(revalidatePathMock).toHaveBeenCalledWith(
+      "/admin/chapters/chapter_123/scenes/scene_456"
+    );
+    expect(redirectMock).not.toHaveBeenCalled();
   });
 });

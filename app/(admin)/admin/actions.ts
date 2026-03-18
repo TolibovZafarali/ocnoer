@@ -21,6 +21,7 @@ import {
   deleteDialogueEntry,
   deleteScene,
   getAdminStoryData,
+  reorderDialogueEntry,
   setDefaultCharacterEmotion,
   updateBackgroundImageAsset,
   updateBackgroundMusicTrack,
@@ -79,6 +80,23 @@ function getOptionalInteger(
   }
 
   return parsed.value;
+}
+
+function getRequiredInteger(
+  formData: FormData,
+  key: string,
+  label: string,
+  options?: {
+    min?: number;
+  }
+) {
+  const value = getOptionalInteger(formData, key, label, options);
+
+  if (value == null) {
+    throw new StoryRepositoryError(`${label} is required.`);
+  }
+
+  return value;
 }
 
 function getOptionalFile(formData: FormData, key: string) {
@@ -799,6 +817,59 @@ export async function updateDialogueEntryAction(formData: FormData) {
       );
     }
   });
+}
+
+export type ReorderDialogueEntryActionResult =
+  | {
+      ok: true;
+    }
+  | {
+      ok: false;
+      message: string;
+    };
+
+export async function reorderDialogueEntryAction(
+  formData: FormData
+): Promise<ReorderDialogueEntryActionResult> {
+  await requireAdminSession();
+
+  try {
+    const chapterId = getRequiredString(formData, "chapterId", "Chapter id");
+    const sceneId = getRequiredString(formData, "sceneId", "Scene id");
+    const dialogueEntryId = getRequiredString(
+      formData,
+      "dialogueEntryId",
+      "Dialogue entry id"
+    );
+    const targetOrderIndex = getRequiredInteger(
+      formData,
+      "targetOrderIndex",
+      "Dialogue target order",
+      {
+        min: 1
+      }
+    );
+
+    await reorderDialogueEntry({
+      chapterId,
+      sceneId,
+      dialogueEntryId,
+      targetOrderIndex
+    });
+
+    await revalidateStoryPaths([
+      `/admin/chapters/${chapterId}/scenes/${sceneId}`
+    ]);
+
+    return { ok: true };
+  } catch (error) {
+    unstable_rethrow(error);
+
+    return {
+      ok: false,
+      message: getErrorMessage(error)
+    };
+  }
 }
 
 export async function deleteDialogueEntryAction(formData: FormData) {

@@ -19,6 +19,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { getAdminStoryData } from "@/lib/story/repository";
 import { toPublicStorageUrl } from "@/lib/story/runtime";
+import {
+  PRIMARY_LEFT_STAGE_CHARACTER_SLUG,
+  findPrimaryLeftStageCharacter
+} from "@/lib/story/staging";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 
 type CharactersPageProps = {
@@ -39,6 +43,7 @@ export default async function CharactersPage({
   const { url: supabaseUrl } = getSupabaseEnv();
   const status = getParam(params.status);
   const message = getParam(params.message);
+  const leftStageAnchor = findPrimaryLeftStageCharacter(story.characters);
 
   return (
     <AdminPageShell>
@@ -54,6 +59,27 @@ export default async function CharactersPage({
         {status === "error" && message ? (
           <Notice kind="error">{message}</Notice>
         ) : null}
+
+        {leftStageAnchor ? (
+          <Notice kind="success">
+            Runtime left-stage anchor:{" "}
+            <span className="font-medium">{leftStageAnchor.name}</span>. The
+            player keeps the character with slug{" "}
+            <span className="font-medium">
+              {PRIMARY_LEFT_STAGE_CHARACTER_SLUG}
+            </span>{" "}
+            on the left side when available.
+          </Notice>
+        ) : (
+          <Notice kind="error">
+            Runtime left-stage anchor missing. The current player keeps the
+            character with slug{" "}
+            <span className="font-medium">
+              {PRIMARY_LEFT_STAGE_CHARACTER_SLUG}
+            </span>{" "}
+            on the left side when that character exists.
+          </Notice>
+        )}
 
         <SectionCard
           title="Create Character"

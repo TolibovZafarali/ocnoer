@@ -1,7 +1,14 @@
 "use client";
 /* eslint-disable @next/next/no-img-element */
 
-import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState
+} from "react";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -16,10 +23,7 @@ import {
   type ReaderState
 } from "@/lib/story/reader";
 import { fetchRuntimeJson, toPublicStorageUrl } from "@/lib/story/runtime";
-import type {
-  RuntimeChapterBundle,
-  RuntimeManifest
-} from "@/lib/story/types";
+import type { RuntimeChapterBundle, RuntimeManifest } from "@/lib/story/types";
 
 type PlayerStoryReaderProps = {
   manifestPath: string;
@@ -63,6 +67,55 @@ function persistProgress(storageKey: string, progress: PlayerProgress | null) {
   window.localStorage.setItem(storageKey, JSON.stringify(progress));
 }
 
+function getRuntimeAvailability(input: {
+  manifest: RuntimeManifest | null;
+  bundle: RuntimeChapterBundle | null;
+  readerState: ReaderState | null;
+  scene: RuntimeChapterBundle["chapter"]["scenes"][number] | null;
+  entry:
+    | RuntimeChapterBundle["chapter"]["scenes"][number]["dialogue"][number]
+    | null;
+}) {
+  if (!input.manifest?.firstChapterId) {
+    return {
+      title: "No authored story content yet",
+      description:
+        "Create the first chapter, scene, and dialogue entry in admin before opening the player."
+    };
+  }
+
+  if (!input.bundle) {
+    return {
+      title: "Story runtime is incomplete",
+      description:
+        "A chapter is published in the manifest, but its runtime bundle could not be loaded."
+    };
+  }
+
+  if (input.bundle.chapter.scenes.length === 0) {
+    return {
+      title: "Story content is incomplete",
+      description: `Chapter "${input.bundle.chapter.title}" exists, but it has no scenes yet. Add a scene in admin before trying to play it.`
+    };
+  }
+
+  if (!input.scene) {
+    return {
+      title: "Story content is incomplete",
+      description: `Chapter "${input.bundle.chapter.title}" has scenes, but the current playback position no longer points at a playable scene.`
+    };
+  }
+
+  if (input.scene.dialogue.length === 0 || !input.readerState || !input.entry) {
+    return {
+      title: "Story content is incomplete",
+      description: `Scene "${input.scene.title}" in chapter "${input.bundle.chapter.title}" has no dialogue yet. Add at least one dialogue row in admin before playing.`
+    };
+  }
+
+  return null;
+}
+
 export function PlayerStoryReader({
   manifestPath,
   progressStorageKey,
@@ -73,9 +126,9 @@ export function PlayerStoryReader({
   const [manifest, setManifest] = useState<RuntimeManifest | null>(null);
   const [bundle, setBundle] = useState<RuntimeChapterBundle | null>(null);
   const [readerState, setReaderState] = useState<ReaderState | null>(null);
-  const [branchFlags, setBranchFlags] = useState<Record<string, boolean | number | string>>(
-    {}
-  );
+  const [branchFlags, setBranchFlags] = useState<
+    Record<string, boolean | number | string>
+  >({});
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoadingChapter, setIsLoadingChapter] = useState(false);
@@ -89,10 +142,15 @@ export function PlayerStoryReader({
         return cached;
       }
 
-      const manifestChapter = getManifestChapterById(currentManifest, chapterId);
+      const manifestChapter = getManifestChapterById(
+        currentManifest,
+        chapterId
+      );
 
       if (!manifestChapter) {
-        throw new Error("Requested chapter is not available in runtime manifest.");
+        throw new Error(
+          "Requested chapter is not available in runtime manifest."
+        );
       }
 
       const loadedBundle = await fetchRuntimeJson<RuntimeChapterBundle>(
@@ -135,7 +193,9 @@ export function PlayerStoryReader({
         const storedProgress = readStoredProgress(progressStorageKey);
         const targetChapterId =
           storedProgress &&
-          loadedManifest.chapters.some((chapter) => chapter.id === storedProgress.chapterId)
+          loadedManifest.chapters.some(
+            (chapter) => chapter.id === storedProgress.chapterId
+          )
             ? storedProgress.chapterId
             : loadedManifest.firstChapterId;
         const loadedBundle = await loadBundle(loadedManifest, targetChapterId);
@@ -151,7 +211,9 @@ export function PlayerStoryReader({
 
         setManifest(loadedManifest);
         setBundle(loadedBundle);
-        setReaderState(createReaderStateFromProgress(loadedBundle.chapter, initialProgress));
+        setReaderState(
+          createReaderStateFromProgress(loadedBundle.chapter, initialProgress)
+        );
         setBranchFlags(storedProgress?.branchFlags ?? {});
         setIsLoading(false);
       } catch (caughtError) {
@@ -175,15 +237,27 @@ export function PlayerStoryReader({
     };
   }, [loadBundle, manifestPath, progressStorageKey, supabaseUrl]);
 
-  const scene = bundle && readerState ? getCurrentScene(bundle.chapter, readerState) : null;
+  const scene =
+    bundle && readerState ? getCurrentScene(bundle.chapter, readerState) : null;
   const entry =
-    bundle && readerState ? getCurrentDialogue(bundle.chapter, readerState) : null;
+    bundle && readerState
+      ? getCurrentDialogue(bundle.chapter, readerState)
+      : null;
+  const runtimeAvailability = getRuntimeAvailability({
+    manifest,
+    bundle,
+    readerState,
+    scene,
+    entry
+  });
   const backgroundImageUrl = useMemo(
-    () => toPublicStorageUrl(supabaseUrl, scene?.backgroundImage.filePath ?? null),
+    () =>
+      toPublicStorageUrl(supabaseUrl, scene?.backgroundImage.filePath ?? null),
     [scene?.backgroundImage.filePath, supabaseUrl]
   );
   const backgroundMusicUrl = useMemo(
-    () => toPublicStorageUrl(supabaseUrl, scene?.backgroundMusic?.filePath ?? null),
+    () =>
+      toPublicStorageUrl(supabaseUrl, scene?.backgroundMusic?.filePath ?? null),
     [scene?.backgroundMusic?.filePath, supabaseUrl]
   );
   const storedProgress = useMemo(() => {
@@ -247,7 +321,9 @@ export function PlayerStoryReader({
 
     try {
       const nextBundle = await loadBundle(manifest, bundle.nextChapterId);
-      const initialProgress = createInitialProgressForChapter(nextBundle.chapter);
+      const initialProgress = createInitialProgressForChapter(
+        nextBundle.chapter
+      );
 
       setBundle(nextBundle);
       setReaderState(
@@ -271,10 +347,14 @@ export function PlayerStoryReader({
 
     try {
       const firstBundle = await loadBundle(manifest, manifest.firstChapterId);
-      const initialProgress = createInitialProgressForChapter(firstBundle.chapter);
+      const initialProgress = createInitialProgressForChapter(
+        firstBundle.chapter
+      );
 
       setBundle(firstBundle);
-      setReaderState(createReaderStateFromProgress(firstBundle.chapter, initialProgress));
+      setReaderState(
+        createReaderStateFromProgress(firstBundle.chapter, initialProgress)
+      );
       setBranchFlags({});
       persistProgress(progressStorageKey, initialProgress);
     } catch (caughtError) {
@@ -307,41 +387,48 @@ export function PlayerStoryReader({
     );
   }
 
-  if (!manifest?.firstChapterId || !bundle || !readerState || !scene || !entry) {
+  if (runtimeAvailability) {
     return (
       <div className="mx-auto flex min-h-[70vh] w-full max-w-4xl items-center justify-center px-6 pb-10">
         <div className="w-full rounded-3xl border border-white/10 bg-white/5 p-6 text-slate-200">
-          <h2 className="text-xl font-semibold">No story content published yet</h2>
+          <h2 className="text-xl font-semibold">{runtimeAvailability.title}</h2>
           <p className="mt-2 text-sm text-slate-300">
-            Open the admin authoring screens and create the first chapter, scene, and dialogue entries.
+            {runtimeAvailability.description}
           </p>
         </div>
       </div>
     );
   }
 
+  const activeManifest = manifest!;
+  const activeBundle = bundle!;
+  const activeReaderState = readerState!;
+  const activeScene = scene!;
+  const activeEntry = entry!;
   const leftCharacterImageUrl = toPublicStorageUrl(
     supabaseUrl,
-    entry.stage.left?.imagePath ?? null
+    activeEntry.stage.left?.imagePath ?? null
   );
   const rightCharacterImageUrl = toPublicStorageUrl(
     supabaseUrl,
-    entry.stage.right?.imagePath ?? null
+    activeEntry.stage.right?.imagePath ?? null
   );
-  const manifestChapterIndex = manifest.chapters.findIndex(
-    (chapter) => chapter.id === bundle.chapter.id
+  const manifestChapterIndex = activeManifest.chapters.findIndex(
+    (chapter) => chapter.id === activeBundle.chapter.id
   );
-  const isAtStoryEnd = readerState.isChapterComplete && !bundle.nextChapterId;
+  const isAtStoryEnd =
+    activeReaderState.isChapterComplete && !activeBundle.nextChapterId;
 
   return (
     <div className="mx-auto w-full max-w-7xl px-6 pb-10">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-3 text-sm text-slate-300">
         <div className="flex flex-wrap gap-3">
           <span>
-            Chapter {manifestChapterIndex + 1} of {manifest.chapters.length}
+            Chapter {manifestChapterIndex + 1} of{" "}
+            {activeManifest.chapters.length}
           </span>
-          <span>{bundle.chapter.title}</span>
-          <span>{scene.title}</span>
+          <span>{activeBundle.chapter.title}</span>
+          <span>{activeScene.title}</span>
         </div>
         <div className="flex gap-3">
           <Button variant="outline" onClick={handleRestart}>
@@ -381,11 +468,11 @@ export function PlayerStoryReader({
         <div className="relative flex min-h-[72vh] flex-col justify-between p-6">
           <div className="flex items-start justify-between gap-4">
             <div className="rounded-full border border-white/15 bg-black/20 px-4 py-2 text-xs font-medium uppercase tracking-[0.22em] text-slate-200 backdrop-blur">
-              {scene.backgroundImage.label}
+              {activeScene.backgroundImage.label}
             </div>
-            {scene.backgroundMusic ? (
+            {activeScene.backgroundMusic ? (
               <div className="rounded-full border border-white/15 bg-black/20 px-4 py-2 text-xs text-slate-200 backdrop-blur">
-                Music: {scene.backgroundMusic.label}
+                Music: {activeScene.backgroundMusic.label}
               </div>
             ) : null}
           </div>
@@ -395,7 +482,9 @@ export function PlayerStoryReader({
               {leftCharacterImageUrl ? (
                 <img
                   src={leftCharacterImageUrl}
-                  alt={entry.stage.left?.characterName ?? "Left character"}
+                  alt={
+                    activeEntry.stage.left?.characterName ?? "Left character"
+                  }
                   className="max-h-[62vh] w-auto rounded-[28px] object-contain object-bottom shadow-2xl"
                 />
               ) : null}
@@ -404,7 +493,9 @@ export function PlayerStoryReader({
               {rightCharacterImageUrl ? (
                 <img
                   src={rightCharacterImageUrl}
-                  alt={entry.stage.right?.characterName ?? "Right character"}
+                  alt={
+                    activeEntry.stage.right?.characterName ?? "Right character"
+                  }
                   className="max-h-[62vh] w-auto rounded-[28px] object-contain object-bottom shadow-2xl"
                 />
               ) : null}
@@ -415,29 +506,37 @@ export function PlayerStoryReader({
             <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
-                  {entry.speaker.type === "narrator" ? "Narrator" : entry.speaker.characterName}
+                  {activeEntry.speaker.type === "narrator"
+                    ? "Narrator"
+                    : activeEntry.speaker.characterName}
                 </p>
-                {entry.speaker.type === "character" ? (
+                {activeEntry.speaker.type === "character" ? (
                   <p className="mt-1 text-xs text-slate-500">
-                    Emotion: {entry.speaker.emotionLabel}
+                    Emotion: {activeEntry.speaker.emotionLabel}
                   </p>
                 ) : null}
               </div>
               <PillLike>
-                Scene {readerState.sceneIndex + 1}, line {readerState.dialogueIndex + 1}
+                Scene {activeReaderState.sceneIndex + 1}, line{" "}
+                {activeReaderState.dialogueIndex + 1}
               </PillLike>
             </div>
 
-            <p className="max-w-4xl text-lg leading-8 text-slate-100">{entry.text}</p>
+            <p className="max-w-4xl text-lg leading-8 text-slate-100">
+              {activeEntry.text}
+            </p>
 
             <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
               <div className="text-sm text-slate-400">
                 Progress is saved in localStorage using stable dialogue IDs.
               </div>
-              <Button onClick={() => void handleAdvance()} disabled={isLoadingChapter}>
+              <Button
+                onClick={() => void handleAdvance()}
+                disabled={isLoadingChapter}
+              >
                 {isAtStoryEnd
                   ? "Story Complete"
-                  : readerState.isChapterComplete
+                  : activeReaderState.isChapterComplete
                     ? isLoadingChapter
                       ? "Loading Chapter..."
                       : "Next Chapter"
@@ -448,7 +547,9 @@ export function PlayerStoryReader({
         </div>
       </div>
 
-      {backgroundMusicUrl ? <audio ref={audioRef} src={backgroundMusicUrl} loop /> : null}
+      {backgroundMusicUrl ? (
+        <audio ref={audioRef} src={backgroundMusicUrl} loop />
+      ) : null}
     </div>
   );
 }

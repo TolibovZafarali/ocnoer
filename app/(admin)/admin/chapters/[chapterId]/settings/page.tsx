@@ -48,6 +48,14 @@ export default async function ChapterSettingsPage({
   const status = getParam(query.status);
   const message = getParam(query.message);
   const returnTo = `/admin/chapters/${chapter.id}/settings`;
+  const dialogueCount = chapter.scenes.reduce(
+    (total, scene) => total + scene.dialogue.length,
+    0
+  );
+  const sceneCountLabel =
+    chapter.scenes.length === 1 ? "1 scene" : `${chapter.scenes.length} scenes`;
+  const dialogueCountLabel =
+    dialogueCount === 1 ? "1 dialogue row" : `${dialogueCount} dialogue rows`;
 
   return (
     <AdminPageShell>
@@ -109,14 +117,30 @@ export default async function ChapterSettingsPage({
           <div className="space-y-4">
             <p className="text-sm text-slate-600">
               Use this only when the full chapter subtree should be removed from
-              the story authoring flow.
+              the story authoring flow. This will delete {sceneCountLabel} and{" "}
+              {dialogueCountLabel}.
             </p>
-            <form action={deleteChapterAction} className="flex justify-end">
+            <form action={deleteChapterAction} className="space-y-4">
               <input type="hidden" name="chapterId" value={chapter.id} />
               <input type="hidden" name="returnTo" value={returnTo} />
-              <Button type="submit" variant="destructive">
-                Delete Chapter
-              </Button>
+              <label className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+                <input
+                  type="checkbox"
+                  name="confirmDelete"
+                  value="yes"
+                  required
+                  className="mt-0.5 h-4 w-4 rounded border-rose-300 text-rose-700"
+                />
+                <span>
+                  I understand that deleting this chapter also removes every
+                  scene and dialogue entry inside it.
+                </span>
+              </label>
+              <div className="flex justify-end">
+                <Button type="submit" variant="destructive">
+                  Delete Chapter
+                </Button>
+              </div>
             </form>
           </div>
         </SectionCard>

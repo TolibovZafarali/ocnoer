@@ -6,7 +6,9 @@ import type {
 } from "react";
 
 export function AdminPageShell(props: { children: ReactNode }) {
-  return <main className="mx-auto w-full max-w-7xl px-6 py-8">{props.children}</main>;
+  return (
+    <main className="mx-auto w-full max-w-7xl px-6 py-8">{props.children}</main>
+  );
 }
 
 export function PageHeader(props: {
@@ -40,7 +42,9 @@ export function SectionCard(props: {
           <p className="text-sm text-slate-600">{props.description}</p>
         ) : null}
       </div>
-      {props.children ? <div className="mt-4 space-y-4">{props.children}</div> : null}
+      {props.children ? (
+        <div className="mt-4 space-y-4">{props.children}</div>
+      ) : null}
     </section>
   );
 }
@@ -80,7 +84,9 @@ export function Field(props: {
         {props.label}
       </label>
       {props.children}
-      {props.hint ? <p className="text-xs text-slate-500">{props.hint}</p> : null}
+      {props.hint ? (
+        <p className="text-xs text-slate-500">{props.hint}</p>
+      ) : null}
     </div>
   );
 }
@@ -121,9 +127,21 @@ export function SelectInput(props: SelectHTMLAttributes<HTMLSelectElement>) {
   );
 }
 
-export function Pill(props: { children: ReactNode }) {
+export function Pill(props: {
+  children: ReactNode;
+  tone?: "default" | "success" | "warning";
+}) {
+  const className =
+    props.tone === "success"
+      ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+      : props.tone === "warning"
+        ? "border-amber-200 bg-amber-50 text-amber-800"
+        : "border-slate-200 bg-slate-50 text-slate-700";
+
   return (
-    <span className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-medium text-slate-700">
+    <span
+      className={`rounded-full border px-2.5 py-1 text-xs font-medium ${className}`}
+    >
       {props.children}
     </span>
   );

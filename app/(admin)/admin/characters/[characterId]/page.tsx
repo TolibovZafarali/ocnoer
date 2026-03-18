@@ -29,6 +29,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { getAdminStoryData } from "@/lib/story/repository";
 import { toPublicStorageUrl } from "@/lib/story/runtime";
+import {
+  PRIMARY_LEFT_STAGE_CHARACTER_SLUG,
+  isPrimaryLeftStageCharacterSlug
+} from "@/lib/story/staging";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 
 type CharacterDetailPageProps = {
@@ -40,6 +44,55 @@ type CharacterDetailPageProps = {
 
 function getParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
+}
+
+function countCharacterReferences(
+  story: Awaited<ReturnType<typeof getAdminStoryData>>,
+  characterId: string
+) {
+  return story.chapters.reduce(
+    (totals, chapter) => {
+      chapter.scenes.forEach((scene) => {
+        if (scene.characterIds.includes(characterId)) {
+          totals.sceneCastCount += 1;
+        }
+
+        scene.dialogue.forEach((entry) => {
+          if (
+            entry.speaker.type === "character" &&
+            entry.speaker.characterId === characterId
+          ) {
+            totals.dialogueCount += 1;
+          }
+        });
+      });
+
+      return totals;
+    },
+    { sceneCastCount: 0, dialogueCount: 0 }
+  );
+}
+
+function countEmotionDialogueReferences(
+  story: Awaited<ReturnType<typeof getAdminStoryData>>,
+  input: { characterId: string; emotionKey: string }
+) {
+  return story.chapters.reduce((count, chapter) => {
+    return (
+      count +
+      chapter.scenes.reduce((sceneCount, scene) => {
+        return (
+          sceneCount +
+          scene.dialogue.filter(
+            (entry) =>
+              entry.speaker.type === "character" &&
+              entry.speaker.characterId === input.characterId &&
+              entry.speaker.emotionKey === input.emotionKey
+          ).length
+        );
+      }, 0)
+    );
+  }, 0);
 }
 
 export default async function CharacterDetailPage({
@@ -75,6 +128,12 @@ export default async function CharacterDetailPage({
     defaultEmotion?.imagePath ?? null
   );
   const isSingleEmotion = character.emotions.length === 1;
+  const { sceneCastCount, dialogueCount } = countCharacterReferences(
+    story,
+    character.id
+  );
+  const isCharacterDeleteBlocked = sceneCastCount > 0 || dialogueCount > 0;
+  const isLeftStageAnchor = isPrimaryLeftStageCharacterSlug(character.slug);
 
   return (
     <AdminPageShell>
@@ -124,7 +183,21 @@ export default async function CharacterDetailPage({
                 <Pill>{character.emotions.length} emotions</Pill>
                 <Pill>Default: {character.defaultEmotionKey}</Pill>
                 <Pill>{character.slug}</Pill>
+                {isLeftStageAnchor ? (
+                  <Pill tone="success">Left-stage anchor</Pill>
+                ) : null}
               </div>
+
+              {isLeftStageAnchor ? (
+                <p className="text-sm text-slate-600">
+                  The current player keeps this character on the left stage when
+                  the slug remains{" "}
+                  <span className="font-medium">
+                    {PRIMARY_LEFT_STAGE_CHARACTER_SLUG}
+                  </span>
+                  .
+                </p>
+              ) : null}
 
               <Field label="Character Name" htmlFor="character-name">
                 <TextInput
@@ -221,6 +294,13 @@ export default async function CharacterDetailPage({
                   emotion.imagePath
                 );
                 const isDefault = emotion.key === character.defaultEmotionKey;
+                const emotionDialogueReferenceCount =
+                  countEmotionDialogueReferences(story, {
+                    characterId: character.id,
+                    emotionKey: emotion.key
+                  });
+                const isEmotionDeleteBlocked =
+                  isSingleEmotion || emotionDialogueReferenceCount > 0;
 
                 return (
                   <AdminCard
@@ -353,11 +433,15 @@ export default async function CharacterDetailPage({
                               <p className="text-sm text-slate-600">
                                 {isSingleEmotion
                                   ? "A character must always keep at least one emotion, so deletion is unavailable until another emotion exists."
-                                  : "Delete can be blocked if scene dialogue still references this emotion."}
+                                  : emotionDialogueReferenceCount > 0
+                                    ? `Delete is blocked while ${emotionDialogueReferenceCount} dialogue ${emotionDialogueReferenceCount === 1 ? "row" : "rows"} still use this emotion.`
+                                    : isDefault
+                                      ? "Deleting the default emotion will promote another remaining emotion automatically."
+                                      : "Delete permanently removes this emotion image and label."}
                               </p>
                               <form
                                 action={deleteCharacterEmotionAction}
-                                className="mt-3 flex justify-end"
+                                className="mt-3 space-y-3"
                               >
                                 <input
                                   type="hidden"
@@ -374,14 +458,32 @@ export default async function CharacterDetailPage({
                                   name="returnTo"
                                   value={returnTo}
                                 />
-                                <Button
-                                  type="submit"
-                                  size="sm"
-                                  variant="destructive"
-                                  disabled={isSingleEmotion}
-                                >
-                                  Delete Emotion
-                                </Button>
+                                {!isEmotionDeleteBlocked ? (
+                                  <label className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+                                    <input
+                                      type="checkbox"
+                                      name="confirmDelete"
+                                      value="yes"
+                                      required
+                                      className="mt-0.5 h-4 w-4 rounded border-rose-300 text-rose-700"
+                                    />
+                                    <span>
+                                      I understand that deleting this emotion
+                                      removes its image and label from the
+                                      character.
+                                    </span>
+                                  </label>
+                                ) : null}
+                                <div className="flex justify-end">
+                                  <Button
+                                    type="submit"
+                                    size="sm"
+                                    variant="destructive"
+                                    disabled={isEmotionDeleteBlocked}
+                                  >
+                                    Delete Emotion
+                                  </Button>
+                                </div>
                               </form>
                             </div>
                           </div>
@@ -408,15 +510,37 @@ export default async function CharacterDetailPage({
         >
           <div className="space-y-4">
             <p className="text-sm text-slate-600">
-              Remove this character only when it is no longer used in any scene
-              cast or dialogue speaker entry.
+              {isCharacterDeleteBlocked
+                ? `Delete is blocked while this character is still used in ${sceneCastCount} ${sceneCastCount === 1 ? "scene cast" : "scene casts"} and ${dialogueCount} dialogue ${dialogueCount === 1 ? "row" : "rows"}.`
+                : "Remove this character only when it is no longer needed in the story cast."}
             </p>
-            <form action={deleteCharacterAction} className="flex justify-end">
+            <form action={deleteCharacterAction} className="space-y-4">
               <input type="hidden" name="characterId" value={character.id} />
               <input type="hidden" name="returnTo" value={returnTo} />
-              <Button type="submit" variant="destructive">
-                Delete Character
-              </Button>
+              {!isCharacterDeleteBlocked ? (
+                <label className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+                  <input
+                    type="checkbox"
+                    name="confirmDelete"
+                    value="yes"
+                    required
+                    className="mt-0.5 h-4 w-4 rounded border-rose-300 text-rose-700"
+                  />
+                  <span>
+                    I understand that deleting this character removes its
+                    profile and all stored emotion images.
+                  </span>
+                </label>
+              ) : null}
+              <div className="flex justify-end">
+                <Button
+                  type="submit"
+                  variant="destructive"
+                  disabled={isCharacterDeleteBlocked}
+                >
+                  Delete Character
+                </Button>
+              </div>
             </form>
           </div>
         </SectionCard>

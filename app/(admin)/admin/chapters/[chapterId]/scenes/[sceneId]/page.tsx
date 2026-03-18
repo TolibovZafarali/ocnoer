@@ -44,6 +44,24 @@ function getParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
 }
 
+function getSceneReadiness(scene: { dialogue: Array<unknown> }) {
+  if (scene.dialogue.length === 0) {
+    return {
+      label: "Incomplete",
+      tone: "warning" as const,
+      description:
+        "Add at least one dialogue row before this scene can play in the reader."
+    };
+  }
+
+  return {
+    label: "Playable",
+    tone: "success" as const,
+    description:
+      "This scene is minimally playable in the current linear reader."
+  };
+}
+
 export default async function SceneDetailPage({
   params,
   searchParams
@@ -88,6 +106,11 @@ export default async function SceneDetailPage({
         label: emotion.label
       }))
     }));
+  const sceneReadiness = getSceneReadiness(scene);
+  const dialogueCountLabel =
+    scene.dialogue.length === 1
+      ? "1 dialogue row"
+      : `${scene.dialogue.length} dialogue rows`;
 
   return (
     <AdminPageShell>
@@ -149,9 +172,14 @@ export default async function SceneDetailPage({
 
               <div className="flex flex-wrap gap-2">
                 <Pill>Order {scene.orderIndex}</Pill>
-                <Pill>{scene.dialogue.length} dialogue rows</Pill>
+                <Pill>{dialogueCountLabel}</Pill>
                 <Pill>{scene.characterIds.length} characters in cast</Pill>
+                <Pill tone={sceneReadiness.tone}>{sceneReadiness.label}</Pill>
               </div>
+
+              <p className="text-sm text-slate-600">
+                {sceneReadiness.description}
+              </p>
 
               <Field label="Scene Title" htmlFor="scene-title">
                 <TextInput
@@ -404,15 +432,30 @@ export default async function SceneDetailPage({
               <span className="font-medium text-slate-800">
                 {chapter.title}
               </span>
-              .
+              . This also removes {dialogueCountLabel}.
             </p>
-            <form action={deleteSceneAction} className="flex justify-end">
+            <form action={deleteSceneAction} className="space-y-4">
               <input type="hidden" name="chapterId" value={chapter.id} />
               <input type="hidden" name="sceneId" value={scene.id} />
               <input type="hidden" name="returnTo" value={returnTo} />
-              <Button type="submit" variant="destructive">
-                Delete Scene
-              </Button>
+              <label className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+                <input
+                  type="checkbox"
+                  name="confirmDelete"
+                  value="yes"
+                  required
+                  className="mt-0.5 h-4 w-4 rounded border-rose-300 text-rose-700"
+                />
+                <span>
+                  I understand that deleting this scene removes the scene and
+                  all of its dialogue permanently.
+                </span>
+              </label>
+              <div className="flex justify-end">
+                <Button type="submit" variant="destructive">
+                  Delete Scene
+                </Button>
+              </div>
             </form>
           </div>
         </SectionCard>

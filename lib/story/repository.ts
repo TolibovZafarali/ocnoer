@@ -49,7 +49,9 @@ function sortByOrderIndex<T extends { orderIndex: number }>(items: T[]) {
   return [...items].sort((left, right) => left.orderIndex - right.orderIndex);
 }
 
-function sortSnapshot(snapshot: StoryAuthoringSnapshot): StoryAuthoringSnapshot {
+function sortSnapshot(
+  snapshot: StoryAuthoringSnapshot
+): StoryAuthoringSnapshot {
   return {
     characters: [...snapshot.characters]
       .map((character) => ({
@@ -62,8 +64,8 @@ function sortSnapshot(snapshot: StoryAuthoringSnapshot): StoryAuthoringSnapshot 
     backgroundImages: [...snapshot.backgroundImages].sort((left, right) =>
       left.label.localeCompare(right.label)
     ),
-    backgroundMusicTracks: [...snapshot.backgroundMusicTracks].sort((left, right) =>
-      left.label.localeCompare(right.label)
+    backgroundMusicTracks: [...snapshot.backgroundMusicTracks].sort(
+      (left, right) => left.label.localeCompare(right.label)
     ),
     chapters: sortByOrderIndex(snapshot.chapters).map((chapter) => ({
       ...chapter,
@@ -95,7 +97,9 @@ function isStorageMissingError(error: unknown) {
 async function readJsonFile<T>(objectPath: string, fallback: T): Promise<T> {
   const { runtimeBucket } = getSupabaseServerEnv();
   const supabase = getAdminSupabaseClient();
-  const { data, error } = await supabase.storage.from(runtimeBucket).download(objectPath);
+  const { data, error } = await supabase.storage
+    .from(runtimeBucket)
+    .download(objectPath);
 
   if (error) {
     if (isStorageMissingError(error)) {
@@ -117,15 +121,11 @@ async function writeJsonFile(objectPath: string, value: unknown) {
   const supabase = getAdminSupabaseClient();
   const { error } = await supabase.storage
     .from(runtimeBucket)
-    .upload(
-      objectPath,
-      Buffer.from(JSON.stringify(value, null, 2), "utf8"),
-      {
-        contentType: "application/json; charset=utf-8",
-        upsert: true,
-        cacheControl: "60"
-      }
-    );
+    .upload(objectPath, Buffer.from(JSON.stringify(value, null, 2), "utf8"), {
+      contentType: "application/json; charset=utf-8",
+      upsert: true,
+      cacheControl: "60"
+    });
 
   if (error) {
     throw new StoryRepositoryError(error.message);
@@ -170,7 +170,9 @@ async function removeStorageObjects(storagePaths: string[]) {
     return;
   }
 
-  const { error } = await supabase.storage.from(runtimeBucket).remove(uniqueObjectPaths);
+  const { error } = await supabase.storage
+    .from(runtimeBucket)
+    .remove(uniqueObjectPaths);
 
   if (error) {
     throw new StoryRepositoryError(error.message);
@@ -293,7 +295,10 @@ async function persistRuntimeArtifacts(snapshot: StoryAuthoringSnapshot) {
 
   await Promise.all([
     writeJsonFile(`${RUNTIME_PREFIX}/manifest.json`, artifacts.manifest),
-    writeJsonFile(`${RUNTIME_PREFIX}/characters.json`, artifacts.charactersManifest),
+    writeJsonFile(
+      `${RUNTIME_PREFIX}/characters.json`,
+      artifacts.charactersManifest
+    ),
     writeJsonFile(`${RUNTIME_PREFIX}/assets.json`, artifacts.assetsManifest),
     ...artifacts.chapterBundles.map((chapterBundle) =>
       writeJsonFile(
@@ -322,7 +327,10 @@ async function commitSnapshot(snapshot: StoryAuthoringSnapshot) {
   return normalizedSnapshot;
 }
 
-function findCharacterOrThrow(snapshot: StoryAuthoringSnapshot, characterId: string) {
+function findCharacterOrThrow(
+  snapshot: StoryAuthoringSnapshot,
+  characterId: string
+) {
   const character = snapshot.characters.find((item) => item.id === characterId);
 
   if (!character) {
@@ -349,7 +357,9 @@ function findBackgroundMusicOrThrow(
   snapshot: StoryAuthoringSnapshot,
   assetId: string
 ) {
-  const asset = snapshot.backgroundMusicTracks.find((item) => item.id === assetId);
+  const asset = snapshot.backgroundMusicTracks.find(
+    (item) => item.id === assetId
+  );
 
   if (!asset) {
     throw new StoryRepositoryError("Background music asset not found.");
@@ -358,7 +368,10 @@ function findBackgroundMusicOrThrow(
   return asset;
 }
 
-function findChapterOrThrow(snapshot: StoryAuthoringSnapshot, chapterId: string) {
+function findChapterOrThrow(
+  snapshot: StoryAuthoringSnapshot,
+  chapterId: string
+) {
   const chapter = snapshot.chapters.find((item) => item.id === chapterId);
 
   if (!chapter) {
@@ -378,7 +391,10 @@ function findSceneOrThrow(chapter: ChapterDefinition, sceneId: string) {
   return scene;
 }
 
-function findDialogueEntryOrThrow(scene: SceneDefinition, dialogueEntryId: string) {
+function findDialogueEntryOrThrow(
+  scene: SceneDefinition,
+  dialogueEntryId: string
+) {
   const entry = scene.dialogue.find((item) => item.id === dialogueEntryId);
 
   if (!entry) {
@@ -438,7 +454,8 @@ function ensureUniqueChapterOrder(
   excludeChapterId?: string
 ) {
   const isTaken = snapshot.chapters.some(
-    (chapter) => chapter.orderIndex === orderIndex && chapter.id !== excludeChapterId
+    (chapter) =>
+      chapter.orderIndex === orderIndex && chapter.id !== excludeChapterId
   );
 
   if (isTaken) {
@@ -456,7 +473,9 @@ function ensureUniqueSceneOrder(
   );
 
   if (isTaken) {
-    throw new StoryRepositoryError("Scene order must be unique within the chapter.");
+    throw new StoryRepositoryError(
+      "Scene order must be unique within the chapter."
+    );
   }
 }
 
@@ -470,7 +489,9 @@ function ensureUniqueDialogueOrder(
   );
 
   if (isTaken) {
-    throw new StoryRepositoryError("Dialogue order must be unique within the scene.");
+    throw new StoryRepositoryError(
+      "Dialogue order must be unique within the scene."
+    );
   }
 }
 
@@ -484,7 +505,9 @@ function ensureUniqueEmotionKey(
   );
 
   if (isTaken) {
-    throw new StoryRepositoryError("Emotion key must be unique for the character.");
+    throw new StoryRepositoryError(
+      "Emotion key must be unique for the character."
+    );
   }
 }
 
@@ -523,10 +546,14 @@ function assertSpeakerSelection(input: {
   }
 
   const character = findCharacterOrThrow(input.snapshot, input.characterId);
-  const emotion = character.emotions.find((item) => item.key === input.emotionKey);
+  const emotion = character.emotions.find(
+    (item) => item.key === input.emotionKey
+  );
 
   if (!emotion) {
-    throw new StoryRepositoryError("Selected emotion does not belong to the speaker.");
+    throw new StoryRepositoryError(
+      "Selected emotion does not belong to the speaker."
+    );
   }
 }
 
@@ -606,7 +633,10 @@ function isEmotionReferenced(
   );
 }
 
-function isCharacterReferenced(snapshot: StoryAuthoringSnapshot, characterId: string) {
+function isCharacterReferenced(
+  snapshot: StoryAuthoringSnapshot,
+  characterId: string
+) {
   return snapshot.chapters.some((chapter) =>
     chapter.scenes.some(
       (scene) =>
@@ -730,13 +760,17 @@ export async function deleteCharacter(characterId: string) {
 
   if (isCharacterReferenced(snapshot, characterId)) {
     throw new StoryRepositoryError(
-      "Cannot delete a character while chapters or dialogue still reference it."
+      "Cannot delete a character while a scene cast or dialogue entry still references it."
     );
   }
 
-  snapshot.characters = snapshot.characters.filter((item) => item.id !== characterId);
+  snapshot.characters = snapshot.characters.filter(
+    (item) => item.id !== characterId
+  );
   await commitSnapshot(snapshot);
-  await removeStorageObjects(character.emotions.map((emotion) => emotion.imagePath));
+  await removeStorageObjects(
+    character.emotions.map((emotion) => emotion.imagePath)
+  );
 }
 
 export async function addCharacterEmotion(input: {
@@ -788,14 +822,19 @@ export async function updateCharacterEmotion(input: {
 }) {
   const snapshot = await loadAuthoringSnapshot();
   const character = findCharacterOrThrow(snapshot, input.characterId);
-  const emotion = character.emotions.find((item) => item.id === input.emotionId);
+  const emotion = character.emotions.find(
+    (item) => item.id === input.emotionId
+  );
 
   if (!emotion) {
     throw new StoryRepositoryError("Emotion not found.");
   }
 
   const previousEmotionKey = emotion.key;
-  const nextEmotionKey = normalizeSlugInput(input.emotionKey, input.emotionLabel);
+  const nextEmotionKey = normalizeSlugInput(
+    input.emotionKey,
+    input.emotionLabel
+  );
 
   ensureUniqueEmotionKey(character, nextEmotionKey, emotion.id);
 
@@ -837,7 +876,9 @@ export async function setDefaultCharacterEmotion(input: {
 }) {
   const snapshot = await loadAuthoringSnapshot();
   const character = findCharacterOrThrow(snapshot, input.characterId);
-  const emotion = character.emotions.find((item) => item.id === input.emotionId);
+  const emotion = character.emotions.find(
+    (item) => item.id === input.emotionId
+  );
 
   if (!emotion) {
     throw new StoryRepositoryError("Emotion not found.");
@@ -856,14 +897,18 @@ export async function deleteCharacterEmotion(input: {
 }) {
   const snapshot = await loadAuthoringSnapshot();
   const character = findCharacterOrThrow(snapshot, input.characterId);
-  const emotion = character.emotions.find((item) => item.id === input.emotionId);
+  const emotion = character.emotions.find(
+    (item) => item.id === input.emotionId
+  );
 
   if (!emotion) {
     throw new StoryRepositoryError("Emotion not found.");
   }
 
   if (character.emotions.length === 1) {
-    throw new StoryRepositoryError("A character must always have at least one emotion.");
+    throw new StoryRepositoryError(
+      "A character must always have at least one emotion."
+    );
   }
 
   if (
@@ -873,11 +918,13 @@ export async function deleteCharacterEmotion(input: {
     })
   ) {
     throw new StoryRepositoryError(
-      "Cannot delete an emotion while scene dialogue still references it."
+      "Cannot delete an emotion while dialogue still references this character emotion."
     );
   }
 
-  character.emotions = character.emotions.filter((item) => item.id !== input.emotionId);
+  character.emotions = character.emotions.filter(
+    (item) => item.id !== input.emotionId
+  );
 
   if (character.defaultEmotionKey === emotion.key) {
     character.defaultEmotionKey = character.emotions[0].key;
@@ -974,7 +1021,7 @@ export async function deleteBackgroundImageAsset(assetId: string) {
 
   if (isBackgroundImageReferenced(snapshot, asset.id)) {
     throw new StoryRepositoryError(
-      "Cannot delete a background image while scenes still reference it."
+      "Cannot delete a background image while one or more scenes still reference it."
     );
   }
 
@@ -1066,7 +1113,7 @@ export async function deleteBackgroundMusicTrack(assetId: string) {
 
   if (isBackgroundMusicReferenced(snapshot, track.id)) {
     throw new StoryRepositoryError(
-      "Cannot delete a music track while scenes still reference it."
+      "Cannot delete a music track while one or more scenes still reference it."
     );
   }
 
@@ -1131,7 +1178,9 @@ export async function updateChapter(input: {
 export async function deleteChapter(chapterId: string) {
   const snapshot = await loadAuthoringSnapshot();
   findChapterOrThrow(snapshot, chapterId);
-  snapshot.chapters = snapshot.chapters.filter((chapter) => chapter.id !== chapterId);
+  snapshot.chapters = snapshot.chapters.filter(
+    (chapter) => chapter.id !== chapterId
+  );
   await commitSnapshot(snapshot);
 }
 
@@ -1213,7 +1262,10 @@ export async function updateScene(input: {
   return scene;
 }
 
-export async function deleteScene(input: { chapterId: string; sceneId: string }) {
+export async function deleteScene(input: {
+  chapterId: string;
+  sceneId: string;
+}) {
   const snapshot = await loadAuthoringSnapshot();
   const chapter = findChapterOrThrow(snapshot, input.chapterId);
   findSceneOrThrow(chapter, input.sceneId);
@@ -1324,7 +1376,9 @@ export async function deleteDialogueEntry(input: {
   const chapter = findChapterOrThrow(snapshot, input.chapterId);
   const scene = findSceneOrThrow(chapter, input.sceneId);
   findDialogueEntryOrThrow(scene, input.dialogueEntryId);
-  scene.dialogue = scene.dialogue.filter((entry) => entry.id !== input.dialogueEntryId);
+  scene.dialogue = scene.dialogue.filter(
+    (entry) => entry.id !== input.dialogueEntryId
+  );
   scene.updatedAt = nowIsoString();
   chapter.updatedAt = nowIsoString();
   await commitSnapshot(snapshot);

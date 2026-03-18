@@ -15,6 +15,7 @@ import type {
   StoryAuthoringSnapshot,
   StoryRuntimeArtifacts
 } from "@/lib/story/types";
+import { PRIMARY_LEFT_STAGE_CHARACTER_SLUG } from "@/lib/story/staging";
 import { STORY_SCHEMA_VERSION } from "@/lib/story/types";
 
 function toRuntimeCharacter(character: CharacterDefinition): RuntimeCharacter {
@@ -23,7 +24,9 @@ function toRuntimeCharacter(character: CharacterDefinition): RuntimeCharacter {
   );
 
   if (!defaultEmotion) {
-    throw new Error(`Character "${character.name}" is missing its default emotion.`);
+    throw new Error(
+      `Character "${character.name}" is missing its default emotion.`
+    );
   }
 
   return {
@@ -41,7 +44,9 @@ function toRuntimeCharacter(character: CharacterDefinition): RuntimeCharacter {
   };
 }
 
-function toRuntimeBackgroundImage(asset: BackgroundImageAsset): RuntimeBackgroundImage {
+function toRuntimeBackgroundImage(
+  asset: BackgroundImageAsset
+): RuntimeBackgroundImage {
   return {
     id: asset.id,
     label: asset.label,
@@ -51,7 +56,9 @@ function toRuntimeBackgroundImage(asset: BackgroundImageAsset): RuntimeBackgroun
   };
 }
 
-function toRuntimeBackgroundMusic(asset: BackgroundMusicTrack): RuntimeBackgroundMusic {
+function toRuntimeBackgroundMusic(
+  asset: BackgroundMusicTrack
+): RuntimeBackgroundMusic {
   return {
     id: asset.id,
     label: asset.label,
@@ -88,6 +95,10 @@ function createStageCharacter(
   };
 }
 
+function isPrimaryLeftStageCharacter(character: RuntimeCharacter) {
+  return character.slug === PRIMARY_LEFT_STAGE_CHARACTER_SLUG;
+}
+
 function compileScene(input: {
   scene: StoryAuthoringSnapshot["chapters"][number]["scenes"][number];
   charactersById: Map<string, RuntimeCharacter>;
@@ -99,26 +110,35 @@ function compileScene(input: {
   );
 
   if (!backgroundImage) {
-    throw new Error(`Scene "${input.scene.title}" is missing its background image.`);
+    throw new Error(
+      `Scene "${input.scene.title}" is missing its background image.`
+    );
   }
 
   const backgroundMusic = input.scene.backgroundMusicAssetId
-    ? input.backgroundMusicById.get(input.scene.backgroundMusicAssetId) ?? null
+    ? (input.backgroundMusicById.get(input.scene.backgroundMusicAssetId) ??
+      null)
     : null;
 
   const characterPool = input.scene.characterIds.map((characterId) => {
     const character = input.charactersById.get(characterId);
 
     if (!character) {
-      throw new Error(`Scene "${input.scene.title}" references an unknown character.`);
+      throw new Error(
+        `Scene "${input.scene.title}" references an unknown character.`
+      );
     }
 
     return character;
   });
 
-  const ocnoer = characterPool.find((character) => character.slug === "ocnoer") ?? null;
-  let leftStage = ocnoer
-    ? createStageCharacter(ocnoer, ocnoer.defaultEmotionKey)
+  // The current reader keeps the configured primary character anchored on the
+  // left stage whenever that character is part of the scene cast.
+  const leftStageAnchor =
+    characterPool.find((character) => isPrimaryLeftStageCharacter(character)) ??
+    null;
+  let leftStage = leftStageAnchor
+    ? createStageCharacter(leftStageAnchor, leftStageAnchor.defaultEmotionKey)
     : null;
   let rightStage: RuntimeStageCharacter | null = null;
 
@@ -140,10 +160,14 @@ function compileScene(input: {
         };
       }
 
-      const speakingCharacter = input.charactersById.get(entry.speaker.characterId);
+      const speakingCharacter = input.charactersById.get(
+        entry.speaker.characterId
+      );
 
       if (!speakingCharacter) {
-        throw new Error(`Dialogue entry "${entry.id}" references an unknown character.`);
+        throw new Error(
+          `Dialogue entry "${entry.id}" references an unknown character.`
+        );
       }
 
       const stageCharacter = createStageCharacter(
@@ -151,15 +175,18 @@ function compileScene(input: {
         entry.speaker.emotionKey
       );
 
-      if (speakingCharacter.slug === "ocnoer") {
+      if (isPrimaryLeftStageCharacter(speakingCharacter)) {
         leftStage = stageCharacter;
       } else {
-        if (ocnoer && (!leftStage || leftStage.characterId !== ocnoer.id)) {
+        if (
+          leftStageAnchor &&
+          (!leftStage || leftStage.characterId !== leftStageAnchor.id)
+        ) {
           leftStage = createStageCharacter(
-            ocnoer,
-            leftStage?.characterId === ocnoer.id
+            leftStageAnchor,
+            leftStage?.characterId === leftStageAnchor.id
               ? leftStage.emotionKey
-              : ocnoer.defaultEmotionKey
+              : leftStageAnchor.defaultEmotionKey
           );
         }
 
@@ -299,4 +326,3 @@ export function compileRuntimeStory(input: {
     chapterBundles
   };
 }
-

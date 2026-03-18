@@ -35,6 +35,22 @@ function getParam(value: string | string[] | undefined) {
   return Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
 }
 
+function getSceneReadiness(scene: { dialogue: Array<unknown> }) {
+  if (scene.dialogue.length === 0) {
+    return {
+      label: "No dialogue",
+      tone: "warning" as const,
+      description: "Add dialogue before this scene can play."
+    };
+  }
+
+  return {
+    label: "Playable",
+    tone: "success" as const,
+    description: "This scene has dialogue and can play linearly."
+  };
+}
+
 export default async function ChapterScenesPage({
   params,
   searchParams
@@ -205,9 +221,14 @@ export default async function ChapterScenesPage({
         ) : (
           <AdminCardGrid>
             {chapter.scenes.map((scene) => {
+              const readiness = getSceneReadiness(scene);
               const backgroundImage =
                 story.backgroundImages.find(
                   (asset) => asset.id === scene.backgroundImageAssetId
+                ) ?? null;
+              const backgroundMusic =
+                story.backgroundMusicTracks.find(
+                  (asset) => asset.id === scene.backgroundMusicAssetId
                 ) ?? null;
               const imageUrl = toPublicStorageUrl(
                 supabaseUrl,
@@ -238,14 +259,24 @@ export default async function ChapterScenesPage({
                     )
                   }
                   description={
-                    <p>
-                      {backgroundImage?.label ?? "Missing background reference"}
-                    </p>
+                    <div className="space-y-1">
+                      <p>
+                        {backgroundImage?.label ??
+                          "Missing background reference"}
+                      </p>
+                      <p className="text-sm text-slate-500">
+                        {scene.characterIds.length} cast
+                        {backgroundMusic
+                          ? `, music: ${backgroundMusic.label}`
+                          : ""}
+                      </p>
+                    </div>
                   }
                   footer={
                     <>
                       <Pill>Order {scene.orderIndex}</Pill>
                       <Pill>{scene.dialogue.length} dialogue rows</Pill>
+                      <Pill tone={readiness.tone}>{readiness.label}</Pill>
                     </>
                   }
                 />

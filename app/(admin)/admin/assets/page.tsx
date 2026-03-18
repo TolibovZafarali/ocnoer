@@ -46,6 +46,32 @@ function tabClassName(active: boolean) {
   ].join(" ");
 }
 
+function countBackgroundImageUsage(
+  story: Awaited<ReturnType<typeof getAdminStoryData>>,
+  assetId: string
+) {
+  return story.chapters.reduce((count, chapter) => {
+    return (
+      count +
+      chapter.scenes.filter((scene) => scene.backgroundImageAssetId === assetId)
+        .length
+    );
+  }, 0);
+}
+
+function countBackgroundMusicUsage(
+  story: Awaited<ReturnType<typeof getAdminStoryData>>,
+  assetId: string
+) {
+  return story.chapters.reduce((count, chapter) => {
+    return (
+      count +
+      chapter.scenes.filter((scene) => scene.backgroundMusicAssetId === assetId)
+        .length
+    );
+  }, 0);
+}
+
 export default async function AssetsPage({ searchParams }: AssetsPageProps) {
   const story = await getAdminStoryData();
   const params: Record<string, string | string[] | undefined> = searchParams
@@ -157,6 +183,8 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
                     supabaseUrl,
                     asset.filePath
                   );
+                  const usageCount = countBackgroundImageUsage(story, asset.id);
+                  const deleteBlocked = usageCount > 0;
 
                   return (
                     <AdminCard
@@ -254,12 +282,13 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
 
                             <div className="mt-4 border-t border-slate-200 pt-4">
                               <p className="text-sm text-slate-600">
-                                Delete is blocked while scenes still reference
-                                this background image.
+                                {deleteBlocked
+                                  ? `Delete is blocked while ${usageCount} ${usageCount === 1 ? "scene" : "scenes"} still reference this background image.`
+                                  : "Delete permanently removes this background image asset."}
                               </p>
                               <form
                                 action={deleteBackgroundImageAssetAction}
-                                className="mt-3 flex justify-end"
+                                className="mt-3 space-y-3"
                               >
                                 <input
                                   type="hidden"
@@ -271,13 +300,32 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
                                   name="returnTo"
                                   value={backgroundReturnTo}
                                 />
-                                <Button
-                                  type="submit"
-                                  size="sm"
-                                  variant="destructive"
-                                >
-                                  Delete Background Image
-                                </Button>
+                                {!deleteBlocked ? (
+                                  <label className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+                                    <input
+                                      type="checkbox"
+                                      name="confirmDelete"
+                                      value="yes"
+                                      required
+                                      className="mt-0.5 h-4 w-4 rounded border-rose-300 text-rose-700"
+                                    />
+                                    <span>
+                                      I understand that deleting this background
+                                      image removes the stored asset and its
+                                      preview.
+                                    </span>
+                                  </label>
+                                ) : null}
+                                <div className="flex justify-end">
+                                  <Button
+                                    type="submit"
+                                    size="sm"
+                                    variant="destructive"
+                                    disabled={deleteBlocked}
+                                  >
+                                    Delete Background Image
+                                  </Button>
+                                </div>
                               </form>
                             </div>
                           </details>
@@ -286,6 +334,7 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
                       footer={
                         <>
                           <Pill>{asset.type}</Pill>
+                          <Pill>{usageCount} scenes</Pill>
                           {asset.altText ? <Pill>{asset.altText}</Pill> : null}
                         </>
                       }
@@ -347,6 +396,8 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
                     supabaseUrl,
                     track.filePath
                   );
+                  const usageCount = countBackgroundMusicUsage(story, track.id);
+                  const deleteBlocked = usageCount > 0;
 
                   return (
                     <AdminCard
@@ -430,12 +481,13 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
 
                             <div className="mt-4 border-t border-slate-200 pt-4">
                               <p className="text-sm text-slate-600">
-                                Delete is blocked while scenes still reference
-                                this music track.
+                                {deleteBlocked
+                                  ? `Delete is blocked while ${usageCount} ${usageCount === 1 ? "scene" : "scenes"} still reference this music track.`
+                                  : "Delete permanently removes this music track asset."}
                               </p>
                               <form
                                 action={deleteBackgroundMusicTrackAction}
-                                className="mt-3 flex justify-end"
+                                className="mt-3 space-y-3"
                               >
                                 <input
                                   type="hidden"
@@ -447,19 +499,42 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
                                   name="returnTo"
                                   value={musicReturnTo}
                                 />
-                                <Button
-                                  type="submit"
-                                  size="sm"
-                                  variant="destructive"
-                                >
-                                  Delete Music Track
-                                </Button>
+                                {!deleteBlocked ? (
+                                  <label className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+                                    <input
+                                      type="checkbox"
+                                      name="confirmDelete"
+                                      value="yes"
+                                      required
+                                      className="mt-0.5 h-4 w-4 rounded border-rose-300 text-rose-700"
+                                    />
+                                    <span>
+                                      I understand that deleting this music
+                                      track removes the stored audio asset.
+                                    </span>
+                                  </label>
+                                ) : null}
+                                <div className="flex justify-end">
+                                  <Button
+                                    type="submit"
+                                    size="sm"
+                                    variant="destructive"
+                                    disabled={deleteBlocked}
+                                  >
+                                    Delete Music Track
+                                  </Button>
+                                </div>
                               </form>
                             </div>
                           </details>
                         </div>
                       }
-                      footer={<Pill>{track.type}</Pill>}
+                      footer={
+                        <>
+                          <Pill>{track.type}</Pill>
+                          <Pill>{usageCount} scenes</Pill>
+                        </>
+                      }
                     />
                   );
                 })}

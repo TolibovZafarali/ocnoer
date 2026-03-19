@@ -138,6 +138,10 @@ function withStatus(path: string, kind: "success" | "error", message: string) {
   return `${url.pathname}${url.search}`;
 }
 
+function toRevalidationPath(path: string) {
+  return new URL(path, "https://ocnoer.local").pathname;
+}
+
 function getErrorMessage(error: unknown) {
   if (error instanceof StoryRepositoryError) {
     return error.message;
@@ -151,6 +155,11 @@ function getNextOrderIndex(items: Array<{ orderIndex: number }>) {
     items.reduce((highest, item) => Math.max(highest, item.orderIndex), 0) + 1
   );
 }
+
+export type AdminRedirectActionState = {
+  error: string | null;
+  redirectTo: string | null;
+};
 
 async function resolveChapterOrderIndex(formData: FormData) {
   const explicit = getOptionalInteger(formData, "orderIndex", "Chapter order", {
@@ -259,7 +268,9 @@ async function resolveExistingDialogueOrderIndex(
 }
 
 async function revalidateStoryPaths(pathnames: string[]) {
-  const uniquePathnames = [...new Set(["/admin", "/play", ...pathnames])];
+  const uniquePathnames = [
+    ...new Set(["/admin", "/play", ...pathnames.map(toRevalidationPath)])
+  ];
 
   uniquePathnames.forEach((pathname) => {
     try {
@@ -293,6 +304,90 @@ async function runAdminAction(input: {
   }
 
   redirect(redirectPath);
+}
+
+async function runAdminNavigationAction(input: {
+  formData: FormData;
+  fallbackPath: string;
+  successMessage: string;
+  action: () => Promise<string | void>;
+}): Promise<AdminRedirectActionState> {
+  await requireAdminSession();
+
+  const returnTo = getReturnTo(input.formData, input.fallbackPath);
+
+  try {
+    const redirectTo =
+      (await input.action()) ??
+      withStatus(returnTo, "success", input.successMessage);
+
+    await revalidateStoryPaths([returnTo, redirectTo]);
+
+    return {
+      error: null,
+      redirectTo
+    };
+  } catch (error) {
+    unstable_rethrow(error);
+
+    return {
+      error: getErrorMessage(error),
+      redirectTo: null
+    };
+  }
+}
+
+export async function createCharacterNavigationAction(
+  _previousState: AdminRedirectActionState,
+  formData: FormData
+) {
+  return runAdminNavigationAction({
+    formData,
+    fallbackPath: "/admin/characters",
+    successMessage: "Character created.",
+    action: async () => {
+      const name = getRequiredString(formData, "name", "Character name");
+      const character = await createCharacter({
+        name,
+        slug: getOptionalString(formData, "slug") ?? name,
+        bio: getOptionalString(formData, "bio"),
+        initialEmotionKey: getOptionalString(formData, "initialEmotionKey"),
+        initialEmotionLabel: getOptionalString(formData, "initialEmotionLabel"),
+        imageFile: getRequiredFile(formData, "imageFile", "Character image")
+      });
+
+      return withStatus(
+        `/admin/characters/${character.id}`,
+        "success",
+        "Character created."
+      );
+    }
+  });
+}
+
+export async function createChapterNavigationAction(
+  _previousState: AdminRedirectActionState,
+  formData: FormData
+) {
+  return runAdminNavigationAction({
+    formData,
+    fallbackPath: "/admin/chapters",
+    successMessage: "Chapter created.",
+    action: async () => {
+      const title = getRequiredString(formData, "title", "Chapter title");
+      const chapter = await createChapter({
+        title,
+        slug: getOptionalString(formData, "slug") ?? title,
+        orderIndex: await resolveChapterOrderIndex(formData)
+      });
+
+      return withStatus(
+        `/admin/chapters/${chapter.id}/scenes`,
+        "success",
+        "Chapter created."
+      );
+    }
+  });
 }
 
 export async function createCharacterAction(formData: FormData) {

@@ -1,21 +1,18 @@
 import Link from "next/link";
 
-import { createChapterAction } from "@/app/(admin)/admin/actions";
 import {
   AdminCardGrid,
   AdminEmptyState,
   AdminLinkCard
 } from "@/components/admin/cards";
+import { CreateChapterForm } from "@/components/admin/create-chapter-form";
 import {
   AdminPageShell,
-  Field,
   Notice,
   PageHeader,
   Pill,
-  SectionCard,
-  TextInput
+  SectionCard
 } from "@/components/admin/forms";
-import { Button } from "@/components/ui/button";
 import { getAdminStoryData } from "@/lib/story/repository";
 
 type ChaptersPageProps = {
@@ -88,25 +85,7 @@ export default async function ChaptersPage({
           title="Create Chapter"
           description="Enter the chapter title. The slug and order are derived automatically."
         >
-          <form action={createChapterAction} className="space-y-4">
-            <input type="hidden" name="returnTo" value="/admin/chapters" />
-            <Field
-              label="Chapter Title"
-              htmlFor="chapter-title"
-              hint="New chapters redirect to their scenes page after save."
-            >
-              <TextInput
-                id="chapter-title"
-                name="title"
-                placeholder="Chapter 1: Arrival"
-                required
-              />
-            </Field>
-
-            <div className="flex justify-end">
-              <Button type="submit">Create Chapter</Button>
-            </div>
-          </form>
+          <CreateChapterForm />
         </SectionCard>
 
         {story.chapters.length === 0 ? (

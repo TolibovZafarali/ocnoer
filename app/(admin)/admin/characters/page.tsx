@@ -1,22 +1,18 @@
 /* eslint-disable @next/next/no-img-element */
 
-import { createCharacterAction } from "@/app/(admin)/admin/actions";
 import {
   AdminCardGrid,
   AdminEmptyState,
   AdminLinkCard
 } from "@/components/admin/cards";
+import { CreateCharacterForm } from "@/components/admin/create-character-form";
 import {
   AdminPageShell,
-  Field,
   Notice,
   PageHeader,
   Pill,
-  SectionCard,
-  TextArea,
-  TextInput
+  SectionCard
 } from "@/components/admin/forms";
-import { Button } from "@/components/ui/button";
 import { getAdminStoryData } from "@/lib/story/repository";
 import { toPublicStorageUrl } from "@/lib/story/runtime";
 import {
@@ -85,51 +81,7 @@ export default async function CharactersPage({
           title="Create Character"
           description="Name, optional bio, and the first emotion image are enough to get a character into the authoring flow."
         >
-          <form
-            action={createCharacterAction}
-            className="space-y-4"
-          >
-            <input type="hidden" name="returnTo" value="/admin/characters" />
-            <input type="hidden" name="initialEmotionKey" value="default" />
-            <input type="hidden" name="initialEmotionLabel" value="Default" />
-
-            <div className="grid gap-4 lg:grid-cols-2">
-              <Field label="Character Name" htmlFor="character-name">
-                <TextInput
-                  id="character-name"
-                  name="name"
-                  placeholder="Nora"
-                  required
-                />
-              </Field>
-
-              <Field
-                label="Default Emotion Image"
-                htmlFor="character-image"
-                hint="The first uploaded image becomes the default emotion."
-              >
-                <TextInput
-                  id="character-image"
-                  name="imageFile"
-                  type="file"
-                  accept="image/*"
-                  required
-                />
-              </Field>
-            </div>
-
-            <Field label="Bio" htmlFor="character-bio" hint="Optional.">
-              <TextArea
-                id="character-bio"
-                name="bio"
-                placeholder="Write a short character summary."
-              />
-            </Field>
-
-            <div className="flex justify-end">
-              <Button type="submit">Create Character</Button>
-            </div>
-          </form>
+          <CreateCharacterForm />
         </SectionCard>
 
         {story.characters.length === 0 ? (

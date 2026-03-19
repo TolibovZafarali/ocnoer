@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const requireAdminSessionMock = vi.fn();
 const createChapterMock = vi.fn();
+const createCharacterMock = vi.fn();
 const deleteCharacterMock = vi.fn();
 const getAdminStoryDataMock = vi.fn();
 const reorderDialogueEntryMock = vi.fn();
@@ -30,7 +31,7 @@ vi.mock("@/lib/story/repository", () => ({
   createBackgroundImageAsset: vi.fn(),
   createBackgroundMusicTrack: vi.fn(),
   createChapter: createChapterMock,
-  createCharacter: vi.fn(),
+  createCharacter: createCharacterMock,
   createDialogueEntry: vi.fn(),
   createScene: vi.fn(),
   deleteBackgroundImageAsset: vi.fn(),
@@ -53,6 +54,8 @@ vi.mock("@/lib/story/repository", () => ({
 }));
 
 const {
+  createCharacterNavigationAction,
+  createChapterNavigationAction,
   createChapterAction,
   deleteCharacterAction,
   reorderDialogueEntryAction
@@ -88,7 +91,7 @@ describe("createChapterAction", () => {
     });
     expect(revalidatePathMock).toHaveBeenCalledWith("/admin/chapters");
     expect(revalidatePathMock).toHaveBeenCalledWith(
-      "/admin/chapters/chapter_123/scenes?status=success&message=Chapter+created."
+      "/admin/chapters/chapter_123/scenes"
     );
     expect(redirectMock).toHaveBeenCalledWith(
       "/admin/chapters/chapter_123/scenes?status=success&message=Chapter+created."
@@ -118,11 +121,100 @@ describe("deleteCharacterAction", () => {
       "/admin/characters/character_123"
     );
     expect(revalidatePathMock).toHaveBeenCalledWith(
-      "/admin/characters?status=success&message=Character+deleted."
+      "/admin/characters"
     );
     expect(redirectMock).toHaveBeenCalledWith(
       "/admin/characters?status=success&message=Character+deleted."
     );
+  });
+});
+
+describe("createCharacterNavigationAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireAdminSessionMock.mockResolvedValue(undefined);
+    createCharacterMock.mockResolvedValue({ id: "character_123" });
+    unstableRethrowMock.mockImplementation(() => {});
+  });
+
+  it("returns the new character URL so the client can hard-navigate after submit", async () => {
+    const formData = new FormData();
+    formData.set("returnTo", "/admin/characters");
+    formData.set("name", "Ocnoer");
+    formData.set("initialEmotionKey", "default");
+    formData.set("initialEmotionLabel", "Default");
+    formData.set(
+      "imageFile",
+      new File(["image"], "ocnoer.png", { type: "image/png" })
+    );
+
+    await expect(
+      createCharacterNavigationAction(
+        { error: null, redirectTo: null },
+        formData
+      )
+    ).resolves.toEqual({
+      error: null,
+      redirectTo:
+        "/admin/characters/character_123?status=success&message=Character+created."
+    });
+
+    expect(createCharacterMock).toHaveBeenCalledWith({
+      name: "Ocnoer",
+      slug: "Ocnoer",
+      bio: null,
+      initialEmotionKey: "default",
+      initialEmotionLabel: "Default",
+      imageFile: expect.any(File)
+    });
+    expect(revalidatePathMock).toHaveBeenCalledWith("/admin/characters");
+    expect(revalidatePathMock).toHaveBeenCalledWith(
+      "/admin/characters/character_123"
+    );
+    expect(redirectMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("createChapterNavigationAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireAdminSessionMock.mockResolvedValue(undefined);
+    createChapterMock.mockResolvedValue({ id: "chapter_123" });
+    getAdminStoryDataMock.mockResolvedValue({
+      chapters: [
+        { id: "chapter_1", orderIndex: 2 },
+        { id: "chapter_2", orderIndex: 5 }
+      ]
+    });
+    unstableRethrowMock.mockImplementation(() => {});
+  });
+
+  it("returns the new chapter URL so the client can hard-navigate after submit", async () => {
+    const formData = new FormData();
+    formData.set("returnTo", "/admin/chapters");
+    formData.set("title", "Chapter One");
+
+    await expect(
+      createChapterNavigationAction(
+        { error: null, redirectTo: null },
+        formData
+      )
+    ).resolves.toEqual({
+      error: null,
+      redirectTo:
+        "/admin/chapters/chapter_123/scenes?status=success&message=Chapter+created."
+    });
+
+    expect(createChapterMock).toHaveBeenCalledWith({
+      title: "Chapter One",
+      slug: "Chapter One",
+      orderIndex: 6
+    });
+    expect(revalidatePathMock).toHaveBeenCalledWith("/admin/chapters");
+    expect(revalidatePathMock).toHaveBeenCalledWith(
+      "/admin/chapters/chapter_123/scenes"
+    );
+    expect(redirectMock).not.toHaveBeenCalled();
   });
 });
 

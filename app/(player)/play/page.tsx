@@ -1,11 +1,27 @@
 import Link from "next/link";
+import { preload } from "react-dom";
 
 import { PlayerStoryReader } from "@/app/(player)/play/player-story-reader";
 import { Button } from "@/components/ui/button";
-import { getRuntimeBootstrapConfig } from "@/lib/story/runtime";
+import {
+  getRuntimeBootstrapConfig,
+  loadPlayerRuntimeBootstrap
+} from "@/lib/story/runtime";
 
-export default function PlayerPlayPage() {
+export default async function PlayerPlayPage() {
   const runtime = getRuntimeBootstrapConfig();
+  const bootstrap = await loadPlayerRuntimeBootstrap({
+    manifestPath: runtime.manifestPath,
+    supabaseUrl: runtime.supabaseUrl
+  });
+
+  Object.values(bootstrap.initialAssetUrls).forEach((assetUrl) => {
+    if (assetUrl) {
+      preload(assetUrl, {
+        as: "image"
+      });
+    }
+  });
 
   return (
     <main className="min-h-screen bg-[linear-gradient(180deg,#0f172a_0%,#1e293b_100%)] text-slate-50">
@@ -30,8 +46,10 @@ export default function PlayerPlayPage() {
         manifestPath={runtime.manifestPath}
         progressStorageKey="ocnoer:player-progress"
         supabaseUrl={runtime.supabaseUrl}
+        initialManifest={bootstrap.initialManifest}
+        initialBundle={bootstrap.initialBundle}
+        initialReaderState={bootstrap.initialReaderState}
       />
     </main>
   );
 }
-

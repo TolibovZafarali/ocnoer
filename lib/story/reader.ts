@@ -40,7 +40,7 @@ export type ReaderAdvanceResult =
       type: "story-finished";
     };
 
-type RuntimeChapterLoader = (
+export type RuntimeChapterLoader = (
   manifest: RuntimeManifest,
   chapterId: string
 ) => Promise<RuntimeChapterBundle>;

@@ -142,7 +142,13 @@ async function readJsonFile<T>(objectPath: string, fallback: T): Promise<T> {
   }
 }
 
-async function writeJsonFile(objectPath: string, value: unknown) {
+async function writeJsonFile(
+  objectPath: string,
+  value: unknown,
+  options?: {
+    cacheControl?: string;
+  }
+) {
   const { runtimeBucket } = getSupabaseServerEnv();
   const supabase = getAdminSupabaseClient();
   const { error } = await supabase.storage
@@ -150,7 +156,7 @@ async function writeJsonFile(objectPath: string, value: unknown) {
     .upload(objectPath, Buffer.from(JSON.stringify(value, null, 2), "utf8"), {
       contentType: "application/json; charset=utf-8",
       upsert: true,
-      cacheControl: "60"
+      cacheControl: options?.cacheControl ?? "60"
     });
 
   if (error) {
@@ -294,18 +300,24 @@ async function persistAuthoringSnapshot(snapshot: StoryAuthoringSnapshot) {
       schemaVersion: STORY_SCHEMA_VERSION,
       updatedAt,
       characters: normalizedSnapshot.characters
-    } satisfies CharactersCatalogFile),
+    } satisfies CharactersCatalogFile, {
+      cacheControl: "0"
+    }),
     writeJsonFile(AUTHORING_ASSETS_PATH, {
       schemaVersion: STORY_SCHEMA_VERSION,
       updatedAt,
       backgroundImages: normalizedSnapshot.backgroundImages,
       backgroundMusicTracks: normalizedSnapshot.backgroundMusicTracks
-    } satisfies AssetsCatalogFile),
+    } satisfies AssetsCatalogFile, {
+      cacheControl: "0"
+    }),
     writeJsonFile(AUTHORING_CHAPTERS_PATH, {
       schemaVersion: STORY_SCHEMA_VERSION,
       updatedAt,
       chapters: normalizedSnapshot.chapters
-    } satisfies ChaptersCatalogFile)
+    } satisfies ChaptersCatalogFile, {
+      cacheControl: "0"
+    })
   ]);
 
   return normalizedSnapshot;

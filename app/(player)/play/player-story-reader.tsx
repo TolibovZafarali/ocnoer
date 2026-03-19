@@ -6,6 +6,7 @@ import {
   type ReactNode,
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState
@@ -14,21 +15,28 @@ import {
 import { Button } from "@/components/ui/button";
 import {
   advanceRuntimePosition,
-  createStoredProgress,
   getCurrentDialogue,
   getCurrentScene,
-  getManifestChapterById,
-  resolvePlayableRuntimePosition,
+  createStoredProgress,
   type PlayerProgress,
   type ReaderState
 } from "@/lib/story/reader";
-import { fetchRuntimeJson, toPublicStorageUrl } from "@/lib/story/runtime";
 import type { RuntimeChapterBundle, RuntimeManifest } from "@/lib/story/types";
+import {
+  createRuntimeChapterLoader,
+  decidePlayerResumeAction,
+  getPlayerRuntimeAssetUrls,
+  loadPlayerRuntimeSession,
+  toPublicStorageUrl
+} from "@/lib/story/runtime";
 
 type PlayerStoryReaderProps = {
   manifestPath: string;
   progressStorageKey: string;
   supabaseUrl: string;
+  initialManifest?: RuntimeManifest | null;
+  initialBundle?: RuntimeChapterBundle | null;
+  initialReaderState?: ReaderState | null;
 };
 
 type PlayerBoundaryState =
@@ -129,54 +137,53 @@ function isAdvanceGestureTarget(target: EventTarget | null) {
 export function PlayerStoryReader({
   manifestPath,
   progressStorageKey,
-  supabaseUrl
+  supabaseUrl,
+  initialManifest = null,
+  initialBundle = null,
+  initialReaderState = null
 }: PlayerStoryReaderProps) {
-  const cacheRef = useRef(new Map<string, RuntimeChapterBundle>());
+  const cacheRef = useRef(
+    new Map<string, RuntimeChapterBundle>(
+      initialBundle ? [[initialBundle.chapter.id, initialBundle]] : []
+    )
+  );
+  const initialResumeResolvedRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement>(null);
-  const [manifest, setManifest] = useState<RuntimeManifest | null>(null);
-  const [bundle, setBundle] = useState<RuntimeChapterBundle | null>(null);
-  const [readerState, setReaderState] = useState<ReaderState | null>(null);
+  const [manifest, setManifest] = useState<RuntimeManifest | null>(
+    initialManifest
+  );
+  const [bundle, setBundle] = useState<RuntimeChapterBundle | null>(
+    initialBundle
+  );
+  const [readerState, setReaderState] = useState<ReaderState | null>(
+    initialReaderState
+  );
   const [branchFlags, setBranchFlags] = useState<
     Record<string, boolean | number | string>
   >({});
   const [boundaryState, setBoundaryState] =
     useState<PlayerBoundaryState | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(!initialManifest);
+  const [isResolvingResume, setIsResolvingResume] = useState(false);
+  const [isPersistenceReady, setIsPersistenceReady] = useState(false);
   const [isLoadingChapter, setIsLoadingChapter] = useState(false);
   const [needsManualMusicStart, setNeedsManualMusicStart] = useState(false);
 
-  const loadBundle = useCallback(
-    async (currentManifest: RuntimeManifest, chapterId: string) => {
-      const cached = cacheRef.current.get(chapterId);
-
-      if (cached) {
-        return cached;
-      }
-
-      const manifestChapter = getManifestChapterById(
-        currentManifest,
-        chapterId
-      );
-
-      if (!manifestChapter) {
-        throw new Error(
-          "Requested chapter is not available in runtime manifest."
-        );
-      }
-
-      const loadedBundle = await fetchRuntimeJson<RuntimeChapterBundle>(
+  const loadBundle = useMemo(
+    () =>
+      createRuntimeChapterLoader({
         supabaseUrl,
-        manifestChapter.bundlePath
-      );
-
-      cacheRef.current.set(chapterId, loadedBundle);
-      return loadedBundle;
-    },
+        cache: cacheRef.current
+      }),
     [supabaseUrl]
   );
 
   useEffect(() => {
+    if (initialManifest) {
+      return;
+    }
+
     let cancelled = false;
 
     async function bootstrap() {
@@ -184,52 +191,25 @@ export function PlayerStoryReader({
       setError(null);
 
       try {
-        const loadedManifest = await fetchRuntimeJson<RuntimeManifest>(
-          supabaseUrl,
-          manifestPath
-        );
-
-        if (cancelled) {
-          return;
-        }
-
-        if (!loadedManifest.firstChapterId) {
-          setManifest(loadedManifest);
-          setBundle(null);
-          setReaderState(null);
-          setBoundaryState(null);
-          setBranchFlags({});
-          setIsLoading(false);
-          return;
-        }
-
         const storedProgress = readStoredProgress(progressStorageKey);
-        const resolvedRuntime = await resolvePlayableRuntimePosition({
-          manifest: loadedManifest,
-          loadChapter: loadBundle,
+        const loadedRuntime = await loadPlayerRuntimeSession({
+          manifestPath,
+          supabaseUrl,
           progress: storedProgress,
-          startChapterId: loadedManifest.firstChapterId
+          loadChapter: loadBundle
         });
 
         if (cancelled) {
           return;
         }
 
-        setManifest(loadedManifest);
+        setManifest(loadedRuntime.manifest);
+        setBundle(loadedRuntime.bundle);
+        setReaderState(loadedRuntime.readerState);
         setBoundaryState(null);
-
-        if (!resolvedRuntime) {
-          setBundle(null);
-          setReaderState(null);
-          setBranchFlags({});
-          setIsLoading(false);
-          return;
-        }
-
-        setBundle(resolvedRuntime.bundle);
-        setReaderState(resolvedRuntime.state);
         setBranchFlags(storedProgress?.branchFlags ?? {});
         setIsLoading(false);
+        setIsPersistenceReady(true);
       } catch (caughtError) {
         if (cancelled) {
           return;
@@ -249,7 +229,99 @@ export function PlayerStoryReader({
     return () => {
       cancelled = true;
     };
-  }, [loadBundle, manifestPath, progressStorageKey, supabaseUrl]);
+  }, [
+    initialManifest,
+    loadBundle,
+    manifestPath,
+    progressStorageKey,
+    supabaseUrl
+  ]);
+
+  useLayoutEffect(() => {
+    if (!initialManifest || initialResumeResolvedRef.current) {
+      return;
+    }
+
+    initialResumeResolvedRef.current = true;
+
+    if (!initialManifest.firstChapterId) {
+      setIsPersistenceReady(true);
+      return;
+    }
+
+    const storedProgress = readStoredProgress(progressStorageKey);
+    const resumeAction = decidePlayerResumeAction({
+      initialBundle,
+      storedProgress
+    });
+
+    setBranchFlags(resumeAction.branchFlags);
+
+    if (resumeAction.type === "use-initial-state") {
+      setIsPersistenceReady(true);
+      return;
+    }
+
+    if (resumeAction.type === "resume-from-initial-bundle") {
+      setReaderState(resumeAction.readerState);
+      setBoundaryState(null);
+      setIsPersistenceReady(true);
+      return;
+    }
+
+    let cancelled = false;
+
+    setIsResolvingResume(true);
+    setError(null);
+
+    void loadPlayerRuntimeSession({
+      manifestPath,
+      supabaseUrl,
+      progress: storedProgress,
+      initialManifest,
+      loadChapter: loadBundle
+    })
+      .then((loadedRuntime) => {
+        if (cancelled) {
+          return;
+        }
+
+        setManifest(loadedRuntime.manifest);
+        setBundle(loadedRuntime.bundle);
+        setReaderState(loadedRuntime.readerState);
+        setBoundaryState(null);
+        setIsPersistenceReady(true);
+      })
+      .catch((caughtError) => {
+        if (cancelled) {
+          return;
+        }
+
+        setError(
+          caughtError instanceof Error
+            ? caughtError.message
+            : "Unable to load the story runtime."
+        );
+      })
+      .finally(() => {
+        if (cancelled) {
+          return;
+        }
+
+        setIsResolvingResume(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    initialBundle,
+    initialManifest,
+    loadBundle,
+    manifestPath,
+    progressStorageKey,
+    supabaseUrl
+  ]);
 
   const scene =
     bundle && readerState ? getCurrentScene(bundle.chapter, readerState) : null;
@@ -264,11 +336,16 @@ export function PlayerStoryReader({
     scene,
     entry
   });
-  const backgroundImageUrl = useMemo(
+  const activeAssetUrls = useMemo(
     () =>
-      toPublicStorageUrl(supabaseUrl, scene?.backgroundImage.filePath ?? null),
-    [scene?.backgroundImage.filePath, supabaseUrl]
+      getPlayerRuntimeAssetUrls({
+        supabaseUrl,
+        bundle,
+        readerState
+      }),
+    [bundle, readerState, supabaseUrl]
   );
+  const backgroundImageUrl = activeAssetUrls.backgroundImageUrl;
   const backgroundMusicUrl = useMemo(
     () =>
       toPublicStorageUrl(supabaseUrl, scene?.backgroundMusic?.filePath ?? null),
@@ -287,8 +364,12 @@ export function PlayerStoryReader({
   }, [branchFlags, bundle, readerState]);
 
   useEffect(() => {
+    if (!isPersistenceReady) {
+      return;
+    }
+
     persistProgress(progressStorageKey, storedProgress);
-  }, [progressStorageKey, storedProgress]);
+  }, [isPersistenceReady, progressStorageKey, storedProgress]);
 
   useEffect(() => {
     if (!bundle?.nextChapterId || !manifest) {
@@ -301,7 +382,7 @@ export function PlayerStoryReader({
   useEffect(() => {
     const audio = audioRef.current;
 
-    if (!audio || !backgroundMusicUrl) {
+    if (!audio || !backgroundMusicUrl || isResolvingResume) {
       setNeedsManualMusicStart(false);
       return;
     }
@@ -312,7 +393,7 @@ export function PlayerStoryReader({
     void audio.play().catch(() => {
       setNeedsManualMusicStart(true);
     });
-  }, [backgroundMusicUrl]);
+  }, [backgroundMusicUrl, isResolvingResume]);
 
   const handleAdvance = useCallback(async () => {
     if (isLoadingChapter) {
@@ -407,24 +488,27 @@ export function PlayerStoryReader({
     }
 
     try {
-      const resolvedRuntime = await resolvePlayableRuntimePosition({
-        manifest,
-        loadChapter: loadBundle,
+      const resolvedRuntime = await loadPlayerRuntimeSession({
+        manifestPath,
+        supabaseUrl,
         progress: null,
-        startChapterId: manifest.firstChapterId
+        initialManifest: manifest,
+        loadChapter: loadBundle
       });
 
       setBoundaryState(null);
       setBranchFlags({});
+      setIsPersistenceReady(true);
 
-      if (!resolvedRuntime) {
+      if (!resolvedRuntime.bundle || !resolvedRuntime.readerState) {
         setBundle(null);
         setReaderState(null);
         return;
       }
 
+      setManifest(resolvedRuntime.manifest);
       setBundle(resolvedRuntime.bundle);
-      setReaderState(resolvedRuntime.state);
+      setReaderState(resolvedRuntime.readerState);
     } catch (caughtError) {
       setError(
         caughtError instanceof Error
@@ -432,7 +516,7 @@ export function PlayerStoryReader({
           : "Unable to restart the story."
       );
     }
-  }, [loadBundle, manifest]);
+  }, [loadBundle, manifest, manifestPath, supabaseUrl]);
 
   const handleReaderCardClick = useCallback(
     (event: MouseEvent<HTMLDivElement>) => {
@@ -482,11 +566,13 @@ export function PlayerStoryReader({
     };
   }, [boundaryState?.type, handleAdvance, isLoadingChapter]);
 
-  if (isLoading) {
+  if (isLoading || isResolvingResume) {
     return (
       <div className="mx-auto flex min-h-[70vh] w-full max-w-7xl items-center justify-center px-6 pb-10">
         <div className="rounded-3xl border border-white/10 bg-white/5 px-6 py-5 text-sm text-slate-200 backdrop-blur">
-          Loading story runtime...
+          {isResolvingResume
+            ? "Resuming saved progress..."
+            : "Loading story runtime..."}
         </div>
       </div>
     );
@@ -521,14 +607,8 @@ export function PlayerStoryReader({
   const activeReaderState = readerState!;
   const activeScene = scene!;
   const activeEntry = entry!;
-  const leftCharacterImageUrl = toPublicStorageUrl(
-    supabaseUrl,
-    activeEntry.stage.left?.imagePath ?? null
-  );
-  const rightCharacterImageUrl = toPublicStorageUrl(
-    supabaseUrl,
-    activeEntry.stage.right?.imagePath ?? null
-  );
+  const leftCharacterImageUrl = activeAssetUrls.leftCharacterImageUrl;
+  const rightCharacterImageUrl = activeAssetUrls.rightCharacterImageUrl;
   const manifestChapterIndex = activeManifest.chapters.findIndex(
     (chapter) => chapter.id === activeBundle.chapter.id
   );

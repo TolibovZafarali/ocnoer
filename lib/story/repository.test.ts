@@ -21,13 +21,23 @@ const downloadMock = vi.fn(async (objectPath: string) => {
     error: null
   };
 });
-const uploadMock = vi.fn(async (objectPath: string, value: Buffer) => {
-  storageData.set(objectPath, value.toString("utf8"));
+const uploadMock = vi.fn(
+  async (
+    objectPath: string,
+    value: Buffer,
+    _options?: {
+      cacheControl?: string;
+      contentType?: string;
+      upsert?: boolean;
+    }
+  ) => {
+    storageData.set(objectPath, value.toString("utf8"));
 
-  return {
-    error: null
-  };
-});
+    return {
+      error: null
+    };
+  }
+);
 const listMock = vi.fn(async () => ({
   data: [],
   error: null
@@ -96,7 +106,8 @@ vi.mock("@/lib/supabase/env", () => ({
   })
 }));
 
-const { reorderDialogueEntry } = await import("@/lib/story/repository");
+const { createCharacter, reorderDialogueEntry } =
+  await import("@/lib/story/repository");
 
 describe("reorderDialogueEntry", () => {
   beforeEach(() => {
@@ -215,5 +226,48 @@ describe("reorderDialogueEntry", () => {
       { id: "dialogue_2", orderIndex: 3 }
     ]);
     expect(compileRuntimeStoryMock).toHaveBeenCalled();
+  });
+
+  it("writes authoring catalogs without cache so a created character is readable immediately", async () => {
+    await createCharacter({
+      name: "Ocnoer",
+      slug: "ocnoer",
+      bio: "Primary point-of-view character.",
+      initialEmotionKey: "default",
+      initialEmotionLabel: "Default",
+      imageFile: new File(["image"], "ocnoer-main.png", {
+        type: "image/png"
+      })
+    });
+
+    const authoringCharactersUpload = uploadMock.mock.calls.find(
+      ([objectPath]) => objectPath === "authoring/characters.json"
+    );
+    const authoringAssetsUpload = uploadMock.mock.calls.find(
+      ([objectPath]) => objectPath === "authoring/assets.json"
+    );
+    const authoringChaptersUpload = uploadMock.mock.calls.find(
+      ([objectPath]) => objectPath === "authoring/chapters.json"
+    );
+    const runtimeManifestUpload = uploadMock.mock.calls.find(
+      ([objectPath]) => objectPath === "runtime/manifest.json"
+    );
+
+    expect(authoringCharactersUpload?.[2]).toMatchObject({
+      cacheControl: "0",
+      upsert: true
+    });
+    expect(authoringAssetsUpload?.[2]).toMatchObject({
+      cacheControl: "0",
+      upsert: true
+    });
+    expect(authoringChaptersUpload?.[2]).toMatchObject({
+      cacheControl: "0",
+      upsert: true
+    });
+    expect(runtimeManifestUpload?.[2]).toMatchObject({
+      cacheControl: "60",
+      upsert: true
+    });
   });
 });

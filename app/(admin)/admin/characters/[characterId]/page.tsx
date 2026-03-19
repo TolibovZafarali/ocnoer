@@ -230,7 +230,6 @@ export default async function CharacterDetailPage({
           <form
             action={addCharacterEmotionAction}
             className="space-y-4"
-            encType="multipart/form-data"
           >
             <input type="hidden" name="characterId" value={character.id} />
             <input type="hidden" name="returnTo" value={returnTo} />
@@ -363,7 +362,6 @@ export default async function CharacterDetailPage({
                             <form
                               action={updateCharacterEmotionAction}
                               className="space-y-3"
-                              encType="multipart/form-data"
                             >
                               <input
                                 type="hidden"

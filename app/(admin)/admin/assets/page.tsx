@@ -124,7 +124,6 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
               <form
                 action={createBackgroundImageAssetAction}
                 className="space-y-4"
-                encType="multipart/form-data"
               >
                 <input
                   type="hidden"
@@ -193,11 +192,19 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
                       eyebrow="Background Image"
                       media={
                         assetUrl ? (
-                          <img
-                            src={assetUrl}
-                            alt={asset.altText ?? asset.label}
-                            className="aspect-video w-full object-cover"
-                          />
+                          <a
+                            href={assetUrl}
+                            target="_blank"
+                            rel="noreferrer"
+                            title={`Open ${asset.label} in full size`}
+                            className="block overflow-hidden rounded-2xl focus:outline-none focus:ring-2 focus:ring-slate-400 focus:ring-offset-2"
+                          >
+                            <img
+                              src={assetUrl}
+                              alt={asset.altText ?? asset.label}
+                              className="aspect-video w-full object-cover transition hover:scale-[1.01]"
+                            />
+                          </a>
                         ) : (
                           <div className="flex aspect-video items-center justify-center bg-slate-100 text-sm text-slate-500">
                             No image preview
@@ -214,7 +221,6 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
                             <form
                               action={updateBackgroundImageAssetAction}
                               className="mt-3 space-y-3"
-                              encType="multipart/form-data"
                             >
                               <input
                                 type="hidden"
@@ -353,7 +359,6 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
               <form
                 action={createBackgroundMusicTrackAction}
                 className="space-y-4"
-                encType="multipart/form-data"
               >
                 <input type="hidden" name="returnTo" value={musicReturnTo} />
 
@@ -425,7 +430,6 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
                             <form
                               action={updateBackgroundMusicTrackAction}
                               className="mt-3 space-y-3"
-                              encType="multipart/form-data"
                             >
                               <input
                                 type="hidden"

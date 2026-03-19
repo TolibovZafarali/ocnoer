@@ -88,7 +88,6 @@ export default async function CharactersPage({
           <form
             action={createCharacterAction}
             className="space-y-4"
-            encType="multipart/form-data"
           >
             <input type="hidden" name="returnTo" value="/admin/characters" />
             <input type="hidden" name="initialEmotionKey" value="default" />

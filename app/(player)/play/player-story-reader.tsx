@@ -20,7 +20,11 @@ import {
   type PlayerProgress,
   type ReaderState
 } from "@/lib/story/reader";
-import type { RuntimeChapterBundle, RuntimeManifest } from "@/lib/story/types";
+import type {
+  RuntimeChapterBundle,
+  RuntimeDialogueEntry,
+  RuntimeManifest
+} from "@/lib/story/types";
 import {
   createRuntimeChapterLoader,
   decidePlayerResumeAction,
@@ -57,6 +61,7 @@ type PlayerBoundaryState =
     };
 
 const DEFAULT_STAGE_ASPECT_RATIO = 9 / 16;
+type DialogueCardPlacement = "speaker-left" | "speaker-right" | "center";
 
 function readStoredProgress(storageKey: string) {
   if (typeof window === "undefined") {
@@ -124,6 +129,36 @@ function getRuntimeAvailability(input: {
   }
 
   return null;
+}
+
+function getDialogueCardPlacement(
+  entry: RuntimeDialogueEntry
+): DialogueCardPlacement {
+  if (entry.speaker.type !== "character") {
+    return "center";
+  }
+
+  if (entry.stage.left?.characterId === entry.speaker.characterId) {
+    return "speaker-left";
+  }
+
+  if (entry.stage.right?.characterId === entry.speaker.characterId) {
+    return "speaker-right";
+  }
+
+  return "center";
+}
+
+function getDialogueCardPositionClassName(placement: DialogueCardPlacement) {
+  if (placement === "speaker-left") {
+    return "left-[calc(min(52%,22rem)-clamp(0.85rem,2vw,1.5rem))] right-[clamp(0.75rem,2vw,1.25rem)] md:left-[calc(46%-clamp(1rem,2vw,1.75rem))]";
+  }
+
+  if (placement === "speaker-right") {
+    return "left-[clamp(0.75rem,2vw,1.25rem)] right-[calc(min(52%,22rem)-clamp(0.85rem,2vw,1.5rem))] md:right-[calc(46%-clamp(1rem,2vw,1.75rem))]";
+  }
+
+  return "left-[clamp(0.75rem,2vw,1.25rem)] right-[clamp(0.75rem,2vw,1.25rem)]";
 }
 
 export function PlayerStoryReader({
@@ -600,6 +635,12 @@ export function PlayerStoryReader({
   const isTransitionCard = Boolean(sceneTransitionState);
   const isChapterBreakCard = Boolean(chapterBreakState);
   const isStoryFinishedCard = Boolean(storyFinishedState);
+  const dialogueCardPlacement = getDialogueCardPlacement(activeEntry);
+  const dialogueCardPositionClassName = getDialogueCardPositionClassName(
+    dialogueCardPlacement
+  );
+  const showDialogueCard =
+    !isTransitionCard && !isChapterBreakCard && !isStoryFinishedCard;
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_center,#07101f_0%,#02040d_72%)]">
@@ -623,126 +664,131 @@ export function PlayerStoryReader({
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.12),transparent_34%)]" />
 
         <div className="relative z-10 h-full">
-          <div className="absolute inset-x-0 top-0 z-20 p-3 md:p-5">
-            <div className="rounded-[28px] border border-white/10 bg-slate-950/82 p-5 backdrop-blur">
-              {isTransitionCard ? (
-                <div>
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
-                        Scene Transition
-                      </p>
-                      <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-50">
-                        {sceneTransitionState?.sceneTitle}
-                      </h2>
+          {isTransitionCard || isChapterBreakCard || isStoryFinishedCard ? (
+            <div className="absolute inset-x-0 top-0 z-20 p-3 md:p-5">
+              <div className="rounded-[28px] border border-white/10 bg-slate-950/82 p-5 backdrop-blur">
+                {isTransitionCard ? (
+                  <div>
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
+                          Scene Transition
+                        </p>
+                        <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-50">
+                          {sceneTransitionState?.sceneTitle}
+                        </h2>
+                      </div>
+                      <PillLike>
+                        Scene {activeReaderState.sceneIndex + 1}
+                      </PillLike>
                     </div>
-                    <PillLike>
-                      Scene {activeReaderState.sceneIndex + 1}
-                    </PillLike>
-                  </div>
 
-                  <p className="max-w-3xl text-base leading-7 text-slate-300">
-                    The next scene is ready.
-                  </p>
+                    <p className="max-w-3xl text-base leading-7 text-slate-300">
+                      The next scene is ready.
+                    </p>
 
-                  <div className="mt-6 flex justify-end">
-                    <Button
-                      onClick={() => void handleAdvance()}
-                      disabled={isLoadingChapter}
-                    >
-                      Continue
-                    </Button>
-                  </div>
-                </div>
-              ) : isChapterBreakCard ? (
-                <div>
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
-                        Chapter Break
-                      </p>
-                      <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-50">
-                        {chapterBreakState?.chapterTitle}
-                      </h2>
+                    <div className="mt-6 flex justify-end">
+                      <Button
+                        onClick={() => void handleAdvance()}
+                        disabled={isLoadingChapter}
+                      >
+                        Continue
+                      </Button>
                     </div>
-                    <PillLike>
-                      Chapter {chapterBreakState?.chapterIndex} of{" "}
-                      {chapterBreakState?.chapterCount}
-                    </PillLike>
                   </div>
-
-                  <p className="max-w-3xl text-base leading-7 text-slate-300">
-                    The previous chapter is complete. Continue when you are
-                    ready to begin the next chapter.
-                  </p>
-
-                  <div className="mt-6 flex justify-end">
-                    <Button
-                      onClick={() => void handleAdvance()}
-                      disabled={isLoadingChapter}
-                    >
-                      Begin Chapter
-                    </Button>
-                  </div>
-                </div>
-              ) : isStoryFinishedCard ? (
-                <div>
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
-                        Story Complete
-                      </p>
-                      <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-50">
-                        You reached the end of the current story.
-                      </h2>
+                ) : isChapterBreakCard ? (
+                  <div>
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
+                          Chapter Break
+                        </p>
+                        <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-50">
+                          {chapterBreakState?.chapterTitle}
+                        </h2>
+                      </div>
+                      <PillLike>
+                        Chapter {chapterBreakState?.chapterIndex} of{" "}
+                        {chapterBreakState?.chapterCount}
+                      </PillLike>
                     </div>
-                    <PillLike>
-                      Chapter {storyFinishedState?.chapterIndex} of{" "}
-                      {storyFinishedState?.chapterCount}
-                    </PillLike>
-                  </div>
 
-                  <p className="max-w-3xl text-base leading-7 text-slate-300">
-                    {storyFinishedState?.chapterTitle} is the current ending
-                    point. Restart to read from the beginning again.
-                  </p>
+                    <p className="max-w-3xl text-base leading-7 text-slate-300">
+                      The previous chapter is complete. Continue when you are
+                      ready to begin the next chapter.
+                    </p>
 
-                  <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-                    <div className="text-sm text-slate-400">
-                      The published story ends here for now.
+                    <div className="mt-6 flex justify-end">
+                      <Button
+                        onClick={() => void handleAdvance()}
+                        disabled={isLoadingChapter}
+                      >
+                        Begin Chapter
+                      </Button>
                     </div>
-                    <Button onClick={handleRestart}>Restart Story</Button>
                   </div>
-                </div>
-              ) : (
-                <div>
-                  {activeEntry.speaker.type === "character" ? (
-                    <div className="mb-4">
-                      <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
-                        {activeEntry.speaker.characterName}
-                      </p>
-                      <p className="mt-1 text-xs text-slate-500">
-                        Emotion: {activeEntry.speaker.emotionLabel}
-                      </p>
+                ) : (
+                  <div>
+                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
+                          Story Complete
+                        </p>
+                        <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-50">
+                          You reached the end of the current story.
+                        </h2>
+                      </div>
+                      <PillLike>
+                        Chapter {storyFinishedState?.chapterIndex} of{" "}
+                        {storyFinishedState?.chapterCount}
+                      </PillLike>
                     </div>
-                  ) : null}
 
-                  <p className="max-w-4xl text-lg leading-8 text-slate-100">
-                    {activeEntry.text}
-                  </p>
+                    <p className="max-w-3xl text-base leading-7 text-slate-300">
+                      {storyFinishedState?.chapterTitle} is the current ending
+                      point. Restart to read from the beginning again.
+                    </p>
 
-                  <div className="mt-6 flex justify-end">
-                    <Button
-                      onClick={() => void handleAdvance()}
-                      disabled={isLoadingChapter}
-                    >
-                      {isLoadingChapter ? "Loading..." : "Continue"}
-                    </Button>
+                    <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
+                      <div className="text-sm text-slate-400">
+                        The published story ends here for now.
+                      </div>
+                      <Button onClick={handleRestart}>Restart Story</Button>
+                    </div>
                   </div>
-                </div>
-              )}
+                )}
+              </div>
             </div>
-          </div>
+          ) : null}
+
+          {showDialogueCard ? (
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20">
+              <div
+                className={`pointer-events-auto absolute bottom-[clamp(0.75rem,2vw,1.25rem)] rounded-[28px] border border-white/10 bg-slate-950/82 p-5 backdrop-blur ${dialogueCardPositionClassName}`}
+              >
+                <div className="mb-4">
+                  <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
+                    {activeEntry.speaker.type === "character"
+                      ? activeEntry.speaker.characterName
+                      : "Narrator"}
+                  </p>
+                </div>
+
+                <p className="text-base leading-7 text-slate-100 md:text-lg md:leading-8">
+                  {activeEntry.text}
+                </p>
+
+                <div className="mt-6 flex justify-end">
+                  <Button
+                    onClick={() => void handleAdvance()}
+                    disabled={isLoadingChapter}
+                  >
+                    {isLoadingChapter ? "Loading..." : "Continue"}
+                  </Button>
+                </div>
+              </div>
+            </div>
+          ) : null}
 
           <div className="absolute inset-x-0 bottom-0 z-10 h-[72%] md:h-[78%]">
             <StageCharacter

@@ -8,7 +8,11 @@ import {
   type ReaderState,
   type RuntimeChapterLoader
 } from "@/lib/story/reader";
-import type { RuntimeChapterBundle, RuntimeManifest } from "@/lib/story/types";
+import type {
+  RuntimeChapterBundle,
+  RuntimeDialogueEntry,
+  RuntimeManifest
+} from "@/lib/story/types";
 import { getSupabaseEnv, getSupabaseServerEnv } from "@/lib/supabase/env";
 
 export type PlayerRuntimeAssetUrls = {
@@ -65,6 +69,26 @@ function createEmptyPlayerRuntimeAssetUrls(): PlayerRuntimeAssetUrls {
     backgroundImageUrl: null,
     leftCharacterImageUrl: null,
     rightCharacterImageUrl: null
+  };
+}
+
+function getVisiblePlayerStageImagePaths(entry: RuntimeDialogueEntry) {
+  if (entry.speaker.type !== "character") {
+    return {
+      leftImagePath: null,
+      rightImagePath: null
+    };
+  }
+
+  return {
+    leftImagePath:
+      entry.stage.left?.characterId === entry.speaker.characterId
+        ? entry.stage.left.imagePath
+        : null,
+    rightImagePath:
+      entry.stage.right?.characterId === entry.speaker.characterId
+        ? entry.stage.right.imagePath
+        : null
   };
 }
 
@@ -178,6 +202,8 @@ export function getPlayerRuntimeAssetUrls(input: {
     return createEmptyPlayerRuntimeAssetUrls();
   }
 
+  const visibleStageImagePaths = getVisiblePlayerStageImagePaths(entry);
+
   return {
     backgroundImageUrl: toPublicStorageUrl(
       input.supabaseUrl,
@@ -185,11 +211,11 @@ export function getPlayerRuntimeAssetUrls(input: {
     ),
     leftCharacterImageUrl: toPublicStorageUrl(
       input.supabaseUrl,
-      entry.stage.left?.imagePath ?? null
+      visibleStageImagePaths.leftImagePath
     ),
     rightCharacterImageUrl: toPublicStorageUrl(
       input.supabaseUrl,
-      entry.stage.right?.imagePath ?? null
+      visibleStageImagePaths.rightImagePath
     )
   };
 }

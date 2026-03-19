@@ -11,7 +11,8 @@ import {
 import type {
   RuntimeChapterBundle,
   RuntimeManifest,
-  RuntimeScene
+  RuntimeScene,
+  RuntimeStageCharacter
 } from "@/lib/story/types";
 
 function createScene(input: {
@@ -69,6 +70,22 @@ function createScene(input: {
             : null
       }
     }))
+  };
+}
+
+function createStageCharacter(input: {
+  characterId: string;
+  characterName: string;
+  characterSlug: string;
+  imagePath: string;
+}): RuntimeStageCharacter {
+  return {
+    characterId: input.characterId,
+    characterName: input.characterName,
+    characterSlug: input.characterSlug,
+    emotionKey: "default",
+    emotionLabel: "Default",
+    imagePath: input.imagePath
   };
 }
 
@@ -275,7 +292,7 @@ describe("loadPlayerRuntimeBootstrap", () => {
 });
 
 describe("getPlayerRuntimeAssetUrls", () => {
-  it("only returns preload URLs for assets present in the opening frame", () => {
+  it("hides stage portraits during narrator entries", () => {
     const playableBundle = createBundle({
       chapterId: "chapter_two",
       title: "Chapter Two",
@@ -302,9 +319,77 @@ describe("getPlayerRuntimeAssetUrls", () => {
     ).toEqual({
       backgroundImageUrl:
         "https://example.supabase.co/storage/v1/object/public/runtime/media/opening-background.png",
-      leftCharacterImageUrl:
-        "https://example.supabase.co/storage/v1/object/public/runtime/media/opening-left.png",
+      leftCharacterImageUrl: null,
       rightCharacterImageUrl: null
+    });
+  });
+
+  it("only returns the currently speaking character portrait", () => {
+    const playableBundle = createBundle({
+      chapterId: "chapter_two",
+      title: "Chapter Two",
+      orderIndex: 2,
+      nextChapterId: null,
+      scenes: [
+        {
+          id: "scene_two",
+          title: "Scene Two",
+          orderIndex: 1,
+          backgroundImage: {
+            id: "bg_scene_two",
+            label: "Background Scene Two",
+            slug: "background-scene-two",
+            altText: null,
+            filePath: "runtime/media/opening-background.png"
+          },
+          backgroundMusic: null,
+          characterPool: [],
+          dialogue: [
+            {
+              id: "line_two",
+              orderIndex: 1,
+              text: "Are you ready?",
+              speaker: {
+                type: "character",
+                characterId: "character_right",
+                characterName: "Right",
+                characterSlug: "right",
+                emotionKey: "default",
+                emotionLabel: "Default",
+                emotionImagePath: "runtime/media/opening-right.png"
+              },
+              stage: {
+                left: createStageCharacter({
+                  characterId: "character_left",
+                  characterName: "Left",
+                  characterSlug: "left",
+                  imagePath: "runtime/media/opening-left.png"
+                }),
+                right: createStageCharacter({
+                  characterId: "character_right",
+                  characterName: "Right",
+                  characterSlug: "right",
+                  imagePath: "runtime/media/opening-right.png"
+                })
+              }
+            }
+          ]
+        }
+      ]
+    });
+
+    expect(
+      getPlayerRuntimeAssetUrls({
+        supabaseUrl,
+        bundle: playableBundle,
+        readerState: initialReaderState
+      })
+    ).toEqual({
+      backgroundImageUrl:
+        "https://example.supabase.co/storage/v1/object/public/runtime/media/opening-background.png",
+      leftCharacterImageUrl: null,
+      rightCharacterImageUrl:
+        "https://example.supabase.co/storage/v1/object/public/runtime/media/opening-right.png"
     });
   });
 });

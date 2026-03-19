@@ -3,6 +3,7 @@
 
 import {
   type ReactNode,
+  startTransition,
   useCallback,
   useEffect,
   useLayoutEffect,
@@ -11,7 +12,23 @@ import {
   useState
 } from "react";
 
+import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+
 import { Button } from "@/components/ui/button";
+import {
+  CONTINUE_BUTTON_ENTER_DURATION_MS,
+  DEFAULT_LINE_ENTER_DURATION_MS,
+  DEFAULT_LINE_EXIT_DURATION_MS,
+  REDUCED_MOTION_DURATION_MS,
+  TYPING_BASE_DELAY_MS,
+  type MotionDirection,
+  type PresentationPhase,
+  getDialogueCardPlacement,
+  getLineEnterDelayMs,
+  getLineMotionConfig,
+  getMotionOffset,
+  getTypingCharacterDelayMs
+} from "@/app/(player)/play/player-story-reader-motion";
 import {
   advanceRuntimePosition,
   getCurrentDialogue,
@@ -23,7 +40,8 @@ import {
 import type {
   RuntimeChapterBundle,
   RuntimeDialogueEntry,
-  RuntimeManifest
+  RuntimeManifest,
+  RuntimeStageCharacter
 } from "@/lib/story/types";
 import {
   createRuntimeChapterLoader,
@@ -60,8 +78,37 @@ type PlayerBoundaryState =
       chapterCount: number;
     };
 
+type VisibleStagePortrait = {
+  key: string;
+  imageUrl: string;
+  alt: string;
+  direction: MotionDirection;
+};
+
+type ResolvedAdvanceAction =
+  | {
+      type: "line";
+      state: ReaderState;
+    }
+  | {
+      type: "scene-transition";
+      state: ReaderState;
+      boundaryState: PlayerBoundaryState;
+    }
+  | {
+      type: "chapter-break";
+      bundle: RuntimeChapterBundle;
+      state: ReaderState;
+      boundaryState: PlayerBoundaryState;
+    }
+  | {
+      type: "story-finished";
+      boundaryState: PlayerBoundaryState;
+    };
+
 const DEFAULT_STAGE_ASPECT_RATIO = 9 / 16;
-type DialogueCardPlacement = "speaker-left" | "speaker-right" | "center";
+const MOTION_EASE_OUT = [0.22, 1, 0.36, 1] as const;
+const MOTION_EASE_IN = [0.4, 0, 1, 1] as const;
 
 function readStoredProgress(storageKey: string) {
   if (typeof window === "undefined") {
@@ -131,25 +178,9 @@ function getRuntimeAvailability(input: {
   return null;
 }
 
-function getDialogueCardPlacement(
-  entry: RuntimeDialogueEntry
-): DialogueCardPlacement {
-  if (entry.speaker.type !== "character") {
-    return "center";
-  }
-
-  if (entry.stage.left?.characterId === entry.speaker.characterId) {
-    return "speaker-left";
-  }
-
-  if (entry.stage.right?.characterId === entry.speaker.characterId) {
-    return "speaker-right";
-  }
-
-  return "center";
-}
-
-function getDialogueCardPositionClassName(placement: DialogueCardPlacement) {
+function getDialogueCardPositionClassName(
+  placement: ReturnType<typeof getDialogueCardPlacement>
+) {
   if (placement === "speaker-left") {
     return "left-[calc(min(52%,22rem)-clamp(0.85rem,2vw,1.5rem))] right-[clamp(0.75rem,2vw,1.25rem)] md:left-[calc(46%-clamp(1rem,2vw,1.75rem))]";
   }
@@ -175,7 +206,10 @@ export function PlayerStoryReader({
     )
   );
   const initialResumeResolvedRef = useRef(false);
+  const previousNormalEntryRef = useRef<RuntimeDialogueEntry | null>(null);
+  const previousShowDialogueCardRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement>(null);
+  const prefersReducedMotion = useReducedMotion() ?? false;
   const [manifest, setManifest] = useState<RuntimeManifest | null>(
     initialManifest
   );
@@ -198,6 +232,17 @@ export function PlayerStoryReader({
   const [stageAspectRatio, setStageAspectRatio] = useState(
     DEFAULT_STAGE_ASPECT_RATIO
   );
+  const [presentationPhase, setPresentationPhase] =
+    useState<PresentationPhase>("entering");
+  const [visibleTextLength, setVisibleTextLength] = useState(0);
+  const [lineEnterDelayMs, setLineEnterDelayMs] = useState(0);
+
+  const lineEnterDurationMs = prefersReducedMotion
+    ? REDUCED_MOTION_DURATION_MS
+    : DEFAULT_LINE_ENTER_DURATION_MS;
+  const lineExitDurationMs = prefersReducedMotion
+    ? REDUCED_MOTION_DURATION_MS
+    : DEFAULT_LINE_EXIT_DURATION_MS;
 
   const loadBundle = useMemo(
     () =>
@@ -232,6 +277,7 @@ export function PlayerStoryReader({
           return;
         }
 
+        previousNormalEntryRef.current = null;
         setManifest(loadedRuntime.manifest);
         setBundle(loadedRuntime.bundle);
         setReaderState(loadedRuntime.readerState);
@@ -292,6 +338,7 @@ export function PlayerStoryReader({
     }
 
     if (resumeAction.type === "resume-from-initial-bundle") {
+      previousNormalEntryRef.current = null;
       setReaderState(resumeAction.readerState);
       setBoundaryState(null);
       setIsPersistenceReady(true);
@@ -315,6 +362,7 @@ export function PlayerStoryReader({
           return;
         }
 
+        previousNormalEntryRef.current = null;
         setManifest(loadedRuntime.manifest);
         setBundle(loadedRuntime.bundle);
         setReaderState(loadedRuntime.readerState);
@@ -462,11 +510,195 @@ export function PlayerStoryReader({
     void audio.play().catch(() => undefined);
   }, [backgroundMusicUrl, isResolvingResume]);
 
-  const handleAdvance = useCallback(async () => {
-    if (isLoadingChapter) {
+  const activeReaderState = readerState;
+  const activeScene = scene;
+  const activeEntry = entry;
+  const textCharacters = useMemo(
+    () => Array.from(activeEntry?.text ?? ""),
+    [activeEntry?.text]
+  );
+  const leftCharacterImageUrl = activeAssetUrls.leftCharacterImageUrl;
+  const rightCharacterImageUrl = activeAssetUrls.rightCharacterImageUrl;
+  const sceneTransitionState =
+    boundaryState?.type === "scene-transition" ? boundaryState : null;
+  const chapterBreakState =
+    boundaryState?.type === "chapter-break" ? boundaryState : null;
+  const storyFinishedState =
+    boundaryState?.type === "story-finished" ? boundaryState : null;
+  const isTransitionCard = Boolean(sceneTransitionState);
+  const isChapterBreakCard = Boolean(chapterBreakState);
+  const isStoryFinishedCard = Boolean(storyFinishedState);
+  const showDialogueCard =
+    Boolean(activeEntry) &&
+    !isTransitionCard &&
+    !isChapterBreakCard &&
+    !isStoryFinishedCard;
+  const lineMotionConfig = activeEntry
+    ? getLineMotionConfig(activeEntry)
+    : null;
+  const dialogueCardPlacement = activeEntry
+    ? getDialogueCardPlacement(activeEntry)
+    : "center";
+  const dialogueCardPositionClassName = getDialogueCardPositionClassName(
+    dialogueCardPlacement
+  );
+  const dialogueCardVariants = lineMotionConfig
+    ? createDirectionalVariants({
+        direction: lineMotionConfig.cardDirection,
+        reducedMotion: prefersReducedMotion,
+        enterDurationMs: lineEnterDurationMs,
+        exitDurationMs: lineExitDurationMs,
+        enterDelayMs: lineEnterDelayMs
+      })
+    : null;
+  const leftStagePortrait = activeEntry
+    ? createVisibleStagePortrait({
+        stageCharacter: activeEntry.stage.left,
+        imageUrl: leftCharacterImageUrl,
+        direction: "from-left"
+      })
+    : null;
+  const rightStagePortrait = activeEntry
+    ? createVisibleStagePortrait({
+        stageCharacter: activeEntry.stage.right,
+        imageUrl: rightCharacterImageUrl,
+        direction: "from-right"
+      })
+    : null;
+  const dialogueTextNodes = useMemo(() => {
+    if (!activeEntry) {
+      return null;
+    }
+
+    if (
+      prefersReducedMotion ||
+      presentationPhase === "ready" ||
+      presentationPhase === "exiting"
+    ) {
+      return activeEntry.text;
+    }
+
+    return textCharacters.map((character, index) => {
+      return (
+        <span
+          key={`${activeEntry.id}:${index}`}
+          className={index < visibleTextLength ? undefined : "text-transparent"}
+        >
+          {character}
+        </span>
+      );
+    });
+  }, [
+    activeEntry,
+    prefersReducedMotion,
+    textCharacters,
+    visibleTextLength
+  ]);
+  const showContinueButton = showDialogueCard && presentationPhase === "ready";
+
+  useEffect(() => {
+    if (!showDialogueCard || !activeEntry) {
       return;
     }
 
+    setLineEnterDelayMs(
+      previousShowDialogueCardRef.current
+        ? getLineEnterDelayMs({
+            currentEntry: activeEntry,
+            previousEntry: previousNormalEntryRef.current,
+            reducedMotion: prefersReducedMotion
+          })
+        : 0
+    );
+    setVisibleTextLength(prefersReducedMotion ? textCharacters.length : 0);
+    setPresentationPhase(prefersReducedMotion ? "ready" : "entering");
+    previousNormalEntryRef.current = activeEntry;
+  }, [
+    activeEntry,
+    prefersReducedMotion,
+    showDialogueCard,
+    textCharacters.length
+  ]);
+
+  useEffect(() => {
+    previousShowDialogueCardRef.current = showDialogueCard;
+  }, [showDialogueCard]);
+
+  useEffect(() => {
+    if (
+      !showDialogueCard ||
+      prefersReducedMotion ||
+      presentationPhase !== "entering"
+    ) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setPresentationPhase("typing");
+    }, lineEnterDelayMs + lineEnterDurationMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [
+    lineEnterDelayMs,
+    lineEnterDurationMs,
+    prefersReducedMotion,
+    presentationPhase,
+    showDialogueCard
+  ]);
+
+  useEffect(() => {
+    if (
+      !showDialogueCard ||
+      prefersReducedMotion ||
+      presentationPhase !== "typing" ||
+      visibleTextLength >= textCharacters.length
+    ) {
+      return;
+    }
+
+    const previousCharacter = textCharacters[visibleTextLength - 1] ?? null;
+    const typingDelayMs = previousCharacter
+      ? getTypingCharacterDelayMs(previousCharacter)
+      : TYPING_BASE_DELAY_MS;
+    const timer = window.setTimeout(() => {
+      setVisibleTextLength((currentLength) => {
+        return Math.min(currentLength + 1, textCharacters.length);
+      });
+    }, typingDelayMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [
+    prefersReducedMotion,
+    presentationPhase,
+    showDialogueCard,
+    textCharacters,
+    visibleTextLength
+  ]);
+
+  useEffect(() => {
+    if (
+      !showDialogueCard ||
+      prefersReducedMotion ||
+      presentationPhase !== "typing" ||
+      visibleTextLength < textCharacters.length
+    ) {
+      return;
+    }
+
+    setPresentationPhase("ready");
+  }, [
+    prefersReducedMotion,
+    presentationPhase,
+    showDialogueCard,
+    textCharacters.length,
+    visibleTextLength
+  ]);
+
+  const handleAdvance = useCallback(async () => {
     if (boundaryState) {
       if (boundaryState.type !== "story-finished") {
         setBoundaryState(null);
@@ -475,61 +707,51 @@ export function PlayerStoryReader({
       return;
     }
 
-    if (!bundle || !readerState || !manifest) {
+    if (
+      isLoadingChapter ||
+      presentationPhase !== "ready" ||
+      !bundle ||
+      !readerState ||
+      !manifest
+    ) {
       return;
     }
 
     setIsLoadingChapter(true);
+    setPresentationPhase("exiting");
 
     try {
-      const result = await advanceRuntimePosition({
-        manifest,
-        bundle,
-        state: readerState,
-        loadChapter: loadBundle
-      });
+      const [resolvedAdvance] = await Promise.all([
+        resolveAdvanceAction({
+          manifest,
+          bundle,
+          state: readerState,
+          loadChapter: loadBundle
+        }),
+        waitForDuration(lineExitDurationMs)
+      ]);
 
-      if (result.type === "line") {
-        setReaderState(result.state);
-        return;
-      }
+      startTransition(() => {
+        if (resolvedAdvance.type === "line") {
+          setBoundaryState(null);
+          setReaderState(resolvedAdvance.state);
+          return;
+        }
 
-      if (result.type === "scene-transition") {
-        const nextScene = getCurrentScene(bundle.chapter, result.state);
+        if (resolvedAdvance.type === "scene-transition") {
+          setReaderState(resolvedAdvance.state);
+          setBoundaryState(resolvedAdvance.boundaryState);
+          return;
+        }
 
-        setReaderState(result.state);
-        setBoundaryState({
-          type: "scene-transition",
-          sceneTitle: nextScene?.title ?? "Next Scene"
-        });
-        return;
-      }
+        if (resolvedAdvance.type === "chapter-break") {
+          setBundle(resolvedAdvance.bundle);
+          setReaderState(resolvedAdvance.state);
+          setBoundaryState(resolvedAdvance.boundaryState);
+          return;
+        }
 
-      if (result.type === "chapter-break") {
-        const chapterIndex = manifest.chapters.findIndex(
-          (chapter) => chapter.id === result.bundle.chapter.id
-        );
-
-        setBundle(result.bundle);
-        setReaderState(result.state);
-        setBoundaryState({
-          type: "chapter-break",
-          chapterTitle: result.bundle.chapter.title,
-          chapterIndex: chapterIndex + 1,
-          chapterCount: manifest.chapters.length
-        });
-        return;
-      }
-
-      const chapterIndex = manifest.chapters.findIndex(
-        (chapter) => chapter.id === bundle.chapter.id
-      );
-
-      setBoundaryState({
-        type: "story-finished",
-        chapterTitle: bundle.chapter.title,
-        chapterIndex: chapterIndex + 1,
-        chapterCount: manifest.chapters.length
+        setBoundaryState(resolvedAdvance.boundaryState);
       });
     } catch (caughtError) {
       setError(
@@ -544,8 +766,10 @@ export function PlayerStoryReader({
     boundaryState,
     bundle,
     isLoadingChapter,
+    lineExitDurationMs,
     loadBundle,
     manifest,
+    presentationPhase,
     readerState
   ]);
 
@@ -563,6 +787,7 @@ export function PlayerStoryReader({
         loadChapter: loadBundle
       });
 
+      previousNormalEntryRef.current = null;
       setBoundaryState(null);
       setBranchFlags({});
       setIsPersistenceReady(true);
@@ -621,26 +846,10 @@ export function PlayerStoryReader({
     );
   }
 
-  const activeReaderState = readerState!;
-  const activeScene = scene!;
-  const activeEntry = entry!;
-  const leftCharacterImageUrl = activeAssetUrls.leftCharacterImageUrl;
-  const rightCharacterImageUrl = activeAssetUrls.rightCharacterImageUrl;
-  const sceneTransitionState =
-    boundaryState?.type === "scene-transition" ? boundaryState : null;
-  const chapterBreakState =
-    boundaryState?.type === "chapter-break" ? boundaryState : null;
-  const storyFinishedState =
-    boundaryState?.type === "story-finished" ? boundaryState : null;
-  const isTransitionCard = Boolean(sceneTransitionState);
-  const isChapterBreakCard = Boolean(chapterBreakState);
-  const isStoryFinishedCard = Boolean(storyFinishedState);
-  const dialogueCardPlacement = getDialogueCardPlacement(activeEntry);
-  const dialogueCardPositionClassName = getDialogueCardPositionClassName(
-    dialogueCardPlacement
-  );
-  const showDialogueCard =
-    !isTransitionCard && !isChapterBreakCard && !isStoryFinishedCard;
+  const resolvedReaderState = activeReaderState!;
+  const resolvedScene = activeScene!;
+  const resolvedEntry = activeEntry!;
+  const resolvedDialogueCardVariants = dialogueCardVariants!;
 
   return (
     <div className="flex min-h-screen w-full items-center justify-center overflow-hidden bg-black">
@@ -652,8 +861,8 @@ export function PlayerStoryReader({
           <img
             src={backgroundImageUrl}
             alt={
-              activeScene.backgroundImage.altText ??
-              activeScene.backgroundImage.label
+              resolvedScene.backgroundImage.altText ??
+              resolvedScene.backgroundImage.label
             }
             className="absolute inset-0 h-full w-full object-cover"
           />
@@ -678,7 +887,7 @@ export function PlayerStoryReader({
                         </h2>
                       </div>
                       <PillLike>
-                        Scene {activeReaderState.sceneIndex + 1}
+                        Scene {resolvedReaderState.sceneIndex + 1}
                       </PillLike>
                     </div>
 
@@ -762,43 +971,86 @@ export function PlayerStoryReader({
 
           {showDialogueCard ? (
             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20">
-              <div
-                className={`pointer-events-auto absolute bottom-[clamp(0.75rem,2vw,1.25rem)] rounded-[28px] border border-white/10 bg-slate-950/82 p-5 backdrop-blur ${dialogueCardPositionClassName}`}
-              >
-                <div className="mb-4">
-                  <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
-                    {activeEntry.speaker.type === "character"
-                      ? activeEntry.speaker.characterName
-                      : "Narrator"}
+              <AnimatePresence initial={false} mode="wait">
+                <motion.div
+                  key={resolvedEntry.id}
+                  initial="hidden"
+                  animate="visible"
+                  exit="exit"
+                  variants={resolvedDialogueCardVariants}
+                  className={`pointer-events-auto absolute bottom-[clamp(0.75rem,2vw,1.25rem)] rounded-[28px] border border-white/10 bg-slate-950/82 p-5 backdrop-blur ${dialogueCardPositionClassName}`}
+                >
+                  {resolvedEntry.speaker.type === "character" ? (
+                    <div className="mb-4">
+                      <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
+                        {resolvedEntry.speaker.characterName}
+                      </p>
+                    </div>
+                  ) : null}
+
+                  <p className="font-dialogue min-h-[3.5rem] text-base leading-7 text-slate-100 md:text-lg md:leading-8">
+                    {dialogueTextNodes}
                   </p>
-                </div>
 
-                <p className="text-base leading-7 text-slate-100 md:text-lg md:leading-8">
-                  {activeEntry.text}
-                </p>
-
-                <div className="mt-6 flex justify-end">
-                  <Button
-                    onClick={() => void handleAdvance()}
-                    disabled={isLoadingChapter}
-                  >
-                    {isLoadingChapter ? "Loading..." : "Continue"}
-                  </Button>
-                </div>
-              </div>
+                  <div className="mt-6 flex min-h-9 justify-end">
+                    <AnimatePresence initial={false}>
+                      {showContinueButton ? (
+                        <motion.div
+                          initial={
+                            prefersReducedMotion ? false : { opacity: 0, y: 10 }
+                          }
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 8 }}
+                          transition={{
+                            duration: prefersReducedMotion
+                              ? 0
+                              : CONTINUE_BUTTON_ENTER_DURATION_MS / 1000,
+                            ease: MOTION_EASE_OUT
+                          }}
+                        >
+                          <button
+                            onClick={() => void handleAdvance()}
+                            disabled={isLoadingChapter}
+                            type="button"
+                            aria-label={
+                              isLoadingChapter
+                                ? "Loading next line"
+                                : "Continue"
+                            }
+                            className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-transparent text-slate-100 transition-opacity hover:text-white disabled:cursor-default disabled:opacity-45"
+                          >
+                            <span
+                              aria-hidden
+                              className="material-symbols-outlined"
+                            >
+                              arrow_forward
+                            </span>
+                          </button>
+                        </motion.div>
+                      ) : null}
+                    </AnimatePresence>
+                  </div>
+                </motion.div>
+              </AnimatePresence>
             </div>
           ) : null}
 
           <div className="absolute inset-x-0 bottom-0 z-10 h-[72%] md:h-[78%]">
             <StageCharacter
               alignment="left"
-              imageUrl={leftCharacterImageUrl}
-              alt={activeEntry.stage.left?.characterName ?? "Left character"}
+              portrait={leftStagePortrait}
+              shouldAnimate={showDialogueCard}
+              prefersReducedMotion={prefersReducedMotion}
+              enterDurationMs={lineEnterDurationMs}
+              exitDurationMs={lineExitDurationMs}
             />
             <StageCharacter
               alignment="right"
-              imageUrl={rightCharacterImageUrl}
-              alt={activeEntry.stage.right?.characterName ?? "Right character"}
+              portrait={rightStagePortrait}
+              shouldAnimate={showDialogueCard}
+              prefersReducedMotion={prefersReducedMotion}
+              enterDurationMs={lineEnterDurationMs}
+              exitDurationMs={lineExitDurationMs}
             />
           </div>
         </div>
@@ -821,10 +1073,21 @@ function PillLike(props: { children: ReactNode }) {
 
 function StageCharacter(props: {
   alignment: "left" | "right";
-  imageUrl: string | null;
-  alt: string;
+  portrait: VisibleStagePortrait | null;
+  shouldAnimate: boolean;
+  prefersReducedMotion: boolean;
+  enterDurationMs: number;
+  exitDurationMs: number;
 }) {
   const isLeft = props.alignment === "left";
+  const direction =
+    props.portrait?.direction ?? (isLeft ? "from-left" : "from-right");
+  const variants = createDirectionalVariants({
+    direction,
+    reducedMotion: props.prefersReducedMotion,
+    enterDurationMs: props.shouldAnimate ? props.enterDurationMs : 0,
+    exitDurationMs: props.shouldAnimate ? props.exitDurationMs : 0
+  });
 
   return (
     <div
@@ -832,15 +1095,152 @@ function StageCharacter(props: {
         isLeft ? "left-0 justify-start" : "right-0 justify-end"
       }`}
     >
-      {props.imageUrl ? (
-        <img
-          src={props.imageUrl}
-          alt={props.alt}
-          className={`h-full w-full object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.68)] ${
-            isLeft ? "object-left-bottom" : "object-right-bottom"
-          }`}
-        />
-      ) : null}
+      <AnimatePresence initial={false} mode="wait">
+        {props.portrait ? (
+          <motion.img
+            key={props.portrait.key}
+            src={props.portrait.imageUrl}
+            alt={props.portrait.alt}
+            initial={props.shouldAnimate ? "hidden" : false}
+            animate="visible"
+            exit="exit"
+            variants={variants}
+            className={`h-full w-full object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.68)] ${
+              isLeft ? "object-left-bottom" : "object-right-bottom"
+            }`}
+          />
+        ) : null}
+      </AnimatePresence>
     </div>
   );
+}
+
+function createVisibleStagePortrait(input: {
+  stageCharacter: RuntimeStageCharacter | null;
+  imageUrl: string | null;
+  direction: MotionDirection;
+}): VisibleStagePortrait | null {
+  if (!input.stageCharacter || !input.imageUrl) {
+    return null;
+  }
+
+  return {
+    key: `${input.stageCharacter.characterId}:${input.stageCharacter.emotionKey}:${input.imageUrl}`,
+    imageUrl: input.imageUrl,
+    alt: input.stageCharacter.characterName,
+    direction: input.direction
+  };
+}
+
+function createDirectionalVariants(input: {
+  direction: MotionDirection;
+  reducedMotion: boolean;
+  enterDurationMs: number;
+  exitDurationMs: number;
+  enterDelayMs?: number;
+}) {
+  const offset = getMotionOffset({
+    direction: input.direction,
+    reducedMotion: input.reducedMotion
+  });
+
+  return {
+    hidden: {
+      x: offset.x,
+      y: offset.y,
+      opacity: 0
+    },
+    visible: {
+      x: 0,
+      y: 0,
+      opacity: 1,
+      transition: {
+        duration: input.enterDurationMs / 1000,
+        delay: (input.enterDelayMs ?? 0) / 1000,
+        ease: MOTION_EASE_OUT
+      }
+    },
+    exit: {
+      x: offset.x,
+      y: offset.y,
+      opacity: 0,
+      transition: {
+        duration: input.exitDurationMs / 1000,
+        ease: MOTION_EASE_IN
+      }
+    }
+  };
+}
+
+function waitForDuration(durationMs: number) {
+  if (durationMs <= 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, durationMs);
+  });
+}
+
+async function resolveAdvanceAction(input: {
+  manifest: RuntimeManifest;
+  bundle: RuntimeChapterBundle;
+  state: ReaderState;
+  loadChapter: ReturnType<typeof createRuntimeChapterLoader>;
+}): Promise<ResolvedAdvanceAction> {
+  const result = await advanceRuntimePosition({
+    manifest: input.manifest,
+    bundle: input.bundle,
+    state: input.state,
+    loadChapter: input.loadChapter
+  });
+
+  if (result.type === "line") {
+    return result;
+  }
+
+  if (result.type === "scene-transition") {
+    const nextScene = getCurrentScene(input.bundle.chapter, result.state);
+
+    return {
+      type: "scene-transition",
+      state: result.state,
+      boundaryState: {
+        type: "scene-transition",
+        sceneTitle: nextScene?.title ?? "Next Scene"
+      }
+    };
+  }
+
+  if (result.type === "chapter-break") {
+    const chapterIndex = input.manifest.chapters.findIndex(
+      (chapter) => chapter.id === result.bundle.chapter.id
+    );
+
+    return {
+      type: "chapter-break",
+      bundle: result.bundle,
+      state: result.state,
+      boundaryState: {
+        type: "chapter-break",
+        chapterTitle: result.bundle.chapter.title,
+        chapterIndex: chapterIndex + 1,
+        chapterCount: input.manifest.chapters.length
+      }
+    };
+  }
+
+  const chapterIndex = input.manifest.chapters.findIndex(
+    (chapter) => chapter.id === input.bundle.chapter.id
+  );
+
+  return {
+    type: "story-finished",
+    boundaryState: {
+      type: "story-finished",
+      chapterTitle: input.bundle.chapter.title,
+      chapterIndex: chapterIndex + 1,
+      chapterCount: input.manifest.chapters.length
+    }
+  };
 }

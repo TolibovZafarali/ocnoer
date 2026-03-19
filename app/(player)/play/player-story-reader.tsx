@@ -2,7 +2,6 @@
 /* eslint-disable @next/next/no-img-element */
 
 import {
-  type MouseEvent,
   type ReactNode,
   useCallback,
   useEffect,
@@ -125,15 +124,6 @@ function getRuntimeAvailability(input: {
   }
 
   return null;
-}
-
-function isAdvanceGestureTarget(target: EventTarget | null) {
-  return (
-    target instanceof HTMLElement &&
-    Boolean(
-      target.closest("a, audio, button, input, select, summary, textarea")
-    )
-  );
 }
 
 export function PlayerStoryReader({
@@ -560,54 +550,6 @@ export function PlayerStoryReader({
     }
   }, [loadBundle, manifest, manifestPath, supabaseUrl]);
 
-  const handleReaderCardClick = useCallback(
-    (event: MouseEvent<HTMLDivElement>) => {
-      if (
-        isLoadingChapter ||
-        boundaryState?.type === "story-finished" ||
-        isAdvanceGestureTarget(event.target)
-      ) {
-        return;
-      }
-
-      void handleAdvance();
-    },
-    [boundaryState?.type, handleAdvance, isLoadingChapter]
-  );
-
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (
-        event.defaultPrevented ||
-        event.altKey ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.shiftKey ||
-        isLoadingChapter ||
-        boundaryState?.type === "story-finished"
-      ) {
-        return;
-      }
-
-      if (event.key !== "Enter" && event.key !== " ") {
-        return;
-      }
-
-      if (isAdvanceGestureTarget(event.target)) {
-        return;
-      }
-
-      event.preventDefault();
-      void handleAdvance();
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-
-    return () => {
-      window.removeEventListener("keydown", handleKeyDown);
-    };
-  }, [boundaryState?.type, handleAdvance, isLoadingChapter]);
-
   if (isLoading || isResolvingResume) {
     return (
       <div className="flex min-h-screen w-full items-center justify-center px-6 py-6">
@@ -649,7 +591,6 @@ export function PlayerStoryReader({
   const activeEntry = entry!;
   const leftCharacterImageUrl = activeAssetUrls.leftCharacterImageUrl;
   const rightCharacterImageUrl = activeAssetUrls.rightCharacterImageUrl;
-  const continueHint = "Press Enter, Space, or click the panel to continue.";
   const sceneTransitionState =
     boundaryState?.type === "scene-transition" ? boundaryState : null;
   const chapterBreakState =
@@ -683,12 +624,7 @@ export function PlayerStoryReader({
 
         <div className="relative z-10 h-full">
           <div className="absolute inset-x-0 top-0 z-20 p-3 md:p-5">
-            <div
-              className={`rounded-[28px] border border-white/10 bg-slate-950/82 p-5 backdrop-blur ${
-                isStoryFinishedCard ? "" : "cursor-pointer"
-              }`}
-              onClick={handleReaderCardClick}
-            >
+            <div className="rounded-[28px] border border-white/10 bg-slate-950/82 p-5 backdrop-blur">
               {isTransitionCard ? (
                 <div>
                   <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
@@ -709,8 +645,7 @@ export function PlayerStoryReader({
                     The next scene is ready.
                   </p>
 
-                  <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-                    <div className="text-sm text-slate-400">{continueHint}</div>
+                  <div className="mt-6 flex justify-end">
                     <Button
                       onClick={() => void handleAdvance()}
                       disabled={isLoadingChapter}
@@ -741,8 +676,7 @@ export function PlayerStoryReader({
                     ready to begin the next chapter.
                   </p>
 
-                  <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-                    <div className="text-sm text-slate-400">{continueHint}</div>
+                  <div className="mt-6 flex justify-end">
                     <Button
                       onClick={() => void handleAdvance()}
                       disabled={isLoadingChapter}
@@ -782,31 +716,22 @@ export function PlayerStoryReader({
                 </div>
               ) : (
                 <div>
-                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                    <div>
+                  {activeEntry.speaker.type === "character" ? (
+                    <div className="mb-4">
                       <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
-                        {activeEntry.speaker.type === "narrator"
-                          ? "Narrator"
-                          : activeEntry.speaker.characterName}
+                        {activeEntry.speaker.characterName}
                       </p>
-                      {activeEntry.speaker.type === "character" ? (
-                        <p className="mt-1 text-xs text-slate-500">
-                          Emotion: {activeEntry.speaker.emotionLabel}
-                        </p>
-                      ) : null}
+                      <p className="mt-1 text-xs text-slate-500">
+                        Emotion: {activeEntry.speaker.emotionLabel}
+                      </p>
                     </div>
-                    <PillLike>
-                      Scene {activeReaderState.sceneIndex + 1}, line{" "}
-                      {activeReaderState.dialogueIndex + 1}
-                    </PillLike>
-                  </div>
+                  ) : null}
 
                   <p className="max-w-4xl text-lg leading-8 text-slate-100">
                     {activeEntry.text}
                   </p>
 
-                  <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-                    <div className="text-sm text-slate-400">{continueHint}</div>
+                  <div className="mt-6 flex justify-end">
                     <Button
                       onClick={() => void handleAdvance()}
                       disabled={isLoadingChapter}

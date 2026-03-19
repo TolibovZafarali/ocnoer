@@ -643,7 +643,7 @@ export function PlayerStoryReader({
     !isTransitionCard && !isChapterBreakCard && !isStoryFinishedCard;
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center overflow-hidden bg-[radial-gradient(circle_at_center,#07101f_0%,#02040d_72%)]">
+    <div className="flex min-h-screen w-full items-center justify-center overflow-hidden bg-black">
       <div
         className="relative h-[100dvh] w-screen shrink-0 overflow-hidden bg-slate-950"
         style={stageSizeStyle}
@@ -658,10 +658,9 @@ export function PlayerStoryReader({
             className="absolute inset-0 h-full w-full object-cover"
           />
         ) : (
-          <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,#334155_0%,#0f172a_70%)]" />
+          <div className="absolute inset-0 bg-black" />
         )}
         <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(2,6,17,0.08)_0%,rgba(2,6,17,0.18)_22%,rgba(2,6,17,0.36)_54%,rgba(2,6,17,0.84)_100%)]" />
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.12),transparent_34%)]" />
 
         <div className="relative z-10 h-full">
           {isTransitionCard || isChapterBreakCard || isStoryFinishedCard ? (

@@ -22,7 +22,7 @@ export default async function PlayerPlayPage() {
   });
 
   return (
-    <main className="relative min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top,#122033_0%,#050816_58%,#02040d_100%)] text-slate-50">
+    <main className="relative min-h-screen overflow-hidden bg-black text-slate-50">
       <PlayerStoryReader
         manifestPath={runtime.manifestPath}
         progressStorageKey="ocnoer:player-progress"

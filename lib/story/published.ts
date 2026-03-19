@@ -2,6 +2,7 @@ import type {
   BackgroundImageAsset,
   BackgroundMusicTrack,
   CharacterDefinition,
+  ChapterDefinition,
   RuntimeAssetsManifest,
   RuntimeBackgroundImage,
   RuntimeBackgroundMusic,
@@ -17,6 +18,16 @@ import type {
 } from "@/lib/story/types";
 import { PRIMARY_LEFT_STAGE_CHARACTER_SLUG } from "@/lib/story/staging";
 import { STORY_SCHEMA_VERSION } from "@/lib/story/types";
+
+type RuntimeCompileContext = {
+  characters: RuntimeCharacter[];
+  backgroundImages: RuntimeBackgroundImage[];
+  backgroundMusicTracks: RuntimeBackgroundMusic[];
+  charactersById: Map<string, RuntimeCharacter>;
+  backgroundImagesById: Map<string, RuntimeBackgroundImage>;
+  backgroundMusicById: Map<string, RuntimeBackgroundMusic>;
+  sortedChapters: ChapterDefinition[];
+};
 
 function toRuntimeCharacter(character: CharacterDefinition): RuntimeCharacter {
   const defaultEmotion = character.emotions.find(
@@ -233,6 +244,109 @@ function compileScene(input: {
   };
 }
 
+function buildRuntimeCompileContext(
+  snapshot: StoryAuthoringSnapshot
+): RuntimeCompileContext {
+  const characters = [...snapshot.characters]
+    .sort((left, right) => left.name.localeCompare(right.name))
+    .map(toRuntimeCharacter);
+  const backgroundImages = [...snapshot.backgroundImages]
+    .sort((left, right) => left.label.localeCompare(right.label))
+    .map(toRuntimeBackgroundImage);
+  const backgroundMusicTracks = [...snapshot.backgroundMusicTracks]
+    .sort((left, right) => left.label.localeCompare(right.label))
+    .map(toRuntimeBackgroundMusic);
+
+  return {
+    characters,
+    backgroundImages,
+    backgroundMusicTracks,
+    charactersById: new Map(
+      characters.map((character) => [character.id, character])
+    ),
+    backgroundImagesById: new Map(
+      backgroundImages.map((asset) => [asset.id, asset])
+    ),
+    backgroundMusicById: new Map(
+      backgroundMusicTracks.map((asset) => [asset.id, asset])
+    ),
+    sortedChapters: [...snapshot.chapters].sort(
+      (left, right) => left.orderIndex - right.orderIndex
+    )
+  };
+}
+
+function createRuntimeChapterBundle(input: {
+  chapter: ChapterDefinition;
+  nextChapterId: string | null;
+  generatedAt: string;
+  bucket: string;
+  runtimePrefix: string;
+  charactersById: Map<string, RuntimeCharacter>;
+  backgroundImagesById: Map<string, RuntimeBackgroundImage>;
+  backgroundMusicById: Map<string, RuntimeBackgroundMusic>;
+}) {
+  const path = `${input.bucket}/${input.runtimePrefix}/chapters/${input.chapter.id}.json`;
+  const scenes = [...input.chapter.scenes]
+    .sort((left, right) => left.orderIndex - right.orderIndex)
+    .map((scene) =>
+      compileScene({
+        scene,
+        charactersById: input.charactersById,
+        backgroundImagesById: input.backgroundImagesById,
+        backgroundMusicById: input.backgroundMusicById
+      })
+    );
+
+  return {
+    chapterId: input.chapter.id,
+    path,
+    bundle: {
+      schemaVersion: STORY_SCHEMA_VERSION,
+      generatedAt: input.generatedAt,
+      chapter: {
+        id: input.chapter.id,
+        title: input.chapter.title,
+        slug: input.chapter.slug,
+        orderIndex: input.chapter.orderIndex,
+        scenes
+      },
+      nextChapterId: input.nextChapterId
+    } satisfies RuntimeChapterBundle
+  };
+}
+
+export function compileRuntimeChapterBundle(input: {
+  snapshot: StoryAuthoringSnapshot;
+  chapterId: string;
+  generatedAt?: string;
+  bucket: string;
+  runtimePrefix: string;
+}) {
+  const generatedAt = input.generatedAt ?? new Date().toISOString();
+  const context = buildRuntimeCompileContext(input.snapshot);
+  const chapterIndex = context.sortedChapters.findIndex(
+    (chapter) => chapter.id === input.chapterId
+  );
+
+  if (chapterIndex < 0) {
+    throw new Error(`Chapter "${input.chapterId}" was not found.`);
+  }
+
+  const chapter = context.sortedChapters[chapterIndex];
+
+  return createRuntimeChapterBundle({
+    chapter,
+    nextChapterId: context.sortedChapters[chapterIndex + 1]?.id ?? null,
+    generatedAt,
+    bucket: input.bucket,
+    runtimePrefix: input.runtimePrefix,
+    charactersById: context.charactersById,
+    backgroundImagesById: context.backgroundImagesById,
+    backgroundMusicById: context.backgroundMusicById
+  });
+}
+
 export function compileRuntimeStory(input: {
   snapshot: StoryAuthoringSnapshot;
   generatedAt?: string;
@@ -240,60 +354,20 @@ export function compileRuntimeStory(input: {
   runtimePrefix: string;
 }): StoryRuntimeArtifacts {
   const generatedAt = input.generatedAt ?? new Date().toISOString();
-  const characters = [...input.snapshot.characters]
-    .sort((left, right) => left.name.localeCompare(right.name))
-    .map(toRuntimeCharacter);
-  const backgroundImages = [...input.snapshot.backgroundImages]
-    .sort((left, right) => left.label.localeCompare(right.label))
-    .map(toRuntimeBackgroundImage);
-  const backgroundMusicTracks = [...input.snapshot.backgroundMusicTracks]
-    .sort((left, right) => left.label.localeCompare(right.label))
-    .map(toRuntimeBackgroundMusic);
+  const context = buildRuntimeCompileContext(input.snapshot);
 
-  const charactersById = new Map(
-    characters.map((character) => [character.id, character])
+  const chapterBundles = context.sortedChapters.map((chapter, index) =>
+    createRuntimeChapterBundle({
+      chapter,
+      nextChapterId: context.sortedChapters[index + 1]?.id ?? null,
+      generatedAt,
+      bucket: input.bucket,
+      runtimePrefix: input.runtimePrefix,
+      charactersById: context.charactersById,
+      backgroundImagesById: context.backgroundImagesById,
+      backgroundMusicById: context.backgroundMusicById
+    })
   );
-  const backgroundImagesById = new Map(
-    backgroundImages.map((asset) => [asset.id, asset])
-  );
-  const backgroundMusicById = new Map(
-    backgroundMusicTracks.map((asset) => [asset.id, asset])
-  );
-
-  const sortedChapters = [...input.snapshot.chapters].sort(
-    (left, right) => left.orderIndex - right.orderIndex
-  );
-
-  const chapterBundles = sortedChapters.map((chapter, index) => {
-    const path = `${input.bucket}/${input.runtimePrefix}/chapters/${chapter.id}.json`;
-    const scenes = [...chapter.scenes]
-      .sort((left, right) => left.orderIndex - right.orderIndex)
-      .map((scene) =>
-        compileScene({
-          scene,
-          charactersById,
-          backgroundImagesById,
-          backgroundMusicById
-        })
-      );
-
-    return {
-      chapterId: chapter.id,
-      path,
-      bundle: {
-        schemaVersion: STORY_SCHEMA_VERSION,
-        generatedAt,
-        chapter: {
-          id: chapter.id,
-          title: chapter.title,
-          slug: chapter.slug,
-          orderIndex: chapter.orderIndex,
-          scenes
-        },
-        nextChapterId: sortedChapters[index + 1]?.id ?? null
-      } satisfies RuntimeChapterBundle
-    };
-  });
 
   const charactersPath = `${input.bucket}/${input.runtimePrefix}/characters.json`;
   const assetsPath = `${input.bucket}/${input.runtimePrefix}/assets.json`;
@@ -302,11 +376,11 @@ export function compileRuntimeStory(input: {
   const manifest: RuntimeManifest = {
     schemaVersion: STORY_SCHEMA_VERSION,
     generatedAt,
-    firstChapterId: sortedChapters[0]?.id ?? null,
+    firstChapterId: context.sortedChapters[0]?.id ?? null,
     chaptersPath,
     charactersPath,
     assetsPath,
-    chapters: sortedChapters.map((chapter) => ({
+    chapters: context.sortedChapters.map((chapter) => ({
       id: chapter.id,
       title: chapter.title,
       slug: chapter.slug,
@@ -318,14 +392,14 @@ export function compileRuntimeStory(input: {
   const charactersManifest: RuntimeCharactersManifest = {
     schemaVersion: STORY_SCHEMA_VERSION,
     generatedAt,
-    characters
+    characters: context.characters
   };
 
   const assetsManifest: RuntimeAssetsManifest = {
     schemaVersion: STORY_SCHEMA_VERSION,
     generatedAt,
-    backgroundImages,
-    backgroundMusicTracks
+    backgroundImages: context.backgroundImages,
+    backgroundMusicTracks: context.backgroundMusicTracks
   };
 
   return {

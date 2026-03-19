@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 
-import { compileRuntimeStory } from "@/lib/story/published";
+import {
+  compileRuntimeChapterBundle,
+  compileRuntimeStory
+} from "@/lib/story/published";
 import type { StoryAuthoringSnapshot } from "@/lib/story/types";
 
 const snapshot: StoryAuthoringSnapshot = {
@@ -136,6 +139,23 @@ const snapshot: StoryAuthoringSnapshot = {
 };
 
 describe("compileRuntimeStory", () => {
+  it("can compile a single chapter bundle identical to the full compile output", () => {
+    const input = {
+      snapshot,
+      bucket: "runtime",
+      runtimePrefix: "runtime",
+      generatedAt: "2026-03-16T01:00:00.000Z"
+    } as const;
+
+    const fullCompile = compileRuntimeStory(input);
+    const singleBundle = compileRuntimeChapterBundle({
+      ...input,
+      chapterId: "chapter_one"
+    });
+
+    expect(singleBundle).toEqual(fullCompile.chapterBundles[0]);
+  });
+
   it("embeds direct media paths and computes simple two-character stage data", () => {
     const compiled = compileRuntimeStory({
       snapshot,

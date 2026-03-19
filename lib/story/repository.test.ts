@@ -1,6 +1,21 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import { SCENE_DRAFT_TEMP_ID_PREFIX } from "@/lib/story/scene-draft";
+import type { SceneDraftPayload } from "@/lib/story/types";
+
 const storageData = new Map<string, string>();
+const adminSceneDraftStore = new Map<
+  string,
+  {
+    sceneId: string;
+    chapterId: string;
+    sourceSceneUpdatedAt: Date;
+    payload: unknown;
+    createdAt: Date;
+    updatedAt: Date;
+  }
+>();
+
 const downloadMock = vi.fn(async (objectPath: string) => {
   const value = storageData.get(objectPath);
 
@@ -21,6 +36,7 @@ const downloadMock = vi.fn(async (objectPath: string) => {
     error: null
   };
 });
+
 const uploadMock = vi.fn(
   async (
     objectPath: string,
@@ -38,13 +54,86 @@ const uploadMock = vi.fn(
     };
   }
 );
+
 const listMock = vi.fn(async () => ({
   data: [],
   error: null
 }));
+
 const removeMock = vi.fn(async () => ({
   error: null
 }));
+
+const findUniqueSceneDraftMock = vi.fn(
+  async ({ where: { sceneId } }: { where: { sceneId: string } }) =>
+    adminSceneDraftStore.get(sceneId) ?? null
+);
+
+const upsertSceneDraftMock = vi.fn(
+  async ({
+    where: { sceneId },
+    update,
+    create
+  }: {
+    where: { sceneId: string };
+    update: {
+      chapterId: string;
+      sourceSceneUpdatedAt: Date;
+      payload: unknown;
+    };
+    create: {
+      sceneId: string;
+      chapterId: string;
+      sourceSceneUpdatedAt: Date;
+      payload: unknown;
+    };
+  }) => {
+    const existing = adminSceneDraftStore.get(sceneId);
+    const nextTimestamp = new Date("2026-03-19T12:30:00.000Z");
+    const record = existing
+      ? {
+          ...existing,
+          chapterId: update.chapterId,
+          sourceSceneUpdatedAt: update.sourceSceneUpdatedAt,
+          payload: update.payload,
+          updatedAt: nextTimestamp
+        }
+      : {
+          sceneId: create.sceneId,
+          chapterId: create.chapterId,
+          sourceSceneUpdatedAt: create.sourceSceneUpdatedAt,
+          payload: create.payload,
+          createdAt: nextTimestamp,
+          updatedAt: nextTimestamp
+        };
+
+    adminSceneDraftStore.set(sceneId, record);
+
+    return record;
+  }
+);
+
+const deleteManySceneDraftMock = vi.fn(
+  async ({ where: { sceneId } }: { where: { sceneId: string } }) => ({
+    count: adminSceneDraftStore.delete(sceneId) ? 1 : 0
+  })
+);
+
+function createCompiledChapterBundle(chapterId: string) {
+  return {
+    chapterId,
+    path: `runtime/runtime/chapters/${chapterId}.json`,
+    bundle: {
+      schemaVersion: 1,
+      generatedAt: "2026-03-17T00:00:00.000Z",
+      chapter: {
+        id: chapterId
+      },
+      nextChapterId: null
+    }
+  };
+}
+
 const compileRuntimeStoryMock = vi.fn(
   (input: {
     snapshot: { chapters: Array<{ id: string }> };
@@ -71,20 +160,29 @@ const compileRuntimeStoryMock = vi.fn(
       backgroundImages: [],
       backgroundMusicTracks: []
     },
-    chapterBundles: input.snapshot.chapters.map((chapter) => ({
-      chapterId: chapter.id,
-      path: `${input.bucket}/${input.runtimePrefix}/chapters/${chapter.id}.json`,
-      bundle: {
-        chapter: {
-          id: chapter.id
-        }
-      }
-    }))
+    chapterBundles: input.snapshot.chapters.map((chapter) =>
+      createCompiledChapterBundle(chapter.id)
+    )
   })
 );
 
+const compileRuntimeChapterBundleMock = vi.fn(
+  (input: { chapterId: string }) => createCompiledChapterBundle(input.chapterId)
+);
+
 vi.mock("@/lib/story/published", () => ({
-  compileRuntimeStory: compileRuntimeStoryMock
+  compileRuntimeStory: compileRuntimeStoryMock,
+  compileRuntimeChapterBundle: compileRuntimeChapterBundleMock
+}));
+
+vi.mock("@/lib/prisma", () => ({
+  prisma: {
+    adminSceneDraft: {
+      findUnique: findUniqueSceneDraftMock,
+      upsert: upsertSceneDraftMock,
+      deleteMany: deleteManySceneDraftMock
+    }
+  }
 }));
 
 vi.mock("@/lib/supabase/admin", () => ({
@@ -106,91 +204,341 @@ vi.mock("@/lib/supabase/env", () => ({
   })
 }));
 
-const { createCharacter, reorderDialogueEntry } =
-  await import("@/lib/story/repository");
+const {
+  StoryRepositoryError,
+  createCharacter,
+  createDialogueEntry,
+  deleteDialogueEntry,
+  discardSceneDraft,
+  getSceneDraft,
+  reorderDialogueEntry,
+  saveSceneDraft,
+  updateDialogueEntry,
+  upsertSceneDraft
+} = await import("@/lib/story/repository");
 
-describe("reorderDialogueEntry", () => {
+function seedAuthoringStorage() {
+  storageData.set(
+    "authoring/characters.json",
+    JSON.stringify({
+      schemaVersion: 1,
+      updatedAt: "2026-03-17T00:00:00.000Z",
+      characters: [
+        {
+          id: "character_1",
+          name: "Ocnoer",
+          slug: "ocnoer",
+          bio: "Lead character.",
+          defaultEmotionKey: "neutral",
+          emotions: [
+            {
+              id: "emotion_1",
+              key: "neutral",
+              label: "Neutral",
+              imagePath: "characters/ocnoer-neutral.png",
+              createdAt: "2026-03-17T00:00:00.000Z",
+              updatedAt: "2026-03-17T00:00:00.000Z"
+            },
+            {
+              id: "emotion_2",
+              key: "angry",
+              label: "Angry",
+              imagePath: "characters/ocnoer-angry.png",
+              createdAt: "2026-03-17T00:00:00.000Z",
+              updatedAt: "2026-03-17T00:00:00.000Z"
+            }
+          ],
+          createdAt: "2026-03-17T00:00:00.000Z",
+          updatedAt: "2026-03-17T00:00:00.000Z"
+        }
+      ]
+    })
+  );
+  storageData.set(
+    "authoring/assets.json",
+    JSON.stringify({
+      schemaVersion: 1,
+      updatedAt: "2026-03-17T00:00:00.000Z",
+      backgroundImages: [
+        {
+          id: "bg_1",
+          type: "background_image",
+          label: "Hallway",
+          slug: "hallway",
+          altText: "Castle hallway",
+          filePath: "backgrounds/hallway.png",
+          createdAt: "2026-03-17T00:00:00.000Z",
+          updatedAt: "2026-03-17T00:00:00.000Z"
+        },
+        {
+          id: "bg_2",
+          type: "background_image",
+          label: "Courtyard",
+          slug: "courtyard",
+          altText: "Castle courtyard",
+          filePath: "backgrounds/courtyard.png",
+          createdAt: "2026-03-17T00:00:00.000Z",
+          updatedAt: "2026-03-17T00:00:00.000Z"
+        }
+      ],
+      backgroundMusicTracks: [
+        {
+          id: "music_1",
+          type: "background_music",
+          label: "Tension",
+          slug: "tension",
+          filePath: "music/tension.mp3",
+          createdAt: "2026-03-17T00:00:00.000Z",
+          updatedAt: "2026-03-17T00:00:00.000Z"
+        }
+      ]
+    })
+  );
+  storageData.set(
+    "authoring/chapters.json",
+    JSON.stringify({
+      schemaVersion: 1,
+      updatedAt: "2026-03-17T00:00:00.000Z",
+      chapters: [
+        {
+          id: "chapter_1",
+          title: "Chapter One",
+          slug: "chapter-one",
+          orderIndex: 1,
+          scenes: [
+            {
+              id: "scene_1",
+              title: "Scene One",
+              orderIndex: 1,
+              backgroundImageAssetId: "bg_1",
+              backgroundMusicAssetId: null,
+              characterIds: ["character_1"],
+              dialogue: [
+                {
+                  id: "dialogue_1",
+                  orderIndex: 1,
+                  text: "First",
+                  speaker: {
+                    type: "narrator"
+                  },
+                  createdAt: "2026-03-17T00:00:00.000Z",
+                  updatedAt: "2026-03-17T00:00:00.000Z"
+                },
+                {
+                  id: "dialogue_2",
+                  orderIndex: 4,
+                  text: "Second",
+                  speaker: {
+                    type: "narrator"
+                  },
+                  createdAt: "2026-03-17T00:00:00.000Z",
+                  updatedAt: "2026-03-17T00:00:00.000Z"
+                },
+                {
+                  id: "dialogue_3",
+                  orderIndex: 9,
+                  text: "Third",
+                  speaker: {
+                    type: "character",
+                    characterId: "character_1",
+                    emotionKey: "neutral"
+                  },
+                  createdAt: "2026-03-17T00:00:00.000Z",
+                  updatedAt: "2026-03-17T00:00:00.000Z"
+                }
+              ],
+              createdAt: "2026-03-17T00:00:00.000Z",
+              updatedAt: "2026-03-17T00:00:00.000Z"
+            },
+            {
+              id: "scene_2",
+              title: "Scene Two",
+              orderIndex: 2,
+              backgroundImageAssetId: "bg_2",
+              backgroundMusicAssetId: null,
+              characterIds: [],
+              dialogue: [],
+              createdAt: "2026-03-17T00:00:00.000Z",
+              updatedAt: "2026-03-17T00:00:00.000Z"
+            }
+          ],
+          createdAt: "2026-03-17T00:00:00.000Z",
+          updatedAt: "2026-03-17T00:00:00.000Z"
+        }
+      ]
+    })
+  );
+}
+
+function setStoredSceneDraft(input: {
+  sceneId: string;
+  chapterId?: string;
+  sourceSceneUpdatedAt?: string;
+  payload: unknown;
+}) {
+  adminSceneDraftStore.set(input.sceneId, {
+    sceneId: input.sceneId,
+    chapterId: input.chapterId ?? "chapter_1",
+    sourceSceneUpdatedAt: new Date(
+      input.sourceSceneUpdatedAt ?? "2026-03-17T00:00:00.000Z"
+    ),
+    payload: input.payload,
+    createdAt: new Date("2026-03-19T12:00:00.000Z"),
+    updatedAt: new Date("2026-03-19T12:00:00.000Z")
+  });
+}
+
+function getPersistedStory() {
+  return JSON.parse(storageData.get("authoring/chapters.json") ?? "null") as {
+    chapters: Array<{
+      updatedAt: string;
+      scenes: Array<{
+        id: string;
+        title: string;
+        orderIndex: number;
+        backgroundImageAssetId: string;
+        backgroundMusicAssetId: string | null;
+        characterIds: string[];
+        dialogue: Array<{
+          id: string;
+          orderIndex: number;
+          text: string;
+          speaker: {
+            type: "narrator";
+          } | {
+            type: "character";
+            characterId: string;
+            emotionKey: string;
+          };
+        }>;
+        updatedAt: string;
+      }>;
+    }>;
+  };
+}
+
+function getPersistedScene(sceneId = "scene_1") {
+  return (
+    getPersistedStory().chapters[0]?.scenes.find((scene) => scene.id === sceneId) ??
+    null
+  );
+}
+
+function getPersistedDialogue() {
+  return getPersistedScene("scene_1")?.dialogue ?? [];
+}
+
+function getUploadPaths() {
+  return uploadMock.mock.calls.map(([objectPath]) => objectPath);
+}
+
+function expectChapterScopedWrites() {
+  expect(getUploadPaths()).toEqual([
+    "authoring/chapters.json",
+    "runtime/chapters/chapter_1.json"
+  ]);
+  expect(compileRuntimeStoryMock).not.toHaveBeenCalled();
+  expect(compileRuntimeChapterBundleMock).toHaveBeenCalledWith({
+    snapshot: expect.objectContaining({
+      chapters: expect.arrayContaining([expect.objectContaining({ id: "chapter_1" })])
+    }),
+    chapterId: "chapter_1",
+    bucket: "runtime",
+    runtimePrefix: "runtime"
+  });
+  expect(listMock).not.toHaveBeenCalled();
+  expect(removeMock).not.toHaveBeenCalled();
+}
+
+function createDraftPayload(
+  overrides?: Partial<SceneDraftPayload>
+): SceneDraftPayload {
+  return {
+    scene: {
+      title: "Scene One Revised",
+      orderIndex: 2,
+      backgroundImageAssetId: "bg_2",
+      backgroundMusicAssetId: "music_1",
+      characterIds: ["character_1"],
+      ...overrides?.scene
+    },
+    dialogue:
+      overrides?.dialogue ?? [
+        {
+          id: "dialogue_3",
+          speakerType: "character",
+          characterId: "character_1",
+          emotionKey: "angry",
+          text: "Third revised"
+        },
+        {
+          id: "dialogue_1",
+          speakerType: "narrator",
+          characterId: null,
+          emotionKey: null,
+          text: "First revised"
+        },
+        {
+          id: `${SCENE_DRAFT_TEMP_ID_PREFIX}new-entry`,
+          speakerType: "character",
+          characterId: "character_1",
+          emotionKey: "neutral",
+          text: "Fresh line"
+        }
+      ]
+  };
+}
+
+describe("dialogue mutations", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     storageData.clear();
-    storageData.set(
-      "authoring/characters.json",
-      JSON.stringify({
-        schemaVersion: 1,
-        updatedAt: "2026-03-17T00:00:00.000Z",
-        characters: []
-      })
+    adminSceneDraftStore.clear();
+    seedAuthoringStorage();
+  });
+
+  it("creates a dialogue entry by appending within the same snapshot read", async () => {
+    const entry = await createDialogueEntry({
+      chapterId: "chapter_1",
+      sceneId: "scene_1",
+      speakerType: "narrator",
+      characterId: null,
+      emotionKey: null,
+      text: "Fourth"
+    });
+
+    expect(entry.orderIndex).toBe(10);
+    expect(getPersistedDialogue().map((dialogue) => dialogue.orderIndex)).toEqual(
+      [1, 4, 9, 10]
     );
-    storageData.set(
-      "authoring/assets.json",
-      JSON.stringify({
-        schemaVersion: 1,
-        updatedAt: "2026-03-17T00:00:00.000Z",
-        backgroundImages: [],
-        backgroundMusicTracks: []
-      })
-    );
-    storageData.set(
-      "authoring/chapters.json",
-      JSON.stringify({
-        schemaVersion: 1,
-        updatedAt: "2026-03-17T00:00:00.000Z",
-        chapters: [
-          {
-            id: "chapter_1",
-            title: "Chapter One",
-            slug: "chapter-one",
-            orderIndex: 1,
-            scenes: [
-              {
-                id: "scene_1",
-                title: "Scene One",
-                orderIndex: 1,
-                backgroundImageAssetId: "bg_1",
-                backgroundMusicAssetId: null,
-                characterIds: [],
-                dialogue: [
-                  {
-                    id: "dialogue_1",
-                    orderIndex: 1,
-                    text: "First",
-                    speaker: {
-                      type: "narrator"
-                    },
-                    createdAt: "2026-03-17T00:00:00.000Z",
-                    updatedAt: "2026-03-17T00:00:00.000Z"
-                  },
-                  {
-                    id: "dialogue_2",
-                    orderIndex: 4,
-                    text: "Second",
-                    speaker: {
-                      type: "narrator"
-                    },
-                    createdAt: "2026-03-17T00:00:00.000Z",
-                    updatedAt: "2026-03-17T00:00:00.000Z"
-                  },
-                  {
-                    id: "dialogue_3",
-                    orderIndex: 9,
-                    text: "Third",
-                    speaker: {
-                      type: "narrator"
-                    },
-                    createdAt: "2026-03-17T00:00:00.000Z",
-                    updatedAt: "2026-03-17T00:00:00.000Z"
-                  }
-                ],
-                createdAt: "2026-03-17T00:00:00.000Z",
-                updatedAt: "2026-03-17T00:00:00.000Z"
-              }
-            ],
-            createdAt: "2026-03-17T00:00:00.000Z",
-            updatedAt: "2026-03-17T00:00:00.000Z"
-          }
-        ]
-      })
-    );
+    expect(
+      downloadMock.mock.calls.filter(
+        ([objectPath]) => objectPath === "authoring/chapters.json"
+      )
+    ).toHaveLength(1);
+    expectChapterScopedWrites();
+  });
+
+  it("updates a dialogue entry without rewriting unrelated runtime artifacts", async () => {
+    await updateDialogueEntry({
+      chapterId: "chapter_1",
+      sceneId: "scene_1",
+      dialogueEntryId: "dialogue_2",
+      orderIndex: 4,
+      speakerType: "narrator",
+      characterId: null,
+      emotionKey: null,
+      text: "Second draft"
+    });
+
+    expect(
+      getPersistedDialogue().find((dialogue) => dialogue.id === "dialogue_2")
+    ).toMatchObject({
+      id: "dialogue_2",
+      orderIndex: 4,
+      text: "Second draft"
+    });
+    expectChapterScopedWrites();
   });
 
   it("moves a dialogue entry within a scene and normalizes order indices contiguously", async () => {
@@ -201,22 +549,9 @@ describe("reorderDialogueEntry", () => {
       targetOrderIndex: 1
     });
 
-    const persistedChapters = JSON.parse(
-      storageData.get("authoring/chapters.json") ?? "null"
-    ) as {
-      chapters: Array<{
-        scenes: Array<{
-          dialogue: Array<{
-            id: string;
-            orderIndex: number;
-          }>;
-        }>;
-      }>;
-    };
-
     expect(entry.orderIndex).toBe(1);
     expect(
-      persistedChapters.chapters[0]?.scenes[0]?.dialogue.map((dialogue) => ({
+      getPersistedDialogue().map((dialogue) => ({
         id: dialogue.id,
         orderIndex: dialogue.orderIndex
       }))
@@ -225,13 +560,288 @@ describe("reorderDialogueEntry", () => {
       { id: "dialogue_1", orderIndex: 2 },
       { id: "dialogue_2", orderIndex: 3 }
     ]);
-    expect(compileRuntimeStoryMock).toHaveBeenCalled();
+    expectChapterScopedWrites();
+  });
+
+  it("deletes a dialogue entry without touching manifest or asset files", async () => {
+    await deleteDialogueEntry({
+      chapterId: "chapter_1",
+      sceneId: "scene_1",
+      dialogueEntryId: "dialogue_2"
+    });
+
+    expect(getPersistedDialogue().map((dialogue) => dialogue.id)).toEqual([
+      "dialogue_1",
+      "dialogue_3"
+    ]);
+    expectChapterScopedWrites();
+  });
+});
+
+describe("scene draft persistence", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    storageData.clear();
+    adminSceneDraftStore.clear();
+    seedAuthoringStorage();
+  });
+
+  it("upserts and reloads a scene draft payload", async () => {
+    const payload = createDraftPayload({
+      scene: {
+        title: "Draft Scene",
+        orderIndex: 1,
+        backgroundImageAssetId: "bg_1",
+        backgroundMusicAssetId: null,
+        characterIds: ["character_1"]
+      },
+      dialogue: [
+        {
+          id: "dialogue_1",
+          speakerType: "narrator",
+          characterId: null,
+          emotionKey: null,
+          text: "Draft line"
+        }
+      ]
+    });
+
+    await upsertSceneDraft({
+      sceneId: "scene_1",
+      chapterId: "chapter_1",
+      sourceSceneUpdatedAt: "2026-03-17T00:00:00.000Z",
+      payload
+    });
+
+    await expect(getSceneDraft("scene_1")).resolves.toMatchObject({
+      sceneId: "scene_1",
+      chapterId: "chapter_1",
+      sourceSceneUpdatedAt: "2026-03-17T00:00:00.000Z",
+      payload
+    });
+  });
+
+  it("drops invalid persisted draft payloads during load", async () => {
+    setStoredSceneDraft({
+      sceneId: "scene_1",
+      payload: {
+        scene: {
+          title: "Broken draft"
+        }
+      }
+    });
+
+    await expect(getSceneDraft("scene_1")).resolves.toBeNull();
+    expect(deleteManySceneDraftMock).toHaveBeenCalledWith({
+      where: {
+        sceneId: "scene_1"
+      }
+    });
+    expect(adminSceneDraftStore.has("scene_1")).toBe(false);
+  });
+
+  it("discards a stored draft", async () => {
+    setStoredSceneDraft({
+      sceneId: "scene_1",
+      payload: createDraftPayload()
+    });
+
+    await discardSceneDraft("scene_1");
+
+    expect(adminSceneDraftStore.has("scene_1")).toBe(false);
+  });
+});
+
+describe("saveSceneDraft", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    storageData.clear();
+    adminSceneDraftStore.clear();
+    seedAuthoringStorage();
+  });
+
+  it("saves a whole-scene draft by only writing chapters and the affected chapter bundle", async () => {
+    setStoredSceneDraft({
+      sceneId: "scene_1",
+      payload: createDraftPayload()
+    });
+
+    const result = await saveSceneDraft({
+      chapterId: "chapter_1",
+      sceneId: "scene_1"
+    });
+
+    const persistedScene = getPersistedScene("scene_1");
+
+    expect(result.payload.scene).toMatchObject({
+      title: "Scene One Revised",
+      orderIndex: 2,
+      backgroundImageAssetId: "bg_2",
+      backgroundMusicAssetId: "music_1",
+      characterIds: ["character_1"]
+    });
+    expect(persistedScene).toMatchObject({
+      title: "Scene One Revised",
+      orderIndex: 2,
+      backgroundImageAssetId: "bg_2",
+      backgroundMusicAssetId: "music_1",
+      characterIds: ["character_1"]
+    });
+    expect(getPersistedScene("scene_2")?.orderIndex).toBe(1);
+    expect(getPersistedDialogue()).toHaveLength(3);
+    expect(getPersistedDialogue().map((entry) => entry.orderIndex)).toEqual([
+      1,
+      2,
+      3
+    ]);
+    expect(getPersistedDialogue().map((entry) => entry.id)).not.toContain(
+      "dialogue_2"
+    );
+    expect(getPersistedDialogue()[0]).toMatchObject({
+      id: "dialogue_3",
+      orderIndex: 1,
+      text: "Third revised",
+      speaker: {
+        type: "character",
+        characterId: "character_1",
+        emotionKey: "angry"
+      }
+    });
+    expect(getPersistedDialogue()[1]).toMatchObject({
+      id: "dialogue_1",
+      orderIndex: 2,
+      text: "First revised",
+      speaker: {
+        type: "narrator"
+      }
+    });
+    expect(getPersistedDialogue()[2]?.id).toMatch(
+      /^dialogue_[a-f0-9]+$/i
+    );
+    expect(getPersistedDialogue()[2]?.id.startsWith(SCENE_DRAFT_TEMP_ID_PREFIX)).toBe(
+      false
+    );
+    expect(adminSceneDraftStore.has("scene_1")).toBe(false);
+    expectChapterScopedWrites();
+  });
+
+  it("keeps the draft row when validation fails for a missing background image", async () => {
+    setStoredSceneDraft({
+      sceneId: "scene_1",
+      payload: createDraftPayload({
+        scene: {
+          title: "Broken Scene",
+          orderIndex: 1,
+          backgroundImageAssetId: "bg_missing",
+          backgroundMusicAssetId: null,
+          characterIds: ["character_1"]
+        },
+        dialogue: [
+          {
+            id: "dialogue_1",
+            speakerType: "narrator",
+            characterId: null,
+            emotionKey: null,
+            text: "Still here"
+          }
+        ]
+      })
+    });
+
+    await expect(
+      saveSceneDraft({
+        chapterId: "chapter_1",
+        sceneId: "scene_1"
+      })
+    ).rejects.toThrow("Background image asset not found.");
+
+    expect(adminSceneDraftStore.has("scene_1")).toBe(true);
+    expect(uploadMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the draft row when validation fails for a character outside the scene cast", async () => {
+    setStoredSceneDraft({
+      sceneId: "scene_1",
+      payload: createDraftPayload({
+        scene: {
+          title: "Broken Scene",
+          orderIndex: 1,
+          backgroundImageAssetId: "bg_1",
+          backgroundMusicAssetId: null,
+          characterIds: [],
+          },
+        dialogue: [
+          {
+            id: "dialogue_3",
+            speakerType: "character",
+            characterId: "character_1",
+            emotionKey: "neutral",
+            text: "Cast mismatch"
+          }
+        ]
+      })
+    });
+
+    await expect(
+      saveSceneDraft({
+        chapterId: "chapter_1",
+        sceneId: "scene_1"
+      })
+    ).rejects.toThrow(
+      "Dialogue speaker must be selected in the scene character pool."
+    );
+
+    expect(adminSceneDraftStore.has("scene_1")).toBe(true);
+    expect(uploadMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps the draft row when validation fails for an invalid emotion", async () => {
+    setStoredSceneDraft({
+      sceneId: "scene_1",
+      payload: createDraftPayload({
+        scene: {
+          title: "Broken Scene",
+          orderIndex: 1,
+          backgroundImageAssetId: "bg_1",
+          backgroundMusicAssetId: null,
+          characterIds: ["character_1"]
+        },
+        dialogue: [
+          {
+            id: "dialogue_3",
+            speakerType: "character",
+            characterId: "character_1",
+            emotionKey: "missing",
+            text: "Bad emotion"
+          }
+        ]
+      })
+    });
+
+    await expect(
+      saveSceneDraft({
+        chapterId: "chapter_1",
+        sceneId: "scene_1"
+      })
+    ).rejects.toThrow("Selected emotion does not belong to the speaker.");
+
+    expect(adminSceneDraftStore.has("scene_1")).toBe(true);
+    expect(uploadMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("non-dialogue commits", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    storageData.clear();
+    adminSceneDraftStore.clear();
+    seedAuthoringStorage();
   });
 
   it("writes authoring catalogs without cache so a created character is readable immediately", async () => {
     await createCharacter({
-      name: "Ocnoer",
-      slug: "ocnoer",
+      name: "Ocnoer Prime",
+      slug: "ocnoer-prime",
       bio: "Primary point-of-view character.",
       initialEmotionKey: "default",
       initialEmotionLabel: "Default",
@@ -269,5 +879,6 @@ describe("reorderDialogueEntry", () => {
       cacheControl: "60",
       upsert: true
     });
+    expect(compileRuntimeStoryMock).toHaveBeenCalled();
   });
 });

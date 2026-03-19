@@ -13,6 +13,7 @@ import {
   createCharacter,
   createDialogueEntry,
   createScene,
+  discardSceneDraft,
   deleteBackgroundImageAsset,
   deleteBackgroundMusicTrack,
   deleteChapter,
@@ -21,8 +22,10 @@ import {
   deleteDialogueEntry,
   deleteScene,
   getAdminStoryData,
+  saveSceneDraft,
   reorderDialogueEntry,
   setDefaultCharacterEmotion,
+  upsertSceneDraft,
   updateBackgroundImageAsset,
   updateBackgroundMusicTrack,
   updateChapter,
@@ -31,6 +34,7 @@ import {
   updateDialogueEntry,
   updateScene
 } from "@/lib/story/repository";
+import type { SceneDraftPayload } from "@/lib/story/types";
 import {
   parseIntegerField,
   validateRequiredText
@@ -220,35 +224,6 @@ async function resolveExistingSceneOrderIndex(
   return scene.orderIndex;
 }
 
-async function resolveDialogueOrderIndex(
-  formData: FormData,
-  chapterId: string,
-  sceneId: string
-) {
-  const explicit = getOptionalInteger(
-    formData,
-    "orderIndex",
-    "Dialogue order",
-    {
-      min: 1
-    }
-  );
-
-  if (explicit != null) {
-    return explicit;
-  }
-
-  const story = await getAdminStoryData();
-  const chapter = story.chapters.find((item) => item.id === chapterId) ?? null;
-  const scene = chapter?.scenes.find((item) => item.id === sceneId) ?? null;
-
-  if (!chapter || !scene) {
-    throw new StoryRepositoryError("Scene not found.");
-  }
-
-  return getNextOrderIndex(scene.dialogue);
-}
-
 async function resolveExistingDialogueOrderIndex(
   chapterId: string,
   sceneId: string,
@@ -333,6 +308,125 @@ async function runAdminNavigationAction(input: {
     return {
       error: getErrorMessage(error),
       redirectTo: null
+    };
+  }
+}
+
+export type SceneDraftActionResult =
+  | {
+      ok: true;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+export type UpsertSceneDraftActionInput = {
+  chapterId: string;
+  sceneId: string;
+  sourceSceneUpdatedAt: string;
+  payload: SceneDraftPayload;
+};
+
+export type SaveSceneDraftActionInput = UpsertSceneDraftActionInput & {
+  returnTo: string;
+};
+
+export type SaveSceneDraftActionResult =
+  | {
+      ok: true;
+      redirectTo: string;
+    }
+  | {
+      ok: false;
+      error: string;
+    };
+
+export type DiscardSceneDraftActionInput = {
+  sceneId: string;
+  returnTo: string;
+};
+
+export async function upsertSceneDraftAction(
+  input: UpsertSceneDraftActionInput
+): Promise<SceneDraftActionResult> {
+  await requireAdminSession();
+
+  try {
+    await upsertSceneDraft({
+      sceneId: input.sceneId,
+      chapterId: input.chapterId,
+      sourceSceneUpdatedAt: input.sourceSceneUpdatedAt,
+      payload: input.payload
+    });
+
+    return {
+      ok: true
+    };
+  } catch (error) {
+    unstable_rethrow(error);
+
+    return {
+      ok: false,
+      error: getErrorMessage(error)
+    };
+  }
+}
+
+export async function saveSceneDraftAction(
+  input: SaveSceneDraftActionInput
+): Promise<SaveSceneDraftActionResult> {
+  await requireAdminSession();
+
+  try {
+    await upsertSceneDraft({
+      sceneId: input.sceneId,
+      chapterId: input.chapterId,
+      sourceSceneUpdatedAt: input.sourceSceneUpdatedAt,
+      payload: input.payload
+    });
+    await saveSceneDraft({
+      chapterId: input.chapterId,
+      sceneId: input.sceneId
+    });
+
+    await revalidateStoryPaths([
+      input.returnTo,
+      `/admin/chapters/${input.chapterId}/scenes`
+    ]);
+
+    return {
+      ok: true,
+      redirectTo: withStatus(input.returnTo, "success", "Scene saved.")
+    };
+  } catch (error) {
+    unstable_rethrow(error);
+
+    return {
+      ok: false,
+      error: getErrorMessage(error)
+    };
+  }
+}
+
+export async function discardSceneDraftAction(
+  input: DiscardSceneDraftActionInput
+): Promise<SaveSceneDraftActionResult> {
+  await requireAdminSession();
+
+  try {
+    await discardSceneDraft(input.sceneId);
+
+    return {
+      ok: true,
+      redirectTo: withStatus(input.returnTo, "success", "Draft discarded.")
+    };
+  } catch (error) {
+    unstable_rethrow(error);
+
+    return {
+      ok: false,
+      error: getErrorMessage(error)
     };
   }
 }
@@ -844,11 +938,6 @@ export async function createDialogueEntryAction(formData: FormData) {
       await createDialogueEntry({
         chapterId,
         sceneId,
-        orderIndex: await resolveDialogueOrderIndex(
-          formData,
-          chapterId,
-          sceneId
-        ),
         speakerType:
           getRequiredString(formData, "speakerType", "Speaker type") ===
           "character"

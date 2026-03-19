@@ -1,6 +1,17 @@
 import { randomUUID } from "node:crypto";
 
-import { compileRuntimeStory } from "@/lib/story/published";
+import type { Prisma } from "@prisma/client";
+
+import { prisma } from "@/lib/prisma";
+import {
+  compileRuntimeChapterBundle,
+  compileRuntimeStory
+} from "@/lib/story/published";
+import {
+  createSceneDraftPayload,
+  isSceneDraftTempId,
+  parseSceneDraftPayload
+} from "@/lib/story/scene-draft";
 import { slugify } from "@/lib/story/slug";
 import type {
   AssetsCatalogFile,
@@ -12,6 +23,7 @@ import type {
   CharactersCatalogFile,
   DialogueEntry,
   SceneDefinition,
+  SceneDraftPayload,
   StoryAuthoringSnapshot
 } from "@/lib/story/types";
 import { STORY_SCHEMA_VERSION } from "@/lib/story/types";
@@ -24,6 +36,55 @@ const AUTHORING_CHARACTERS_PATH = "authoring/characters.json";
 const AUTHORING_ASSETS_PATH = "authoring/assets.json";
 const AUTHORING_CHAPTERS_PATH = "authoring/chapters.json";
 const RUNTIME_PREFIX = "runtime";
+
+export type StoredSceneDraft = {
+  sceneId: string;
+  chapterId: string;
+  sourceSceneUpdatedAt: string;
+  payload: SceneDraftPayload;
+  createdAt: string;
+  updatedAt: string;
+};
+
+type SceneDraftRecord = {
+  sceneId: string;
+  chapterId: string;
+  sourceSceneUpdatedAt: Date;
+  payload: Prisma.JsonValue;
+  createdAt: Date;
+  updatedAt: Date;
+};
+
+type SceneDraftDelegate = {
+  findUnique(args: {
+    where: {
+      sceneId: string;
+    };
+  }): Promise<SceneDraftRecord | null>;
+  upsert(args: {
+    where: {
+      sceneId: string;
+    };
+    update: {
+      chapterId: string;
+      sourceSceneUpdatedAt: Date;
+      payload: Prisma.InputJsonValue;
+    };
+    create: {
+      sceneId: string;
+      chapterId: string;
+      sourceSceneUpdatedAt: Date;
+      payload: Prisma.InputJsonValue;
+    };
+  }): Promise<SceneDraftRecord>;
+  deleteMany(args: {
+    where: {
+      sceneId: string;
+    };
+  }): Promise<{
+    count: number;
+  }>;
+};
 
 function createEntityId(prefix: string) {
   return `${prefix}_${randomUUID().replace(/-/g, "")}`;
@@ -47,6 +108,12 @@ function normalizeSlugInput(value: string, fallback: string) {
 
 function sortByOrderIndex<T extends { orderIndex: number }>(items: T[]) {
   return [...items].sort((left, right) => left.orderIndex - right.orderIndex);
+}
+
+function getNextOrderIndex(items: Array<{ orderIndex: number }>) {
+  return (
+    items.reduce((highest, item) => Math.max(highest, item.orderIndex), 0) + 1
+  );
 }
 
 function moveItemWithinOrderedScope<
@@ -102,6 +169,204 @@ function sortSnapshot(
       }))
     }))
   };
+}
+
+function toStoredSceneDraft(value: {
+  sceneId: string;
+  chapterId: string;
+  sourceSceneUpdatedAt: Date;
+  payload: Prisma.JsonValue;
+  createdAt: Date;
+  updatedAt: Date;
+}): StoredSceneDraft | null {
+  const payload = parseSceneDraftPayload(value.payload);
+
+  if (!payload) {
+    return null;
+  }
+
+  return {
+    sceneId: value.sceneId,
+    chapterId: value.chapterId,
+    sourceSceneUpdatedAt: value.sourceSceneUpdatedAt.toISOString(),
+    payload,
+    createdAt: value.createdAt.toISOString(),
+    updatedAt: value.updatedAt.toISOString()
+  };
+}
+
+function getSceneDraftDelegate() {
+  const delegate = (prisma as unknown as { adminSceneDraft?: SceneDraftDelegate })
+    .adminSceneDraft;
+
+  if (
+    !delegate ||
+    typeof delegate.findUnique !== "function" ||
+    typeof delegate.upsert !== "function" ||
+    typeof delegate.deleteMany !== "function"
+  ) {
+    return null;
+  }
+
+  return delegate;
+}
+
+function isMissingSceneDraftTableError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const record = error as Record<string, unknown>;
+  const message =
+    typeof record.message === "string" ? record.message : String(error);
+
+  return (
+    /AdminSceneDraft/i.test(message) &&
+    /(does not exist|no such table|unknown table|relation)/i.test(message)
+  );
+}
+
+function getSceneDraftStorageUnavailableMessage() {
+  return "Scene draft storage is unavailable until the latest database migration is applied.";
+}
+
+async function findSceneDraftRecord(sceneId: string) {
+  const delegate = getSceneDraftDelegate();
+
+  if (delegate) {
+    return delegate.findUnique({
+      where: {
+        sceneId
+      }
+    });
+  }
+
+  try {
+    const rows = await prisma.$queryRawUnsafe<SceneDraftRecord[]>(
+      `SELECT "sceneId", "chapterId", "sourceSceneUpdatedAt", "payload", "createdAt", "updatedAt"
+       FROM "public"."AdminSceneDraft"
+       WHERE "sceneId" = $1
+       LIMIT 1`,
+      sceneId
+    );
+
+    return rows[0] ?? null;
+  } catch (error) {
+    if (isMissingSceneDraftTableError(error)) {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+async function upsertSceneDraftRecord(input: {
+  sceneId: string;
+  chapterId: string;
+  sourceSceneUpdatedAt: string;
+  payload: SceneDraftPayload;
+}) {
+  const sourceSceneUpdatedAt = new Date(input.sourceSceneUpdatedAt);
+  const payload = input.payload as Prisma.InputJsonValue;
+  const delegate = getSceneDraftDelegate();
+
+  if (delegate) {
+    return delegate.upsert({
+      where: {
+        sceneId: input.sceneId
+      },
+      update: {
+        chapterId: input.chapterId,
+        sourceSceneUpdatedAt,
+        payload
+      },
+      create: {
+        sceneId: input.sceneId,
+        chapterId: input.chapterId,
+        sourceSceneUpdatedAt,
+        payload
+      }
+    });
+  }
+
+  try {
+    const rows = await prisma.$queryRawUnsafe<SceneDraftRecord[]>(
+      `INSERT INTO "public"."AdminSceneDraft" (
+         "sceneId",
+         "chapterId",
+         "sourceSceneUpdatedAt",
+         "payload",
+         "createdAt",
+         "updatedAt"
+       )
+       VALUES ($1, $2, $3, $4::jsonb, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+       ON CONFLICT ("sceneId") DO UPDATE
+       SET
+         "chapterId" = EXCLUDED."chapterId",
+         "sourceSceneUpdatedAt" = EXCLUDED."sourceSceneUpdatedAt",
+         "payload" = EXCLUDED."payload",
+         "updatedAt" = CURRENT_TIMESTAMP
+       RETURNING "sceneId", "chapterId", "sourceSceneUpdatedAt", "payload", "createdAt", "updatedAt"`,
+      input.sceneId,
+      input.chapterId,
+      sourceSceneUpdatedAt,
+      JSON.stringify(input.payload)
+    );
+
+    const record = rows[0] ?? null;
+
+    if (!record) {
+      throw new StoryRepositoryError("Unable to persist scene draft.");
+    }
+
+    return record;
+  } catch (error) {
+    if (isMissingSceneDraftTableError(error)) {
+      throw new StoryRepositoryError(getSceneDraftStorageUnavailableMessage());
+    }
+
+    throw error;
+  }
+}
+
+async function deleteSceneDraftRecords(
+  sceneId: string,
+  options?: {
+    ignoreMissingTable?: boolean;
+  }
+) {
+  const delegate = getSceneDraftDelegate();
+
+  if (delegate) {
+    return delegate.deleteMany({
+      where: {
+        sceneId
+      }
+    });
+  }
+
+  try {
+    const count = await prisma.$executeRawUnsafe(
+      `DELETE FROM "public"."AdminSceneDraft" WHERE "sceneId" = $1`,
+      sceneId
+    );
+
+    return {
+      count: Number(count)
+    };
+  } catch (error) {
+    if (isMissingSceneDraftTableError(error)) {
+      if (options?.ignoreMissingTable) {
+        return {
+          count: 0
+        };
+      }
+
+      throw new StoryRepositoryError(getSceneDraftStorageUnavailableMessage());
+    }
+
+    throw error;
+  }
 }
 
 function isStorageMissingError(error: unknown) {
@@ -323,6 +588,21 @@ async function persistAuthoringSnapshot(snapshot: StoryAuthoringSnapshot) {
   return normalizedSnapshot;
 }
 
+async function persistChaptersSnapshot(snapshot: StoryAuthoringSnapshot) {
+  const normalizedSnapshot = sortSnapshot(snapshot);
+  const updatedAt = nowIsoString();
+
+  await writeJsonFile(AUTHORING_CHAPTERS_PATH, {
+    schemaVersion: STORY_SCHEMA_VERSION,
+    updatedAt,
+    chapters: normalizedSnapshot.chapters
+  } satisfies ChaptersCatalogFile, {
+    cacheControl: "0"
+  });
+
+  return normalizedSnapshot;
+}
+
 async function persistRuntimeArtifacts(snapshot: StoryAuthoringSnapshot) {
   const { runtimeBucket } = getSupabaseServerEnv();
   const artifacts = compileRuntimeStory({
@@ -357,10 +637,39 @@ async function persistRuntimeArtifacts(snapshot: StoryAuthoringSnapshot) {
   await removeStorageObjects(staleChapterPaths);
 }
 
+async function persistRuntimeChapterArtifact(
+  snapshot: StoryAuthoringSnapshot,
+  chapterId: string
+) {
+  const { runtimeBucket } = getSupabaseServerEnv();
+  const chapterBundle = compileRuntimeChapterBundle({
+    snapshot,
+    chapterId,
+    bucket: runtimeBucket,
+    runtimePrefix: RUNTIME_PREFIX
+  });
+
+  await writeJsonFile(
+    `${RUNTIME_PREFIX}/chapters/${chapterBundle.chapterId}.json`,
+    chapterBundle.bundle
+  );
+}
+
 async function commitSnapshot(snapshot: StoryAuthoringSnapshot) {
   const normalizedSnapshot = await persistAuthoringSnapshot(snapshot);
 
   await persistRuntimeArtifacts(normalizedSnapshot);
+
+  return normalizedSnapshot;
+}
+
+async function commitChapterScopedSnapshot(
+  snapshot: StoryAuthoringSnapshot,
+  chapterId: string
+) {
+  const normalizedSnapshot = await persistChaptersSnapshot(snapshot);
+
+  await persistRuntimeChapterArtifact(normalizedSnapshot, chapterId);
 
   return normalizedSnapshot;
 }
@@ -712,6 +1021,234 @@ function isBackgroundMusicReferenced(
 
 export async function getAdminStoryData() {
   return loadAuthoringSnapshot();
+}
+
+export async function getSceneDraft(sceneId: string) {
+  const record = await findSceneDraftRecord(sceneId);
+
+  if (!record) {
+    return null;
+  }
+
+  const draft = toStoredSceneDraft(record);
+
+  if (draft) {
+    return draft;
+  }
+
+  await deleteSceneDraftRecords(sceneId, {
+    ignoreMissingTable: true
+  });
+
+  return null;
+}
+
+export async function upsertSceneDraft(input: {
+  sceneId: string;
+  chapterId: string;
+  sourceSceneUpdatedAt: string;
+  payload: SceneDraftPayload;
+}) {
+  const parsedPayload = parseSceneDraftPayload(input.payload);
+
+  if (!parsedPayload) {
+    throw new StoryRepositoryError("Draft payload is invalid.");
+  }
+
+  const record = await upsertSceneDraftRecord({
+    sceneId: input.sceneId,
+    chapterId: input.chapterId,
+    sourceSceneUpdatedAt: input.sourceSceneUpdatedAt,
+    payload: parsedPayload
+  });
+
+  return toStoredSceneDraft(record);
+}
+
+export async function discardSceneDraft(sceneId: string) {
+  await deleteSceneDraftRecords(sceneId);
+}
+
+function normalizeOptionalSceneDraftValue(value: string | null) {
+  const normalized = value?.trim() ?? "";
+
+  return normalized.length > 0 ? normalized : null;
+}
+
+function assertValidSceneDraftOrder(value: number, label: string) {
+  if (!Number.isInteger(value) || value < 1) {
+    throw new StoryRepositoryError(`${label} must be a positive integer.`);
+  }
+
+  return value;
+}
+
+function assertValidSceneDraftText(value: string, label: string) {
+  const normalized = value.trim();
+
+  if (normalized.length === 0) {
+    throw new StoryRepositoryError(`${label} is required.`);
+  }
+
+  return normalized;
+}
+
+export async function saveSceneDraft(input: {
+  chapterId: string;
+  sceneId: string;
+}) {
+  const storedDraft = await getSceneDraft(input.sceneId);
+
+  if (!storedDraft) {
+    throw new StoryRepositoryError("Scene draft not found.");
+  }
+
+  if (storedDraft.chapterId !== input.chapterId) {
+    throw new StoryRepositoryError("Scene draft no longer matches its chapter.");
+  }
+
+  const snapshot = await loadAuthoringSnapshot();
+  const chapter = findChapterOrThrow(snapshot, input.chapterId);
+  const scene = findSceneOrThrow(chapter, input.sceneId);
+  const draft = storedDraft.payload;
+  const nextCharacterIds = [
+    ...new Set(draft.scene.characterIds.map((id) => id.trim()).filter(Boolean))
+  ];
+  const nextSceneOrder = assertValidSceneDraftOrder(
+    draft.scene.orderIndex,
+    "Scene order"
+  );
+  const nextTitle = assertValidSceneDraftText(draft.scene.title, "Scene title");
+  const backgroundImageAssetId = normalizeOptionalSceneDraftValue(
+    draft.scene.backgroundImageAssetId
+  );
+
+  if (!backgroundImageAssetId) {
+    throw new StoryRepositoryError("Background image is required.");
+  }
+
+  const backgroundMusicAssetId = normalizeOptionalSceneDraftValue(
+    draft.scene.backgroundMusicAssetId
+  );
+
+  findBackgroundImageOrThrow(snapshot, backgroundImageAssetId);
+
+  if (backgroundMusicAssetId) {
+    findBackgroundMusicOrThrow(snapshot, backgroundMusicAssetId);
+  }
+
+  ensureSceneCharactersExist(snapshot, nextCharacterIds);
+
+  const dialogueIds = new Set<string>();
+  const existingEntriesById = new Map(
+    scene.dialogue.map((entry) => [entry.id, entry])
+  );
+  const timestamp = nowIsoString();
+  const nextDialogue: DialogueEntry[] = draft.dialogue.map((entry, index) => {
+    const rawId = entry.id.trim();
+
+    if (!rawId) {
+      throw new StoryRepositoryError("Dialogue entry id is required.");
+    }
+
+    if (dialogueIds.has(rawId)) {
+      throw new StoryRepositoryError("Dialogue draft contains duplicate rows.");
+    }
+
+    dialogueIds.add(rawId);
+
+    const text = assertValidSceneDraftText(entry.text, "Dialogue text");
+
+    if (entry.speakerType === "narrator") {
+      const existingEntry = existingEntriesById.get(rawId);
+
+      return {
+        id: isSceneDraftTempId(rawId) ? createEntityId("dialogue") : rawId,
+        orderIndex: index + 1,
+        text,
+        speaker: {
+          type: "narrator"
+        },
+        createdAt: existingEntry?.createdAt ?? timestamp,
+        updatedAt: timestamp
+      };
+    }
+
+    const characterId = normalizeOptionalSceneDraftValue(entry.characterId);
+    const emotionKey = normalizeOptionalSceneDraftValue(entry.emotionKey);
+
+    if (!characterId || !emotionKey) {
+      throw new StoryRepositoryError(
+        "Character dialogue requires both a character and an emotion."
+      );
+    }
+
+    if (!nextCharacterIds.includes(characterId)) {
+      throw new StoryRepositoryError(
+        "Dialogue speaker must be selected in the scene character pool."
+      );
+    }
+
+    const character = findCharacterOrThrow(snapshot, characterId);
+    const emotion = character.emotions.find((item) => item.key === emotionKey);
+
+    if (!emotion) {
+      throw new StoryRepositoryError(
+        "Selected emotion does not belong to the speaker."
+      );
+    }
+
+    const existingEntry = existingEntriesById.get(rawId);
+
+    if (!isSceneDraftTempId(rawId) && !existingEntry) {
+      throw new StoryRepositoryError("Dialogue entry not found.");
+    }
+
+    return {
+      id: isSceneDraftTempId(rawId) ? createEntityId("dialogue") : rawId,
+      orderIndex: index + 1,
+      text,
+      speaker: {
+        type: "character",
+        characterId,
+        emotionKey
+      },
+      createdAt: existingEntry?.createdAt ?? timestamp,
+      updatedAt: timestamp
+    };
+  });
+
+  const orderChanged = nextSceneOrder !== scene.orderIndex;
+
+  if (!orderChanged) {
+    ensureUniqueSceneOrder(chapter, nextSceneOrder, scene.id);
+  }
+
+  scene.title = nextTitle;
+  scene.backgroundImageAssetId = backgroundImageAssetId;
+  scene.backgroundMusicAssetId = backgroundMusicAssetId;
+  scene.characterIds = nextCharacterIds;
+  scene.dialogue = nextDialogue;
+  scene.updatedAt = timestamp;
+  chapter.updatedAt = timestamp;
+
+  if (orderChanged) {
+    chapter.scenes = moveItemWithinOrderedScope(
+      chapter.scenes,
+      scene.id,
+      nextSceneOrder
+    );
+  } else {
+    scene.orderIndex = nextSceneOrder;
+  }
+
+  await commitChapterScopedSnapshot(snapshot, chapter.id);
+  await discardSceneDraft(input.sceneId);
+
+  return {
+    sceneUpdatedAt: scene.updatedAt,
+    payload: createSceneDraftPayload(scene)
+  };
 }
 
 export async function createCharacter(input: {
@@ -1340,7 +1877,7 @@ export async function deleteScene(input: {
 export async function createDialogueEntry(input: {
   chapterId: string;
   sceneId: string;
-  orderIndex: number;
+  orderIndex?: number;
   speakerType: "narrator" | "character";
   characterId: string | null;
   emotionKey: string | null;
@@ -1349,8 +1886,9 @@ export async function createDialogueEntry(input: {
   const snapshot = await loadAuthoringSnapshot();
   const chapter = findChapterOrThrow(snapshot, input.chapterId);
   const scene = findSceneOrThrow(chapter, input.sceneId);
+  const orderIndex = input.orderIndex ?? getNextOrderIndex(scene.dialogue);
 
-  ensureUniqueDialogueOrder(scene, input.orderIndex);
+  ensureUniqueDialogueOrder(scene, orderIndex);
   assertSpeakerSelection({
     snapshot,
     scene,
@@ -1361,7 +1899,7 @@ export async function createDialogueEntry(input: {
 
   const entry: DialogueEntry = {
     id: createEntityId("dialogue"),
-    orderIndex: input.orderIndex,
+    orderIndex,
     text: input.text.trim(),
     speaker:
       input.speakerType === "narrator"
@@ -1380,7 +1918,7 @@ export async function createDialogueEntry(input: {
   scene.dialogue.push(entry);
   scene.updatedAt = nowIsoString();
   chapter.updatedAt = nowIsoString();
-  await commitSnapshot(snapshot);
+  await commitChapterScopedSnapshot(snapshot, chapter.id);
 
   return entry;
 }
@@ -1437,7 +1975,7 @@ export async function updateDialogueEntry(input: {
     entry.orderIndex = input.orderIndex;
   }
 
-  await commitSnapshot(snapshot);
+  await commitChapterScopedSnapshot(snapshot, chapter.id);
 
   return entry;
 }
@@ -1461,7 +1999,7 @@ export async function reorderDialogueEntry(input: {
   scene.updatedAt = nowIsoString();
   chapter.updatedAt = nowIsoString();
 
-  await commitSnapshot(snapshot);
+  await commitChapterScopedSnapshot(snapshot, chapter.id);
 
   return entry;
 }
@@ -1480,5 +2018,5 @@ export async function deleteDialogueEntry(input: {
   );
   scene.updatedAt = nowIsoString();
   chapter.updatedAt = nowIsoString();
-  await commitSnapshot(snapshot);
+  await commitChapterScopedSnapshot(snapshot, chapter.id);
 }

@@ -165,6 +165,17 @@ model DialogueEntry {
   @@index([characterId])
 }
 
+model AdminSceneDraft {
+  sceneId              String   @id
+  chapterId            String
+  sourceSceneUpdatedAt DateTime
+  payload              Json
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([chapterId])
+}
+
 model PublishedStoryVersion {
   id                  String            @id @default(cuid())
   version             Int               @unique

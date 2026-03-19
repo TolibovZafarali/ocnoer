@@ -3,9 +3,13 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const requireAdminSessionMock = vi.fn();
 const createChapterMock = vi.fn();
 const createCharacterMock = vi.fn();
+const createDialogueEntryMock = vi.fn();
 const deleteCharacterMock = vi.fn();
+const discardSceneDraftMock = vi.fn();
 const getAdminStoryDataMock = vi.fn();
 const reorderDialogueEntryMock = vi.fn();
+const saveSceneDraftMock = vi.fn();
+const upsertSceneDraftMock = vi.fn();
 const redirectMock = vi.fn((path: string) => {
   throw new Error(`REDIRECT:${path}`);
 });
@@ -32,8 +36,9 @@ vi.mock("@/lib/story/repository", () => ({
   createBackgroundMusicTrack: vi.fn(),
   createChapter: createChapterMock,
   createCharacter: createCharacterMock,
-  createDialogueEntry: vi.fn(),
+  createDialogueEntry: createDialogueEntryMock,
   createScene: vi.fn(),
+  discardSceneDraft: discardSceneDraftMock,
   deleteBackgroundImageAsset: vi.fn(),
   deleteBackgroundMusicTrack: vi.fn(),
   deleteChapter: vi.fn(),
@@ -43,7 +48,9 @@ vi.mock("@/lib/story/repository", () => ({
   deleteScene: vi.fn(),
   getAdminStoryData: getAdminStoryDataMock,
   reorderDialogueEntry: reorderDialogueEntryMock,
+  saveSceneDraft: saveSceneDraftMock,
   setDefaultCharacterEmotion: vi.fn(),
+  upsertSceneDraft: upsertSceneDraftMock,
   updateBackgroundImageAsset: vi.fn(),
   updateBackgroundMusicTrack: vi.fn(),
   updateChapter: vi.fn(),
@@ -57,9 +64,32 @@ const {
   createCharacterNavigationAction,
   createChapterNavigationAction,
   createChapterAction,
+  createDialogueEntryAction,
   deleteCharacterAction,
-  reorderDialogueEntryAction
+  discardSceneDraftAction,
+  reorderDialogueEntryAction,
+  saveSceneDraftAction,
+  upsertSceneDraftAction
 } = await import("@/app/(admin)/admin/actions");
+
+const sceneDraftPayload = {
+  scene: {
+    title: "Scene One",
+    orderIndex: 1,
+    backgroundImageAssetId: "bg_1",
+    backgroundMusicAssetId: null,
+    characterIds: ["character_1"]
+  },
+  dialogue: [
+    {
+      id: "dialogue_1",
+      speakerType: "narrator" as const,
+      characterId: null,
+      emotionKey: null,
+      text: "A line"
+    }
+  ]
+};
 
 describe("createChapterAction", () => {
   beforeEach(() => {
@@ -117,12 +147,8 @@ describe("deleteCharacterAction", () => {
     );
 
     expect(deleteCharacterMock).toHaveBeenCalledWith("character_123");
-    expect(revalidatePathMock).toHaveBeenCalledWith(
-      "/admin/characters/character_123"
-    );
-    expect(revalidatePathMock).toHaveBeenCalledWith(
-      "/admin/characters"
-    );
+    expect(revalidatePathMock).toHaveBeenCalledWith("/admin/characters/character_123");
+    expect(revalidatePathMock).toHaveBeenCalledWith("/admin/characters");
     expect(redirectMock).toHaveBeenCalledWith(
       "/admin/characters?status=success&message=Character+deleted."
     );
@@ -249,5 +275,125 @@ describe("reorderDialogueEntryAction", () => {
       "/admin/chapters/chapter_123/scenes/scene_456"
     );
     expect(redirectMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("createDialogueEntryAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireAdminSessionMock.mockResolvedValue(undefined);
+    createDialogueEntryMock.mockResolvedValue({ id: "dialogue_123" });
+    unstableRethrowMock.mockImplementation(() => {});
+  });
+
+  it("creates dialogue without a pre-read and lets the repository derive order", async () => {
+    const formData = new FormData();
+    formData.set("chapterId", "chapter_123");
+    formData.set("sceneId", "scene_456");
+    formData.set("returnTo", "/admin/chapters/chapter_123/scenes/scene_456");
+    formData.set("speakerType", "narrator");
+    formData.set("characterId", "");
+    formData.set("emotionKey", "");
+    formData.set("text", "A new line");
+
+    await expect(createDialogueEntryAction(formData)).rejects.toThrow(
+      "REDIRECT:/admin/chapters/chapter_123/scenes/scene_456?status=success&message=Dialogue+entry+created."
+    );
+
+    expect(createDialogueEntryMock).toHaveBeenCalledWith({
+      chapterId: "chapter_123",
+      sceneId: "scene_456",
+      speakerType: "narrator",
+      characterId: null,
+      emotionKey: null,
+      text: "A new line"
+    });
+    expect(getAdminStoryDataMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("scene draft actions", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireAdminSessionMock.mockResolvedValue(undefined);
+    upsertSceneDraftMock.mockResolvedValue(undefined);
+    saveSceneDraftMock.mockResolvedValue(undefined);
+    discardSceneDraftMock.mockResolvedValue(undefined);
+    unstableRethrowMock.mockImplementation(() => {});
+  });
+
+  it("upserts a scene draft without triggering route revalidation", async () => {
+    await expect(
+      upsertSceneDraftAction({
+        chapterId: "chapter_123",
+        sceneId: "scene_456",
+        sourceSceneUpdatedAt: "2026-03-19T12:00:00.000Z",
+        payload: sceneDraftPayload
+      })
+    ).resolves.toEqual({
+      ok: true
+    });
+
+    expect(upsertSceneDraftMock).toHaveBeenCalledWith({
+      chapterId: "chapter_123",
+      sceneId: "scene_456",
+      sourceSceneUpdatedAt: "2026-03-19T12:00:00.000Z",
+      payload: sceneDraftPayload
+    });
+    expect(revalidatePathMock).not.toHaveBeenCalled();
+  });
+
+  it("saves the scene draft, revalidates story paths, and returns a redirect URL", async () => {
+    await expect(
+      saveSceneDraftAction({
+        chapterId: "chapter_123",
+        sceneId: "scene_456",
+        returnTo: "/admin/chapters/chapter_123/scenes/scene_456",
+        sourceSceneUpdatedAt: "2026-03-19T12:00:00.000Z",
+        payload: sceneDraftPayload
+      })
+    ).resolves.toEqual({
+      ok: true,
+      redirectTo:
+        "/admin/chapters/chapter_123/scenes/scene_456?status=success&message=Scene+saved."
+    });
+
+    expect(upsertSceneDraftMock).toHaveBeenCalledWith({
+      chapterId: "chapter_123",
+      sceneId: "scene_456",
+      sourceSceneUpdatedAt: "2026-03-19T12:00:00.000Z",
+      payload: sceneDraftPayload
+    });
+    expect(saveSceneDraftMock).toHaveBeenCalledWith({
+      chapterId: "chapter_123",
+      sceneId: "scene_456"
+    });
+    expect(
+      upsertSceneDraftMock.mock.invocationCallOrder[0]
+    ).toBeLessThan(saveSceneDraftMock.mock.invocationCallOrder[0]);
+    expect(revalidatePathMock).toHaveBeenCalledWith("/admin");
+    expect(revalidatePathMock).toHaveBeenCalledWith("/play");
+    expect(revalidatePathMock).toHaveBeenCalledWith(
+      "/admin/chapters/chapter_123/scenes/scene_456"
+    );
+    expect(revalidatePathMock).toHaveBeenCalledWith(
+      "/admin/chapters/chapter_123/scenes"
+    );
+  });
+
+  it("discards the scene draft and returns a success redirect", async () => {
+    await expect(
+      discardSceneDraftAction({
+        sceneId: "scene_456",
+        returnTo: "/admin/chapters/chapter_123/scenes/scene_456"
+      })
+    ).resolves.toEqual({
+      ok: true,
+      redirectTo:
+        "/admin/chapters/chapter_123/scenes/scene_456?status=success&message=Draft+discarded."
+    });
+
+    expect(discardSceneDraftMock).toHaveBeenCalledWith("scene_456");
+    expect(revalidatePathMock).not.toHaveBeenCalled();
   });
 });

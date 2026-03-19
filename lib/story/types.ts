@@ -101,6 +101,25 @@ export type StoryAuthoringSnapshot = {
   chapters: ChapterDefinition[];
 };
 
+export type SceneDraftDialogueEntry = {
+  id: string;
+  speakerType: DialogueSpeakerType;
+  characterId: string | null;
+  emotionKey: string | null;
+  text: string;
+};
+
+export type SceneDraftPayload = {
+  scene: {
+    title: string;
+    orderIndex: number;
+    backgroundImageAssetId: string;
+    backgroundMusicAssetId: string | null;
+    characterIds: string[];
+  };
+  dialogue: SceneDraftDialogueEntry[];
+};
+
 export type CharactersCatalogFile = {
   schemaVersion: typeof STORY_SCHEMA_VERSION;
   updatedAt: string;
@@ -256,4 +275,3 @@ export type StoryRuntimeArtifacts = {
     bundle: RuntimeChapterBundle;
   }>;
 };
-

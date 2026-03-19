@@ -681,25 +681,8 @@ export function PlayerStoryReader({
         <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(2,6,17,0.08)_0%,rgba(2,6,17,0.18)_22%,rgba(2,6,17,0.36)_54%,rgba(2,6,17,0.84)_100%)]" />
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_top,rgba(255,255,255,0.12),transparent_34%)]" />
 
-        <div className="relative z-10 flex h-full flex-col">
-          <div className="relative min-h-[18rem] flex-1 overflow-hidden">
-            <div className="absolute inset-0 flex items-end justify-between">
-              <StageCharacter
-                alignment="left"
-                imageUrl={leftCharacterImageUrl}
-                alt={activeEntry.stage.left?.characterName ?? "Left character"}
-              />
-              <StageCharacter
-                alignment="right"
-                imageUrl={rightCharacterImageUrl}
-                alt={
-                  activeEntry.stage.right?.characterName ?? "Right character"
-                }
-              />
-            </div>
-          </div>
-
-          <div className="relative z-10 p-3 md:p-5">
+        <div className="relative z-10 h-full">
+          <div className="absolute inset-x-0 top-0 z-20 p-3 md:p-5">
             <div
               className={`rounded-[28px] border border-white/10 bg-slate-950/82 p-5 backdrop-blur ${
                 isStoryFinishedCard ? "" : "cursor-pointer"
@@ -835,6 +818,19 @@ export function PlayerStoryReader({
               )}
             </div>
           </div>
+
+          <div className="absolute inset-x-0 bottom-0 z-10 h-[72%] md:h-[78%]">
+            <StageCharacter
+              alignment="left"
+              imageUrl={leftCharacterImageUrl}
+              alt={activeEntry.stage.left?.characterName ?? "Left character"}
+            />
+            <StageCharacter
+              alignment="right"
+              imageUrl={rightCharacterImageUrl}
+              alt={activeEntry.stage.right?.characterName ?? "Right character"}
+            />
+          </div>
         </div>
       </div>
 
@@ -862,8 +858,8 @@ function StageCharacter(props: {
 
   return (
     <div
-      className={`flex h-full w-1/2 items-end overflow-hidden ${
-        isLeft ? "justify-start" : "justify-end"
+      className={`absolute bottom-0 flex h-full w-[52%] max-w-[22rem] items-end overflow-hidden md:w-[46%] md:max-w-none ${
+        isLeft ? "left-0 justify-start" : "right-0 justify-end"
       }`}
     >
       {props.imageUrl ? (

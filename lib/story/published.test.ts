@@ -254,4 +254,45 @@ describe("compileRuntimeStory", () => {
     expect(renEntry?.stage.left?.characterSlug).toBe("ren");
     expect(renEntry?.stage.right).toBeNull();
   });
+
+  it("uses updated emotion image paths in compiled dialogue and stage portraits", () => {
+    const updatedSnapshot: StoryAuthoringSnapshot = {
+      ...snapshot,
+      characters: snapshot.characters.map((character) =>
+        character.id === "character_ocnoer"
+          ? {
+              ...character,
+              emotions: character.emotions.map((emotion) =>
+                emotion.key === "smile"
+                  ? {
+                      ...emotion,
+                      imagePath:
+                        "runtime/media/characters/character_ocnoer/emotion_smile/file_v2.png",
+                      updatedAt: "2026-03-20T00:00:00.000Z"
+                    }
+                  : emotion
+              )
+            }
+          : character
+      )
+    };
+
+    const compiled = compileRuntimeStory({
+      snapshot: updatedSnapshot,
+      bucket: "runtime",
+      runtimePrefix: "runtime",
+      generatedAt: "2026-03-20T01:00:00.000Z"
+    });
+
+    const ocnoerEntry = compiled.chapterBundles[0]?.bundle.chapter.scenes[0]
+      ?.dialogue[2];
+    const expectedPath =
+      "runtime/media/characters/character_ocnoer/emotion_smile/file_v2.png";
+
+    expect(ocnoerEntry?.speaker.type).toBe("character");
+    if (ocnoerEntry?.speaker.type === "character") {
+      expect(ocnoerEntry.speaker.emotionImagePath).toBe(expectedPath);
+    }
+    expect(ocnoerEntry?.stage.left?.imagePath).toBe(expectedPath);
+  });
 });

@@ -213,6 +213,7 @@ const {
   getSceneDraft,
   reorderDialogueEntry,
   saveSceneDraft,
+  updateCharacterEmotion,
   updateDialogueEntry,
   upsertSceneDraft
 } = await import("@/lib/story/repository");
@@ -412,6 +413,18 @@ function getPersistedStory() {
           };
         }>;
         updatedAt: string;
+      }>;
+    }>;
+  };
+}
+
+function getPersistedCharacters() {
+  return JSON.parse(storageData.get("authoring/characters.json") ?? "null") as {
+    characters: Array<{
+      id: string;
+      emotions: Array<{
+        id: string;
+        imagePath: string;
       }>;
     }>;
   };
@@ -879,6 +892,32 @@ describe("non-dialogue commits", () => {
       cacheControl: "60",
       upsert: true
     });
+    expect(compileRuntimeStoryMock).toHaveBeenCalled();
+  });
+
+  it("stores replacement emotion images on a new path to avoid stale cache", async () => {
+    await updateCharacterEmotion({
+      characterId: "character_1",
+      emotionId: "emotion_1",
+      emotionKey: "neutral",
+      emotionLabel: "Neutral",
+      imageFile: new File(["new-image"], "ocnoer-neutral-v2.png", {
+        type: "image/png"
+      })
+    });
+
+    const uploadedEmotionPath = getUploadPaths().find((path) =>
+      path.startsWith("media/characters/character_1/emotion_1/")
+    );
+
+    expect(uploadedEmotionPath).toBeDefined();
+    expect(uploadedEmotionPath).not.toBe("media/characters/character_1/emotion_1");
+    expect(
+      getPersistedCharacters().characters
+        .find((character) => character.id === "character_1")
+        ?.emotions.find((emotion) => emotion.id === "emotion_1")?.imagePath
+    ).toBe(`runtime/${uploadedEmotionPath}`);
+    expect(removeMock).toHaveBeenCalledWith(["characters/ocnoer-neutral.png"]);
     expect(compileRuntimeStoryMock).toHaveBeenCalled();
   });
 });

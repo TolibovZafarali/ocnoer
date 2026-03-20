@@ -1416,12 +1416,14 @@ export async function updateCharacterEmotion(input: {
   emotion.key = nextEmotionKey;
   emotion.label = input.emotionLabel.trim();
   emotion.updatedAt = nowIsoString();
+  let previousImagePathToDelete: string | null = null;
 
   if (input.imageFile && input.imageFile.size > 0) {
     assertImageFile(input.imageFile, "Emotion image");
+    previousImagePathToDelete = emotion.imagePath;
     emotion.imagePath = await uploadFileToStorage({
       file: input.imageFile,
-      objectPath: `media/characters/${character.id}/${emotion.id}`,
+      objectPath: `media/characters/${character.id}/${emotion.id}/${createEntityId("file")}`,
       cacheControl: "31536000"
     });
   }
@@ -1441,6 +1443,13 @@ export async function updateCharacterEmotion(input: {
   character.updatedAt = nowIsoString();
 
   await commitSnapshot(snapshot);
+
+  if (
+    previousImagePathToDelete &&
+    previousImagePathToDelete !== emotion.imagePath
+  ) {
+    await removeStorageObjects([previousImagePathToDelete]);
+  }
 
   return character;
 }

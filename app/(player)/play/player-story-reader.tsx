@@ -71,7 +71,6 @@ type PlayerStoryReaderProps = {
 type PlayerBoundaryState =
   | {
       type: "scene-transition";
-      sceneTitle: string;
     }
   | {
       type: "chapter-break";
@@ -117,6 +116,7 @@ type ResolvedAdvanceAction =
 const DEFAULT_STAGE_ASPECT_RATIO = 9 / 16;
 const MOTION_EASE_OUT = [0.22, 1, 0.36, 1] as const;
 const MOTION_EASE_IN = [0.4, 0, 1, 1] as const;
+const SCENE_TRANSITION_DURATION_MS = 700;
 
 function readStoredProgress(storageKey: string) {
   if (typeof window === "undefined") {
@@ -232,6 +232,8 @@ export function PlayerStoryReader({
   >({});
   const [boundaryState, setBoundaryState] =
     useState<PlayerBoundaryState | null>(null);
+  const [pendingSceneState, setPendingSceneState] =
+    useState<ReaderState | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(!initialManifest);
   const [isResolvingResume, setIsResolvingResume] = useState(false);
@@ -292,6 +294,7 @@ export function PlayerStoryReader({
         setManifest(loadedRuntime.manifest);
         setBundle(loadedRuntime.bundle);
         setReaderState(loadedRuntime.readerState);
+        setPendingSceneState(null);
         setBoundaryState(null);
         setBranchFlags(storedProgress?.branchFlags ?? {});
         setIsLoading(false);
@@ -351,6 +354,7 @@ export function PlayerStoryReader({
     if (resumeAction.type === "resume-from-initial-bundle") {
       previousNormalEntryRef.current = null;
       setReaderState(resumeAction.readerState);
+      setPendingSceneState(null);
       setBoundaryState(null);
       setIsPersistenceReady(true);
       return;
@@ -377,6 +381,7 @@ export function PlayerStoryReader({
         setManifest(loadedRuntime.manifest);
         setBundle(loadedRuntime.bundle);
         setReaderState(loadedRuntime.readerState);
+        setPendingSceneState(null);
         setBoundaryState(null);
         setIsPersistenceReady(true);
       })
@@ -570,7 +575,6 @@ export function PlayerStoryReader({
     void audio.play().catch(() => undefined);
   }, [backgroundMusicUrl, isResolvingResume]);
 
-  const activeReaderState = readerState;
   const activeScene = scene;
   const activeEntry = entry;
   const textCharacters = useMemo(
@@ -579,15 +583,17 @@ export function PlayerStoryReader({
   );
   const leftCharacterImageUrl = activeAssetUrls.leftCharacterImageUrl;
   const rightCharacterImageUrl = activeAssetUrls.rightCharacterImageUrl;
-  const sceneTransitionState =
-    boundaryState?.type === "scene-transition" ? boundaryState : null;
+  const isSceneTransition = boundaryState?.type === "scene-transition";
   const chapterBreakState =
     boundaryState?.type === "chapter-break" ? boundaryState : null;
   const storyFinishedState =
     boundaryState?.type === "story-finished" ? boundaryState : null;
-  const isTransitionCard = Boolean(sceneTransitionState);
+  const isTransitionCard = Boolean(isSceneTransition);
   const isChapterBreakCard = Boolean(chapterBreakState);
   const isStoryFinishedCard = Boolean(storyFinishedState);
+  const sceneTransitionDurationMs = prefersReducedMotion
+    ? REDUCED_MOTION_DURATION_MS
+    : SCENE_TRANSITION_DURATION_MS;
   const showDialogueCard =
     Boolean(activeEntry) &&
     !isTransitionCard &&
@@ -648,8 +654,43 @@ export function PlayerStoryReader({
         </span>
       );
     });
-  }, [activeEntry, prefersReducedMotion, textCharacters, visibleTextLength]);
+  }, [
+    activeEntry,
+    prefersReducedMotion,
+    presentationPhase,
+    textCharacters,
+    visibleTextLength
+  ]);
   const showContinueButton = showDialogueCard && presentationPhase === "ready";
+
+  useEffect(() => {
+    if (!isSceneTransition || !pendingSceneState) {
+      return;
+    }
+
+    const swapDelayMs = prefersReducedMotion
+      ? 0
+      : Math.round(sceneTransitionDurationMs / 2);
+    const swapTimer = window.setTimeout(() => {
+      setReaderState(pendingSceneState);
+    }, swapDelayMs);
+    const finishTimer = window.setTimeout(() => {
+      setPendingSceneState(null);
+      setBoundaryState((current) =>
+        current?.type === "scene-transition" ? null : current
+      );
+    }, sceneTransitionDurationMs);
+
+    return () => {
+      window.clearTimeout(swapTimer);
+      window.clearTimeout(finishTimer);
+    };
+  }, [
+    isSceneTransition,
+    pendingSceneState,
+    prefersReducedMotion,
+    sceneTransitionDurationMs
+  ]);
 
   useEffect(() => {
     if (!showDialogueCard || !activeEntry) {
@@ -756,6 +797,7 @@ export function PlayerStoryReader({
   const handleAdvance = useCallback(async () => {
     if (boundaryState) {
       if (boundaryState.type !== "story-finished") {
+        setPendingSceneState(null);
         setBoundaryState(null);
       }
 
@@ -788,24 +830,27 @@ export function PlayerStoryReader({
 
       startTransition(() => {
         if (resolvedAdvance.type === "line") {
+          setPendingSceneState(null);
           setBoundaryState(null);
           setReaderState(resolvedAdvance.state);
           return;
         }
 
         if (resolvedAdvance.type === "scene-transition") {
-          setReaderState(resolvedAdvance.state);
+          setPendingSceneState(resolvedAdvance.state);
           setBoundaryState(resolvedAdvance.boundaryState);
           return;
         }
 
         if (resolvedAdvance.type === "chapter-break") {
+          setPendingSceneState(null);
           setBundle(resolvedAdvance.bundle);
           setReaderState(resolvedAdvance.state);
           setBoundaryState(resolvedAdvance.boundaryState);
           return;
         }
 
+        setPendingSceneState(null);
         setBoundaryState(resolvedAdvance.boundaryState);
       });
     } catch (caughtError) {
@@ -843,6 +888,7 @@ export function PlayerStoryReader({
       });
 
       previousNormalEntryRef.current = null;
+      setPendingSceneState(null);
       setBoundaryState(null);
       setBranchFlags({});
       setIsPersistenceReady(true);
@@ -901,7 +947,6 @@ export function PlayerStoryReader({
     );
   }
 
-  const resolvedReaderState = activeReaderState!;
   const resolvedScene = activeScene!;
   const resolvedEntry = activeEntry!;
   const resolvedDialogueCardVariants = dialogueCardVariants!;
@@ -934,39 +979,29 @@ export function PlayerStoryReader({
         />
 
         <div className="relative z-10 h-full">
-          {isTransitionCard || isChapterBreakCard || isStoryFinishedCard ? (
+          <AnimatePresence initial={false}>
+            {isTransitionCard ? (
+              <motion.div
+                key={`scene-transition-${pendingSceneState?.sceneIndex ?? "none"}-${pendingSceneState?.dialogueIndex ?? "none"}`}
+                initial={{ opacity: 0 }}
+                animate={{
+                  opacity: prefersReducedMotion ? [0, 0.75, 0] : [0, 0.92, 0]
+                }}
+                exit={{ opacity: 0 }}
+                transition={{
+                  duration: sceneTransitionDurationMs / 1000,
+                  times: [0, 0.5, 1],
+                  ease: "easeInOut"
+                }}
+                className="pointer-events-none absolute inset-0 z-30 bg-black"
+              />
+            ) : null}
+          </AnimatePresence>
+
+          {isChapterBreakCard || isStoryFinishedCard ? (
             <div className="absolute inset-x-0 top-0 z-20 p-3 md:p-5">
               <div className="rounded-[28px] border border-white/10 bg-slate-950/82 p-5 backdrop-blur">
-                {isTransitionCard ? (
-                  <div>
-                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
-                          Scene Transition
-                        </p>
-                        <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-50">
-                          {sceneTransitionState?.sceneTitle}
-                        </h2>
-                      </div>
-                      <PillLike>
-                        Scene {resolvedReaderState.sceneIndex + 1}
-                      </PillLike>
-                    </div>
-
-                    <p className="max-w-3xl text-base leading-7 text-slate-300">
-                      The next scene is ready.
-                    </p>
-
-                    <div className="mt-6 flex justify-end">
-                      <Button
-                        onClick={() => void handleAdvance()}
-                        disabled={isLoadingChapter}
-                      >
-                        Continue
-                      </Button>
-                    </div>
-                  </div>
-                ) : isChapterBreakCard ? (
+                {isChapterBreakCard ? (
                   <div>
                     <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                       <div>
@@ -1268,14 +1303,11 @@ async function resolveAdvanceAction(input: {
   }
 
   if (result.type === "scene-transition") {
-    const nextScene = getCurrentScene(input.bundle.chapter, result.state);
-
     return {
       type: "scene-transition",
       state: result.state,
       boundaryState: {
-        type: "scene-transition",
-        sceneTitle: nextScene?.title ?? "Next Scene"
+        type: "scene-transition"
       }
     };
   }

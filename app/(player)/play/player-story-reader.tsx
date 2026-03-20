@@ -13,6 +13,7 @@ import {
 } from "react";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import worldMapImage from "@/lore/world-map.jpg";
 
 import { Button } from "@/components/ui/button";
 import {
@@ -118,6 +119,7 @@ const DEFAULT_STAGE_ASPECT_RATIO = 9 / 16;
 const MOTION_EASE_OUT = [0.22, 1, 0.36, 1] as const;
 const MOTION_EASE_IN = [0.4, 0, 1, 1] as const;
 const SCENE_TRANSITION_DURATION_MS = 700;
+const MAP_OVERLAY_DURATION_MS = 340;
 
 function readStoredProgress(storageKey: string) {
   if (typeof window === "undefined") {
@@ -251,6 +253,8 @@ export function PlayerStoryReader({
   const [visibleTextLength, setVisibleTextLength] = useState(0);
   const [lineEnterDelayMs, setLineEnterDelayMs] = useState(0);
   const [isTapHeaderVisible, setIsTapHeaderVisible] = useState(false);
+  const [isMapOpen, setIsMapOpen] = useState(false);
+  const [isMapImageReady, setIsMapImageReady] = useState(false);
 
   const lineEnterDurationMs = prefersReducedMotion
     ? REDUCED_MOTION_DURATION_MS
@@ -261,6 +265,9 @@ export function PlayerStoryReader({
   const tapHeaderMotionDurationMs = prefersReducedMotion
     ? REDUCED_MOTION_DURATION_MS
     : 240;
+  const mapOverlayMotionDurationMs = prefersReducedMotion
+    ? REDUCED_MOTION_DURATION_MS
+    : MAP_OVERLAY_DURATION_MS;
 
   const loadBundle = useMemo(
     () =>
@@ -803,6 +810,93 @@ export function PlayerStoryReader({
     setIsTapHeaderVisible(true);
   }, []);
 
+  const handleOpenMap = useCallback(() => {
+    setIsTapHeaderVisible(false);
+    setIsMapOpen(true);
+  }, []);
+
+  const handleCloseMap = useCallback(() => {
+    setIsMapOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    let cancelled = false;
+    const preloadedMapImage = new window.Image();
+    let settled = false;
+    const markReady = () => {
+      if (cancelled || settled) {
+        return;
+      }
+
+      settled = true;
+      setIsMapImageReady(true);
+    };
+    const markFallbackReady = () => {
+      if (cancelled || settled) {
+        return;
+      }
+
+      settled = true;
+      setIsMapImageReady(true);
+    };
+
+    preloadedMapImage.loading = "eager";
+    preloadedMapImage.decoding = "async";
+
+    if ("fetchPriority" in preloadedMapImage) {
+      preloadedMapImage.fetchPriority = "high";
+    }
+
+    preloadedMapImage.src = worldMapImage.src;
+
+    if (preloadedMapImage.complete && preloadedMapImage.naturalWidth > 0) {
+      markReady();
+
+      return () => {
+        cancelled = true;
+      };
+    }
+
+    preloadedMapImage.addEventListener("load", markReady, { once: true });
+    preloadedMapImage.addEventListener("error", markFallbackReady, {
+      once: true
+    });
+
+    if (typeof preloadedMapImage.decode === "function") {
+      void preloadedMapImage.decode().then(markReady).catch(() => {
+        // Keep waiting for the load event if decode fails or is unsupported.
+      });
+    }
+
+    return () => {
+      cancelled = true;
+      preloadedMapImage.removeEventListener("load", markReady);
+      preloadedMapImage.removeEventListener("error", markFallbackReady);
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isMapOpen) {
+      return;
+    }
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setIsMapOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isMapOpen]);
+
   const handleBack = useCallback(async () => {
     if (isLoadingChapter || !bundle || !readerState || !manifest) {
       return;
@@ -1007,7 +1101,7 @@ export function PlayerStoryReader({
   const resolvedDialogueCardVariants = dialogueCardVariants!;
 
   return (
-    <div className="flex min-h-screen w-full items-center justify-center overflow-hidden bg-black">
+    <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-black">
       <div
         className="relative h-[100dvh] w-screen shrink-0 overflow-hidden bg-slate-950"
         style={stageSizeStyle}
@@ -1078,7 +1172,7 @@ export function PlayerStoryReader({
                   duration: tapHeaderMotionDurationMs / 1000,
                   ease: MOTION_EASE_OUT
                 }}
-                className="pointer-events-none absolute inset-x-0 top-0 z-40 flex justify-start px-3 py-3 md:px-5 md:py-4"
+                className="pointer-events-none absolute inset-x-0 top-0 z-40 flex items-start justify-between px-3 py-3 md:px-5 md:py-4"
               >
                 <button
                   onClick={handleBack}
@@ -1089,6 +1183,16 @@ export function PlayerStoryReader({
                 >
                   <span aria-hidden className="material-symbols-outlined">
                     arrow_back
+                  </span>
+                </button>
+                <button
+                  onClick={handleOpenMap}
+                  type="button"
+                  aria-label="Open world map"
+                  className="pointer-events-auto inline-flex h-11 w-11 items-center justify-center bg-transparent text-slate-100 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                >
+                  <span aria-hidden className="material-symbols-outlined">
+                    map
                   </span>
                 </button>
               </motion.div>
@@ -1251,6 +1355,70 @@ export function PlayerStoryReader({
           </div>
         </div>
       </div>
+
+      <AnimatePresence>
+        {isMapOpen ? (
+          <motion.div
+            key="player-world-map"
+            role="dialog"
+            aria-modal="true"
+            aria-label="World map"
+            initial={
+              prefersReducedMotion ? { opacity: 0 } : { opacity: 0 }
+            }
+            animate={{ opacity: 1 }}
+            exit={
+              prefersReducedMotion ? { opacity: 0 } : { opacity: 0 }
+            }
+            transition={{
+              duration: mapOverlayMotionDurationMs / 1000,
+              ease: MOTION_EASE_OUT
+            }}
+            className="absolute inset-0 z-[70] bg-black/95 backdrop-blur-sm"
+          >
+            <div className="absolute inset-0 flex items-center justify-center p-3 md:p-6">
+              <motion.div
+                initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.98 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.98 }}
+                transition={{
+                  duration: mapOverlayMotionDurationMs / 1000,
+                  ease: MOTION_EASE_OUT
+                }}
+                className="relative inline-flex h-fit w-fit origin-center"
+              >
+                <button
+                  onClick={handleCloseMap}
+                  type="button"
+                  aria-label="Close world map"
+                  className="absolute left-2 top-2 z-10 inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-black/35 text-slate-100 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 md:left-3 md:top-3"
+                >
+                  <span aria-hidden className="material-symbols-outlined">
+                    close
+                  </span>
+                </button>
+
+                {isMapImageReady ? (
+                  <img
+                    src={worldMapImage.src}
+                    alt="Ocnoer world map"
+                    width={worldMapImage.width}
+                    height={worldMapImage.height}
+                    loading="eager"
+                    decoding="async"
+                    fetchPriority="high"
+                    className="block max-h-[calc(100dvh-1.5rem)] max-w-[calc(100dvw-1.5rem)] object-contain md:max-h-[calc(100dvh-3rem)] md:max-w-[calc(100dvw-3rem)]"
+                  />
+                ) : (
+                  <div className="flex h-[70dvh] w-[min(92dvw,72rem)] items-center justify-center rounded-2xl border border-white/10 bg-black/35 text-sm text-slate-300">
+                    Preparing map...
+                  </div>
+                )}
+              </motion.div>
+            </div>
+          </motion.div>
+        ) : null}
+      </AnimatePresence>
 
       {backgroundMusicUrl ? (
         <audio ref={audioRef} src={backgroundMusicUrl} loop />

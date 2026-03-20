@@ -1,6 +1,7 @@
 import { preload } from "react-dom";
 
 import { PlayerStoryReader } from "@/app/(player)/play/player-story-reader";
+import worldMapImage from "@/lore/world-map.jpg";
 import {
   getRuntimeBootstrapConfig,
   loadPlayerRuntimeBootstrap
@@ -19,6 +20,11 @@ export default async function PlayerPlayPage() {
         as: "image"
       });
     }
+  });
+
+  preload(worldMapImage.src, {
+    as: "image",
+    fetchPriority: "high"
   });
 
   return (

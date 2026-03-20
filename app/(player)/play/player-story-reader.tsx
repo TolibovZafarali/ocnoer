@@ -611,6 +611,9 @@ export function PlayerStoryReader({
   const sceneTransitionDurationMs = prefersReducedMotion
     ? REDUCED_MOTION_DURATION_MS
     : SCENE_TRANSITION_DURATION_MS;
+  const sceneTransitionLeadOutMs = prefersReducedMotion ? 0 : lineExitDurationMs;
+  const sceneTransitionTotalDurationMs =
+    sceneTransitionLeadOutMs + sceneTransitionDurationMs;
   const sceneTransitionOpacityKeyframes = prefersReducedMotion
     ? [0, 0.75, 0]
     : [
@@ -648,14 +651,15 @@ export function PlayerStoryReader({
         enterDelayMs: lineEnterDelayMs
       })
     : null;
-  const leftStagePortrait = activeEntry
+  const hideStagePortraits = isSceneTransition;
+  const leftStagePortrait = activeEntry && !hideStagePortraits
     ? createVisibleStagePortrait({
         stageCharacter: activeEntry.stage.left,
         imageUrl: leftCharacterImageUrl,
         direction: "from-left"
       })
     : null;
-  const rightStagePortrait = activeEntry
+  const rightStagePortrait = activeEntry && !hideStagePortraits
     ? createVisibleStagePortrait({
         stageCharacter: activeEntry.stage.right,
         imageUrl: rightCharacterImageUrl,
@@ -703,7 +707,8 @@ export function PlayerStoryReader({
 
     const swapDelayMs = prefersReducedMotion
       ? 0
-      : Math.round(sceneTransitionDurationMs * SCENE_TRANSITION_SWAP_PROGRESS);
+      : sceneTransitionLeadOutMs +
+        Math.round(sceneTransitionDurationMs * SCENE_TRANSITION_SWAP_PROGRESS);
     const swapTimer = window.setTimeout(() => {
       setReaderState(pendingSceneState);
     }, swapDelayMs);
@@ -712,7 +717,7 @@ export function PlayerStoryReader({
       setBoundaryState((current) =>
         current?.type === "scene-transition" ? null : current
       );
-    }, sceneTransitionDurationMs);
+    }, sceneTransitionTotalDurationMs);
 
     return () => {
       window.clearTimeout(swapTimer);
@@ -722,7 +727,9 @@ export function PlayerStoryReader({
     isSceneTransition,
     pendingSceneState,
     prefersReducedMotion,
-    sceneTransitionDurationMs
+    sceneTransitionDurationMs,
+    sceneTransitionLeadOutMs,
+    sceneTransitionTotalDurationMs
   ]);
 
   useLayoutEffect(() => {
@@ -1166,6 +1173,7 @@ export function PlayerStoryReader({
                 animate={{ opacity: sceneTransitionOpacityKeyframes }}
                 exit={{ opacity: 0 }}
                 transition={{
+                  delay: sceneTransitionLeadOutMs / 1000,
                   duration: sceneTransitionDurationMs / 1000,
                   times: sceneTransitionTimeKeyframes,
                   ease: sceneTransitionEase

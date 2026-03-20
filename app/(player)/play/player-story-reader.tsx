@@ -1297,7 +1297,15 @@ export function PlayerStoryReader({
                 >
                   {resolvedEntry.speaker.type === "character" ? (
                     <div className="mb-4">
-                      <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
+                      <p
+                        className={
+                          resolvedEntry.speaker.characterName
+                            .trim()
+                            .toLowerCase() === "ocnoer"
+                            ? "font-character-name text-4xl leading-none text-slate-300"
+                            : "text-sm uppercase tracking-[0.2em] text-slate-400"
+                        }
+                      >
                         {resolvedEntry.speaker.characterName}
                       </p>
                     </div>

@@ -16,6 +16,10 @@ body {
   font-family: var(--font-dialogue), Georgia, serif;
 }
 
+.font-character-name {
+  font-family: var(--font-character-name), "Times New Roman", cursive;
+}
+
 .material-symbols-outlined {
   font-family: "Material Symbols Outlined";
   font-weight: normal;

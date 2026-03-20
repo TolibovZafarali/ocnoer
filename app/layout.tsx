@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { Literata } from "next/font/google";
+import { Literata, Tangerine } from "next/font/google";
 
 import "./globals.css";
 
@@ -8,6 +8,13 @@ const dialogueFont = Literata({
   subsets: ["latin"],
   display: "swap",
   variable: "--font-dialogue"
+});
+
+const characterNameFont = Tangerine({
+  subsets: ["latin"],
+  weight: ["400", "700"],
+  display: "swap",
+  variable: "--font-character-name"
 });
 
 export const metadata: Metadata = {
@@ -28,7 +35,11 @@ export default function RootLayout({ children }: RootLayoutProps) {
           href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0"
         />
       </head>
-      <body className={dialogueFont.variable}>{children}</body>
+      <body
+        className={`${dialogueFont.variable} ${characterNameFont.variable}`}
+      >
+        {children}
+      </body>
     </html>
   );
 }

@@ -118,7 +118,12 @@ type ResolvedAdvanceAction =
 const DEFAULT_STAGE_ASPECT_RATIO = 9 / 16;
 const MOTION_EASE_OUT = [0.22, 1, 0.36, 1] as const;
 const MOTION_EASE_IN = [0.4, 0, 1, 1] as const;
-const SCENE_TRANSITION_DURATION_MS = 700;
+const MOTION_EASE_LINEAR = [0, 0, 1, 1] as const;
+const SCENE_TRANSITION_DURATION_MS = 3000;
+const SCENE_TRANSITION_HOLD_START = 0.42;
+const SCENE_TRANSITION_HOLD_END = 0.58;
+const SCENE_TRANSITION_SWAP_PROGRESS = 0.5;
+const SCENE_TRANSITION_MAX_OPACITY = 1;
 const MAP_OVERLAY_DURATION_MS = 340;
 
 function readStoredProgress(storageKey: string) {
@@ -606,6 +611,20 @@ export function PlayerStoryReader({
   const sceneTransitionDurationMs = prefersReducedMotion
     ? REDUCED_MOTION_DURATION_MS
     : SCENE_TRANSITION_DURATION_MS;
+  const sceneTransitionOpacityKeyframes = prefersReducedMotion
+    ? [0, 0.75, 0]
+    : [
+        0,
+        SCENE_TRANSITION_MAX_OPACITY,
+        SCENE_TRANSITION_MAX_OPACITY,
+        0
+      ];
+  const sceneTransitionTimeKeyframes = prefersReducedMotion
+    ? [0, 0.5, 1]
+    : [0, SCENE_TRANSITION_HOLD_START, SCENE_TRANSITION_HOLD_END, 1];
+  const sceneTransitionEase = prefersReducedMotion
+    ? "easeInOut"
+    : [MOTION_EASE_OUT, MOTION_EASE_LINEAR, MOTION_EASE_IN];
   const showDialogueCard =
     Boolean(activeEntry) &&
     !isTransitionCard &&
@@ -682,7 +701,7 @@ export function PlayerStoryReader({
 
     const swapDelayMs = prefersReducedMotion
       ? 0
-      : Math.round(sceneTransitionDurationMs / 2);
+      : Math.round(sceneTransitionDurationMs * SCENE_TRANSITION_SWAP_PROGRESS);
     const swapTimer = window.setTimeout(() => {
       setReaderState(pendingSceneState);
     }, swapDelayMs);
@@ -1133,16 +1152,14 @@ export function PlayerStoryReader({
               <motion.div
                 key={`scene-transition-${pendingSceneState?.sceneIndex ?? "none"}-${pendingSceneState?.dialogueIndex ?? "none"}`}
                 initial={{ opacity: 0 }}
-                animate={{
-                  opacity: prefersReducedMotion ? [0, 0.75, 0] : [0, 0.92, 0]
-                }}
+                animate={{ opacity: sceneTransitionOpacityKeyframes }}
                 exit={{ opacity: 0 }}
                 transition={{
                   duration: sceneTransitionDurationMs / 1000,
-                  times: [0, 0.5, 1],
-                  ease: "easeInOut"
+                  times: sceneTransitionTimeKeyframes,
+                  ease: sceneTransitionEase
                 }}
-                className="pointer-events-none absolute inset-0 z-30 bg-black"
+                className="pointer-events-none absolute inset-0 z-30 bg-black will-change-opacity"
               />
             ) : null}
           </AnimatePresence>

@@ -692,6 +692,8 @@ export function PlayerStoryReader({
     textCharacters,
     visibleTextLength
   ]);
+  const canCompleteTyping =
+    showDialogueCard && !prefersReducedMotion && presentationPhase === "typing";
   const showContinueButton = showDialogueCard && presentationPhase === "ready";
 
   useEffect(() => {
@@ -828,6 +830,15 @@ export function PlayerStoryReader({
   const handleShowTapHeader = useCallback(() => {
     setIsTapHeaderVisible(true);
   }, []);
+
+  const handleCompleteTyping = useCallback(() => {
+    if (!canCompleteTyping) {
+      return;
+    }
+
+    setVisibleTextLength(textCharacters.length);
+    setPresentationPhase("ready");
+  }, [canCompleteTyping, textCharacters.length]);
 
   const handleOpenMap = useCallback(() => {
     setIsTapHeaderVisible(false);
@@ -1293,7 +1304,8 @@ export function PlayerStoryReader({
                   animate="visible"
                   exit="exit"
                   variants={resolvedDialogueCardVariants}
-                  className={`pointer-events-auto absolute bottom-[clamp(0.75rem,2vw,1.25rem)] rounded-[28px] border border-white/10 bg-slate-950/82 p-5 backdrop-blur ${dialogueCardPositionClassName}`}
+                  onClick={handleCompleteTyping}
+                  className={`pointer-events-auto absolute bottom-[clamp(0.75rem,2vw,1.25rem)] rounded-[28px] border border-white/10 bg-slate-950/82 p-5 backdrop-blur ${dialogueCardPositionClassName} ${canCompleteTyping ? "cursor-pointer" : ""}`}
                 >
                   {resolvedEntry.speaker.type === "character" ? (
                     <div className="mb-4">

@@ -30,6 +30,14 @@ import {
   getTypingCharacterDelayMs
 } from "@/app/(player)/play/player-story-reader-motion";
 import {
+  analyzeSceneLightingFromImageData,
+  buildSceneOverlayBackground,
+  buildStageCharacterFilter,
+  createDefaultSceneLightingProfile,
+  type SceneLightingProfile,
+  type StageCharacterLighting
+} from "@/app/(player)/play/player-scene-lighting";
+import {
   advanceRuntimePosition,
   getCurrentDialogue,
   getCurrentScene,
@@ -231,6 +239,9 @@ export function PlayerStoryReader({
   const [isLoadingChapter, setIsLoadingChapter] = useState(false);
   const [stageAspectRatio, setStageAspectRatio] = useState(
     DEFAULT_STAGE_ASPECT_RATIO
+  );
+  const [sceneLighting, setSceneLighting] = useState<SceneLightingProfile>(() =>
+    createDefaultSceneLightingProfile()
   );
   const [presentationPhase, setPresentationPhase] =
     useState<PresentationPhase>("entering");
@@ -465,11 +476,13 @@ export function PlayerStoryReader({
   useEffect(() => {
     if (!backgroundImageUrl || typeof window === "undefined") {
       setStageAspectRatio(DEFAULT_STAGE_ASPECT_RATIO);
+      setSceneLighting(createDefaultSceneLightingProfile());
       return;
     }
 
     let cancelled = false;
     const backgroundImage = new window.Image();
+    backgroundImage.crossOrigin = "anonymous";
 
     backgroundImage.onload = () => {
       if (
@@ -483,11 +496,58 @@ export function PlayerStoryReader({
       setStageAspectRatio(
         backgroundImage.naturalWidth / backgroundImage.naturalHeight
       );
+
+      try {
+        const sampleMaxDimension = 96;
+        const sampleScale = Math.min(
+          1,
+          sampleMaxDimension /
+            Math.max(
+              backgroundImage.naturalWidth,
+              backgroundImage.naturalHeight
+            )
+        );
+        const sampleWidth = Math.max(
+          1,
+          Math.round(backgroundImage.naturalWidth * sampleScale)
+        );
+        const sampleHeight = Math.max(
+          1,
+          Math.round(backgroundImage.naturalHeight * sampleScale)
+        );
+        const canvas = document.createElement("canvas");
+        canvas.width = sampleWidth;
+        canvas.height = sampleHeight;
+        const context = canvas.getContext("2d", {
+          willReadFrequently: true
+        });
+
+        if (!context) {
+          setSceneLighting(createDefaultSceneLightingProfile());
+          return;
+        }
+
+        context.drawImage(backgroundImage, 0, 0, sampleWidth, sampleHeight);
+
+        const imageData = context.getImageData(0, 0, sampleWidth, sampleHeight);
+
+        setSceneLighting(
+          analyzeSceneLightingFromImageData({
+            pixels: imageData.data,
+            width: sampleWidth,
+            height: sampleHeight,
+            sampleStep: 2
+          })
+        );
+      } catch {
+        setSceneLighting(createDefaultSceneLightingProfile());
+      }
     };
 
     backgroundImage.onerror = () => {
       if (!cancelled) {
         setStageAspectRatio(DEFAULT_STAGE_ASPECT_RATIO);
+        setSceneLighting(createDefaultSceneLightingProfile());
       }
     };
 
@@ -588,12 +648,7 @@ export function PlayerStoryReader({
         </span>
       );
     });
-  }, [
-    activeEntry,
-    prefersReducedMotion,
-    textCharacters,
-    visibleTextLength
-  ]);
+  }, [activeEntry, prefersReducedMotion, textCharacters, visibleTextLength]);
   const showContinueButton = showDialogueCard && presentationPhase === "ready";
 
   useEffect(() => {
@@ -869,7 +924,14 @@ export function PlayerStoryReader({
         ) : (
           <div className="absolute inset-0 bg-black" />
         )}
-        <div className="absolute inset-0 bg-[linear-gradient(180deg,rgba(2,6,17,0.08)_0%,rgba(2,6,17,0.18)_22%,rgba(2,6,17,0.36)_54%,rgba(2,6,17,0.84)_100%)]" />
+        <div
+          className="absolute inset-0"
+          style={{
+            background: buildSceneOverlayBackground(
+              sceneLighting.overlayStrength
+            )
+          }}
+        />
 
         <div className="relative z-10 h-full">
           {isTransitionCard || isChapterBreakCard || isStoryFinishedCard ? (
@@ -1039,6 +1101,7 @@ export function PlayerStoryReader({
             <StageCharacter
               alignment="left"
               portrait={leftStagePortrait}
+              lighting={sceneLighting.left}
               shouldAnimate={showDialogueCard}
               prefersReducedMotion={prefersReducedMotion}
               enterDurationMs={lineEnterDurationMs}
@@ -1047,6 +1110,7 @@ export function PlayerStoryReader({
             <StageCharacter
               alignment="right"
               portrait={rightStagePortrait}
+              lighting={sceneLighting.right}
               shouldAnimate={showDialogueCard}
               prefersReducedMotion={prefersReducedMotion}
               enterDurationMs={lineEnterDurationMs}
@@ -1074,6 +1138,7 @@ function PillLike(props: { children: ReactNode }) {
 function StageCharacter(props: {
   alignment: "left" | "right";
   portrait: VisibleStagePortrait | null;
+  lighting: StageCharacterLighting;
   shouldAnimate: boolean;
   prefersReducedMotion: boolean;
   enterDurationMs: number;
@@ -1105,9 +1170,12 @@ function StageCharacter(props: {
             animate="visible"
             exit="exit"
             variants={variants}
-            className={`h-full w-full object-contain drop-shadow-[0_20px_40px_rgba(0,0,0,0.68)] ${
+            className={`h-full w-full object-contain ${
               isLeft ? "object-left-bottom" : "object-right-bottom"
             }`}
+            style={{
+              filter: buildStageCharacterFilter(props.lighting)
+            }}
           />
         ) : null}
       </AnimatePresence>

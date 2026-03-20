@@ -39,6 +39,7 @@ import {
 } from "@/app/(player)/play/player-scene-lighting";
 import {
   advanceRuntimePosition,
+  retreatRuntimePosition,
   getCurrentDialogue,
   getCurrentScene,
   createStoredProgress,
@@ -249,6 +250,7 @@ export function PlayerStoryReader({
     useState<PresentationPhase>("entering");
   const [visibleTextLength, setVisibleTextLength] = useState(0);
   const [lineEnterDelayMs, setLineEnterDelayMs] = useState(0);
+  const [isTapHeaderVisible, setIsTapHeaderVisible] = useState(false);
 
   const lineEnterDurationMs = prefersReducedMotion
     ? REDUCED_MOTION_DURATION_MS
@@ -256,6 +258,9 @@ export function PlayerStoryReader({
   const lineExitDurationMs = prefersReducedMotion
     ? REDUCED_MOTION_DURATION_MS
     : DEFAULT_LINE_EXIT_DURATION_MS;
+  const tapHeaderMotionDurationMs = prefersReducedMotion
+    ? REDUCED_MOTION_DURATION_MS
+    : 240;
 
   const loadBundle = useMemo(
     () =>
@@ -794,8 +799,57 @@ export function PlayerStoryReader({
     visibleTextLength
   ]);
 
+  const handleShowTapHeader = useCallback(() => {
+    setIsTapHeaderVisible(true);
+  }, []);
+
+  const handleBack = useCallback(async () => {
+    if (isLoadingChapter || !bundle || !readerState || !manifest) {
+      return;
+    }
+
+    setIsLoadingChapter(true);
+
+    try {
+      const resolvedRetreat = await retreatRuntimePosition({
+        manifest,
+        bundle,
+        state: readerState,
+        loadChapter: loadBundle
+      });
+
+      startTransition(() => {
+        setPendingSceneState(null);
+        setBoundaryState(null);
+
+        if (
+          resolvedRetreat.type === "line" ||
+          resolvedRetreat.type === "scene-transition"
+        ) {
+          setReaderState(resolvedRetreat.state);
+          return;
+        }
+
+        if (resolvedRetreat.type === "chapter-return") {
+          setBundle(resolvedRetreat.bundle);
+          setReaderState(resolvedRetreat.state);
+        }
+      });
+    } catch (caughtError) {
+      setError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unable to load the previous dialogue."
+      );
+    } finally {
+      setIsLoadingChapter(false);
+    }
+  }, [bundle, isLoadingChapter, loadBundle, manifest, readerState]);
+
   const handleAdvance = useCallback(async () => {
     if (boundaryState) {
+      setIsTapHeaderVisible(false);
+
       if (boundaryState.type !== "story-finished") {
         setPendingSceneState(null);
         setBoundaryState(null);
@@ -814,6 +868,7 @@ export function PlayerStoryReader({
       return;
     }
 
+    setIsTapHeaderVisible(false);
     setIsLoadingChapter(true);
     setPresentationPhase("exiting");
 
@@ -995,6 +1050,48 @@ export function PlayerStoryReader({
                 }}
                 className="pointer-events-none absolute inset-0 z-30 bg-black"
               />
+            ) : null}
+          </AnimatePresence>
+
+          <button
+            onClick={handleShowTapHeader}
+            type="button"
+            aria-label="Show navigation header"
+            className="absolute inset-0 z-[15] bg-transparent"
+          />
+
+          <AnimatePresence initial={false}>
+            {isTapHeaderVisible ? (
+              <motion.div
+                initial={
+                  prefersReducedMotion
+                    ? { opacity: 1, y: 0 }
+                    : { opacity: 0, y: -32 }
+                }
+                animate={{ opacity: 1, y: 0 }}
+                exit={
+                  prefersReducedMotion
+                    ? { opacity: 0, y: 0 }
+                    : { opacity: 0, y: -32 }
+                }
+                transition={{
+                  duration: tapHeaderMotionDurationMs / 1000,
+                  ease: MOTION_EASE_OUT
+                }}
+                className="pointer-events-none absolute inset-x-0 top-0 z-40 flex justify-start px-3 py-3 md:px-5 md:py-4"
+              >
+                <button
+                  onClick={handleBack}
+                  type="button"
+                  aria-label="Previous dialogue"
+                  disabled={isLoadingChapter}
+                  className="pointer-events-auto inline-flex h-11 w-11 items-center justify-center bg-transparent text-slate-100 transition-colors hover:text-white disabled:cursor-default disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                >
+                  <span aria-hidden className="material-symbols-outlined">
+                    arrow_back
+                  </span>
+                </button>
+              </motion.div>
             ) : null}
           </AnimatePresence>
 

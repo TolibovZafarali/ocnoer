@@ -7,6 +7,7 @@ import {
   createReaderStateFromProgress,
   createStoredProgress,
   findFirstPlayableReaderState,
+  retreatRuntimePosition,
   resolvePlayableRuntimePosition
 } from "@/lib/story/reader";
 import type {
@@ -367,6 +368,92 @@ describe("runtime advancement", () => {
 
     expect(result).toEqual({
       type: "story-finished"
+    });
+  });
+});
+
+describe("runtime retreat", () => {
+  it("returns a line retreat when the previous dialogue is in the same scene", async () => {
+    const result = await retreatRuntimePosition({
+      manifest,
+      bundle: bundleWithSceneGaps,
+      state: {
+        sceneIndex: 1,
+        dialogueIndex: 1,
+        isChapterComplete: false
+      },
+      loadChapter: loadChapterBundle
+    });
+
+    expect(result).toEqual({
+      type: "line",
+      state: {
+        sceneIndex: 1,
+        dialogueIndex: 0,
+        isChapterComplete: false
+      }
+    });
+  });
+
+  it("returns a scene transition when the previous playable dialogue is in an earlier scene", async () => {
+    const result = await retreatRuntimePosition({
+      manifest,
+      bundle: bundleWithSceneGaps,
+      state: {
+        sceneIndex: 3,
+        dialogueIndex: 0,
+        isChapterComplete: false
+      },
+      loadChapter: loadChapterBundle
+    });
+
+    expect(result).toEqual({
+      type: "scene-transition",
+      state: {
+        sceneIndex: 1,
+        dialogueIndex: 1,
+        isChapterComplete: false
+      }
+    });
+  });
+
+  it("returns a chapter return when it skips unplayable previous chapters", async () => {
+    const result = await retreatRuntimePosition({
+      manifest,
+      bundle: gammaBundle,
+      state: {
+        sceneIndex: 1,
+        dialogueIndex: 0,
+        isChapterComplete: false
+      },
+      loadChapter: loadChapterBundle
+    });
+
+    expect(result).toEqual({
+      type: "chapter-return",
+      bundle: alphaBundle,
+      state: {
+        sceneIndex: 0,
+        dialogueIndex: 0,
+        isChapterComplete: false
+      }
+    });
+  });
+
+  it("returns story start when no previous playable dialogue exists", async () => {
+    const result = await retreatRuntimePosition({
+      manifest,
+      bundle: alphaBundle,
+      state: {
+        sceneIndex: 0,
+        dialogueIndex: 0,
+        isChapterComplete: false
+      },
+      loadChapter: loadChapterBundle
+    });
+
+    expect(result).toEqual({
+      type: "story-start"
     });
   });
 });

@@ -40,6 +40,24 @@ export type ReaderAdvanceResult =
       type: "story-finished";
     };
 
+export type ReaderRetreatResult =
+  | {
+      type: "line";
+      state: ReaderState;
+    }
+  | {
+      type: "scene-transition";
+      state: ReaderState;
+    }
+  | {
+      type: "chapter-return";
+      bundle: RuntimeChapterBundle;
+      state: ReaderState;
+    }
+  | {
+      type: "story-start";
+    };
+
 export type RuntimeChapterLoader = (
   manifest: RuntimeManifest,
   chapterId: string
@@ -83,10 +101,31 @@ function findNextPlayableSceneState(
   return null;
 }
 
+function findPreviousPlayableSceneState(
+  chapter: RuntimeChapterBundle["chapter"],
+  startSceneIndex: number
+) {
+  for (let sceneIndex = startSceneIndex; sceneIndex >= 0; sceneIndex -= 1) {
+    const scene = chapter.scenes[sceneIndex];
+
+    if (scene && scene.dialogue.length > 0) {
+      return createPlayableReaderState(sceneIndex, scene.dialogue.length - 1);
+    }
+  }
+
+  return null;
+}
+
 export function findFirstPlayableReaderState(
   chapter: RuntimeChapterBundle["chapter"]
 ) {
   return findNextPlayableSceneState(chapter, 0);
+}
+
+export function findLastPlayableReaderState(
+  chapter: RuntimeChapterBundle["chapter"]
+) {
+  return findPreviousPlayableSceneState(chapter, chapter.scenes.length - 1);
 }
 
 export function createInitialProgressForChapter(
@@ -222,6 +261,68 @@ export function findNextPlayableReaderState(
   return {
     type: "scene-transition" as const,
     state: nextSceneState
+  };
+}
+
+export function findPreviousPlayableReaderState(
+  chapter: RuntimeChapterBundle["chapter"],
+  state: ReaderState
+) {
+  if (state.isChapterComplete) {
+    const lastPlayableState = findLastPlayableReaderState(chapter);
+
+    if (!lastPlayableState) {
+      return null;
+    }
+
+    return {
+      type: "scene-transition" as const,
+      state: lastPlayableState
+    };
+  }
+
+  const scene = chapter.scenes[state.sceneIndex];
+
+  if (
+    scene &&
+    state.dialogueIndex > 0 &&
+    state.dialogueIndex < scene.dialogue.length
+  ) {
+    return {
+      type: "line" as const,
+      state: createPlayableReaderState(
+        state.sceneIndex,
+        state.dialogueIndex - 1
+      )
+    };
+  }
+
+  if (
+    scene &&
+    state.dialogueIndex >= scene.dialogue.length &&
+    scene.dialogue.length > 0
+  ) {
+    return {
+      type: "line" as const,
+      state: createPlayableReaderState(
+        state.sceneIndex,
+        scene.dialogue.length - 1
+      )
+    };
+  }
+
+  const previousSceneState = findPreviousPlayableSceneState(
+    chapter,
+    state.sceneIndex - 1
+  );
+
+  if (!previousSceneState) {
+    return null;
+  }
+
+  return {
+    type: "scene-transition" as const,
+    state: previousSceneState
   };
 }
 
@@ -433,5 +534,59 @@ export async function advanceRuntimePosition(input: {
 
   return {
     type: "story-finished"
+  };
+}
+
+export async function retreatRuntimePosition(input: {
+  manifest: RuntimeManifest;
+  bundle: RuntimeChapterBundle;
+  state: ReaderState;
+  loadChapter: RuntimeChapterLoader;
+}): Promise<ReaderRetreatResult> {
+  const previousState = findPreviousPlayableReaderState(
+    input.bundle.chapter,
+    input.state
+  );
+
+  if (previousState) {
+    return previousState;
+  }
+
+  const currentChapterIndex = getManifestChapterIndex(
+    input.manifest,
+    input.bundle.chapter.id
+  );
+
+  if (currentChapterIndex < 0) {
+    return {
+      type: "story-start"
+    };
+  }
+
+  for (
+    let chapterIndex = currentChapterIndex - 1;
+    chapterIndex >= 0;
+    chapterIndex -= 1
+  ) {
+    const manifestChapter = input.manifest.chapters[chapterIndex];
+
+    if (!manifestChapter) {
+      continue;
+    }
+
+    const bundle = await input.loadChapter(input.manifest, manifestChapter.id);
+    const state = findLastPlayableReaderState(bundle.chapter);
+
+    if (state && getCurrentDialogue(bundle.chapter, state)) {
+      return {
+        type: "chapter-return",
+        bundle,
+        state
+      };
+    }
+  }
+
+  return {
+    type: "story-start"
   };
 }

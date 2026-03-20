@@ -697,7 +697,7 @@ export function PlayerStoryReader({
     sceneTransitionDurationMs
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!showDialogueCard || !activeEntry) {
       return;
     }

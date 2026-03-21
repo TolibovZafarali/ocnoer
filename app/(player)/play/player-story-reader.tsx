@@ -723,19 +723,22 @@ export function PlayerStoryReader({
       return null;
     }
 
-    if (
-      prefersReducedMotion ||
-      presentationPhase === "ready" ||
-      presentationPhase === "exiting"
-    ) {
+    if (prefersReducedMotion) {
       return activeEntry.text;
     }
+
+    const resolvedVisibleTextLength =
+      presentationPhase === "ready" || presentationPhase === "exiting"
+        ? textCharacters.length
+        : visibleTextLength;
 
     return textCharacters.map((character, index) => {
       return (
         <span
           key={`${activeEntry.id}:${index}`}
-          className={index < visibleTextLength ? undefined : "text-transparent"}
+          className={
+            index < resolvedVisibleTextLength ? undefined : "text-transparent"
+          }
         >
           {character}
         </span>
@@ -754,10 +757,12 @@ export function PlayerStoryReader({
     showDialogueCard &&
     presentationPhase === "ready" &&
     activeEntry?.speaker.type === "dress_prompt";
+  const showContinueButtonSlot =
+    showDialogueCard && activeEntry?.speaker.type !== "dress_prompt";
   const showContinueButton =
-    showDialogueCard &&
+    showContinueButtonSlot &&
     presentationPhase === "ready" &&
-    activeEntry?.speaker.type !== "dress_prompt";
+    Boolean(activeEntry);
   const activeChapterIndex =
     manifest?.chapters.findIndex(
       (chapter) => chapter.id === bundle?.chapter.id
@@ -1743,42 +1748,40 @@ export function PlayerStoryReader({
                     </div>
                   ) : null}
 
-                  {showContinueButton ? (
-                    <div className="mt-6 flex justify-end">
-                      <AnimatePresence initial={false}>
-                        <motion.div
-                          initial={
-                            prefersReducedMotion ? false : { opacity: 0, y: 10 }
+                  {showContinueButtonSlot ? (
+                    <div className="mt-6 flex h-9 items-center justify-end">
+                      <motion.div
+                        initial={false}
+                        animate={
+                          showContinueButton
+                            ? { opacity: 1, y: 0 }
+                            : prefersReducedMotion
+                              ? { opacity: 0, y: 0 }
+                              : { opacity: 0, y: 8 }
+                        }
+                        transition={{
+                          duration: prefersReducedMotion
+                            ? 0
+                            : CONTINUE_BUTTON_ENTER_DURATION_MS / 1000,
+                          ease: MOTION_EASE_OUT
+                        }}
+                        className={showContinueButton ? undefined : "pointer-events-none"}
+                      >
+                        <button
+                          onClick={() => void handleAdvance()}
+                          disabled={isLoadingChapter || !showContinueButton}
+                          tabIndex={showContinueButton ? 0 : -1}
+                          type="button"
+                          aria-label={
+                            isLoadingChapter ? "Loading next line" : "Continue"
                           }
-                          animate={{ opacity: 1, y: 0 }}
-                          exit={{ opacity: 0, y: 8 }}
-                          transition={{
-                            duration: prefersReducedMotion
-                              ? 0
-                              : CONTINUE_BUTTON_ENTER_DURATION_MS / 1000,
-                            ease: MOTION_EASE_OUT
-                          }}
+                          className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-transparent text-slate-100 transition-opacity hover:text-white disabled:cursor-default disabled:opacity-45"
                         >
-                          <button
-                            onClick={() => void handleAdvance()}
-                            disabled={isLoadingChapter}
-                            type="button"
-                            aria-label={
-                              isLoadingChapter
-                                ? "Loading next line"
-                                : "Continue"
-                            }
-                            className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-transparent text-slate-100 transition-opacity hover:text-white disabled:cursor-default disabled:opacity-45"
-                          >
-                            <span
-                              aria-hidden
-                              className="material-symbols-outlined"
-                            >
-                              arrow_forward
-                            </span>
-                          </button>
-                        </motion.div>
-                      </AnimatePresence>
+                          <span aria-hidden className="material-symbols-outlined">
+                            arrow_forward
+                          </span>
+                        </button>
+                      </motion.div>
                     </div>
                   ) : null}
                 </motion.div>

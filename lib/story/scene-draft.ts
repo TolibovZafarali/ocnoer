@@ -48,7 +48,9 @@ function parseSceneDraftDialogueEntry(
   if (
     !id ||
     text == null ||
-    (speakerType !== "narrator" && speakerType !== "character")
+    (speakerType !== "narrator" &&
+      speakerType !== "character" &&
+      speakerType !== "dress_prompt")
   ) {
     return null;
   }

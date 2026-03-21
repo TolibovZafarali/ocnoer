@@ -129,6 +129,8 @@ const SCENE_TRANSITION_HOLD_END = 0.58;
 const SCENE_TRANSITION_SWAP_PROGRESS = 0.5;
 const SCENE_TRANSITION_MAX_OPACITY = 1;
 const MAP_OVERLAY_DURATION_MS = 340;
+const DESKTOP_SCENE_NAV_MIN_GUTTER_WIDTH_PX = 220;
+const DESKTOP_SCENE_NAV_HORIZONTAL_PADDING_PX = 12;
 
 function readStoredProgress(storageKey: string) {
   if (typeof window === "undefined") {
@@ -264,6 +266,7 @@ export function PlayerStoryReader({
   const [isTapHeaderVisible, setIsTapHeaderVisible] = useState(false);
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [isMapImageReady, setIsMapImageReady] = useState(false);
+  const [desktopNavGutterWidth, setDesktopNavGutterWidth] = useState(0);
 
   const lineEnterDurationMs = prefersReducedMotion
     ? REDUCED_MOTION_DURATION_MS
@@ -586,6 +589,31 @@ export function PlayerStoryReader({
   }, [backgroundImageUrl]);
 
   useEffect(() => {
+    if (typeof window === "undefined") {
+      return;
+    }
+
+    const handleResize = () => {
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const stageWidth = Math.min(
+        viewportWidth,
+        viewportHeight * stageAspectRatio
+      );
+      const gutterWidth = Math.max(0, (viewportWidth - stageWidth) / 2);
+
+      setDesktopNavGutterWidth(gutterWidth);
+    };
+
+    handleResize();
+    window.addEventListener("resize", handleResize);
+
+    return () => {
+      window.removeEventListener("resize", handleResize);
+    };
+  }, [stageAspectRatio]);
+
+  useEffect(() => {
     const audio = audioRef.current;
 
     if (!audio || !backgroundMusicUrl || isResolvingResume) {
@@ -626,17 +654,14 @@ export function PlayerStoryReader({
   const sceneTransitionDurationMs = prefersReducedMotion
     ? REDUCED_MOTION_DURATION_MS
     : SCENE_TRANSITION_DURATION_MS;
-  const sceneTransitionLeadOutMs = prefersReducedMotion ? 0 : lineExitDurationMs;
+  const sceneTransitionLeadOutMs = prefersReducedMotion
+    ? 0
+    : lineExitDurationMs;
   const sceneTransitionTotalDurationMs =
     sceneTransitionLeadOutMs + sceneTransitionDurationMs;
   const sceneTransitionOpacityKeyframes = prefersReducedMotion
     ? [0, 0.75, 0]
-    : [
-        0,
-        SCENE_TRANSITION_MAX_OPACITY,
-        SCENE_TRANSITION_MAX_OPACITY,
-        0
-      ];
+    : [0, SCENE_TRANSITION_MAX_OPACITY, SCENE_TRANSITION_MAX_OPACITY, 0];
   const sceneTransitionTimeKeyframes = prefersReducedMotion
     ? [0, 0.5, 1]
     : [0, SCENE_TRANSITION_HOLD_START, SCENE_TRANSITION_HOLD_END, 1];
@@ -667,20 +692,22 @@ export function PlayerStoryReader({
       })
     : null;
   const hideStagePortraits = isSceneTransition;
-  const leftStagePortrait = activeEntry && !hideStagePortraits
-    ? createVisibleStagePortrait({
-        stageCharacter: activeEntry.stage.left,
-        imageUrl: leftCharacterImageUrl,
-        direction: "from-left"
-      })
-    : null;
-  const rightStagePortrait = activeEntry && !hideStagePortraits
-    ? createVisibleStagePortrait({
-        stageCharacter: activeEntry.stage.right,
-        imageUrl: rightCharacterImageUrl,
-        direction: "from-right"
-      })
-    : null;
+  const leftStagePortrait =
+    activeEntry && !hideStagePortraits
+      ? createVisibleStagePortrait({
+          stageCharacter: activeEntry.stage.left,
+          imageUrl: leftCharacterImageUrl,
+          direction: "from-left"
+        })
+      : null;
+  const rightStagePortrait =
+    activeEntry && !hideStagePortraits
+      ? createVisibleStagePortrait({
+          stageCharacter: activeEntry.stage.right,
+          imageUrl: rightCharacterImageUrl,
+          direction: "from-right"
+        })
+      : null;
   const dialogueTextNodes = useMemo(() => {
     if (!activeEntry) {
       return null;
@@ -721,6 +748,16 @@ export function PlayerStoryReader({
     showDialogueCard &&
     presentationPhase === "ready" &&
     activeEntry?.speaker.type !== "dress_prompt";
+  const activeChapterIndex =
+    manifest?.chapters.findIndex(
+      (chapter) => chapter.id === bundle?.chapter.id
+    ) ?? -1;
+  const desktopSceneNavPanelWidth = Math.max(
+    0,
+    desktopNavGutterWidth - DESKTOP_SCENE_NAV_HORIZONTAL_PADDING_PX * 2
+  );
+  const showDesktopSceneNavigation =
+    desktopSceneNavPanelWidth >= DESKTOP_SCENE_NAV_MIN_GUTTER_WIDTH_PX;
 
   useEffect(() => {
     if (!isSceneTransition || !pendingSceneState) {
@@ -926,9 +963,12 @@ export function PlayerStoryReader({
     });
 
     if (typeof preloadedMapImage.decode === "function") {
-      void preloadedMapImage.decode().then(markReady).catch(() => {
-        // Keep waiting for the load event if decode fails or is unsupported.
-      });
+      void preloadedMapImage
+        .decode()
+        .then(markReady)
+        .catch(() => {
+          // Keep waiting for the load event if decode fails or is unsupported.
+        });
     }
 
     return () => {
@@ -998,6 +1038,95 @@ export function PlayerStoryReader({
       setIsLoadingChapter(false);
     }
   }, [bundle, isLoadingChapter, loadBundle, manifest, readerState]);
+
+  const commitJumpToScene = useCallback(
+    (targetBundle: RuntimeChapterBundle, sceneIndex: number) => {
+      setPendingSceneState(null);
+      setBoundaryState(null);
+      setBundle(targetBundle);
+      setReaderState({
+        sceneIndex,
+        dialogueIndex: 0,
+        isChapterComplete: false
+      });
+    },
+    []
+  );
+
+  const handleJumpToScene = useCallback(
+    async (input: { chapterId: string; sceneIndex: number }) => {
+      if (isLoadingChapter || !manifest) {
+        return;
+      }
+
+      setIsLoadingChapter(true);
+      setIsTapHeaderVisible(false);
+
+      try {
+        const targetBundle =
+          bundle?.chapter.id === input.chapterId
+            ? bundle
+            : await loadBundle(manifest, input.chapterId);
+
+        const targetScene = targetBundle?.chapter.scenes[input.sceneIndex];
+
+        if (!targetScene || targetScene.dialogue.length === 0) {
+          return;
+        }
+
+        startTransition(() => {
+          commitJumpToScene(targetBundle, input.sceneIndex);
+        });
+      } catch (caughtError) {
+        setError(
+          caughtError instanceof Error
+            ? caughtError.message
+            : "Unable to jump to the requested scene."
+        );
+      } finally {
+        setIsLoadingChapter(false);
+      }
+    },
+    [bundle, commitJumpToScene, isLoadingChapter, loadBundle, manifest]
+  );
+
+  const handleJumpToChapter = useCallback(
+    async (chapterId: string) => {
+      if (isLoadingChapter || !manifest) {
+        return;
+      }
+
+      setIsLoadingChapter(true);
+      setIsTapHeaderVisible(false);
+
+      try {
+        const targetBundle =
+          bundle?.chapter.id === chapterId
+            ? bundle
+            : await loadBundle(manifest, chapterId);
+        const firstPlayableSceneIndex = targetBundle.chapter.scenes.findIndex(
+          (sceneCandidate) => sceneCandidate.dialogue.length > 0
+        );
+
+        if (firstPlayableSceneIndex < 0) {
+          return;
+        }
+
+        startTransition(() => {
+          commitJumpToScene(targetBundle, firstPlayableSceneIndex);
+        });
+      } catch (caughtError) {
+        setError(
+          caughtError instanceof Error
+            ? caughtError.message
+            : "Unable to jump to the requested chapter."
+        );
+      } finally {
+        setIsLoadingChapter(false);
+      }
+    },
+    [bundle, commitJumpToScene, isLoadingChapter, loadBundle, manifest]
+  );
 
   const handleAdvance = useCallback(async () => {
     if (boundaryState) {
@@ -1185,6 +1314,89 @@ export function PlayerStoryReader({
 
   return (
     <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-black">
+      {showDesktopSceneNavigation ? (
+        <aside
+          className="absolute left-0 top-0 z-30 hidden h-full items-start px-3 py-3 lg:flex"
+          style={{
+            width: desktopSceneNavPanelWidth
+          }}
+        >
+          <div className="pointer-events-auto flex h-full w-full flex-col rounded-2xl border border-white/10 bg-black/35 p-3 text-slate-100 backdrop-blur">
+            <div className="border-b border-white/10 pb-2">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                Temporary Nav
+              </p>
+              <p className="mt-1 text-sm font-medium text-slate-100">
+                Chapter / Scene
+              </p>
+            </div>
+
+            <div className="mt-3 space-y-2 overflow-y-auto">
+              {manifest?.chapters.map((chapterItem, chapterIndex) => {
+                const isChapterActive = chapterItem.id === bundle?.chapter.id;
+                return (
+                  <button
+                    key={chapterItem.id}
+                    onClick={() => void handleJumpToChapter(chapterItem.id)}
+                    type="button"
+                    disabled={isLoadingChapter}
+                    className={`block w-full rounded-xl px-3 py-2 text-left text-sm transition ${
+                      isChapterActive
+                        ? "bg-white/20 text-white"
+                        : "bg-white/5 text-slate-300 hover:bg-white/10 hover:text-slate-100"
+                    } disabled:cursor-default disabled:opacity-45`}
+                  >
+                    <span className="mr-2 text-[11px] uppercase tracking-[0.14em] text-slate-400">
+                      Ch {chapterIndex + 1}
+                    </span>
+                    {chapterItem.title}
+                  </button>
+                );
+              })}
+            </div>
+
+            <div className="mt-3 border-t border-white/10 pt-3">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">
+                {activeChapterIndex >= 0
+                  ? `Scenes in Chapter ${activeChapterIndex + 1}`
+                  : "Scenes"}
+              </p>
+              <div className="mt-2 space-y-2 overflow-y-auto">
+                {bundle?.chapter.scenes.map((sceneItem, sceneIndex) => {
+                  const isSceneActive =
+                    sceneIndex === readerState?.sceneIndex &&
+                    activeChapterIndex >= 0;
+                  const isScenePlayable = sceneItem.dialogue.length > 0;
+                  return (
+                    <button
+                      key={sceneItem.id}
+                      onClick={() =>
+                        void handleJumpToScene({
+                          chapterId: bundle.chapter.id,
+                          sceneIndex
+                        })
+                      }
+                      type="button"
+                      disabled={isLoadingChapter || !isScenePlayable}
+                      className={`block w-full rounded-xl px-3 py-2 text-left text-sm transition ${
+                        isSceneActive
+                          ? "bg-white/20 text-white"
+                          : "bg-white/5 text-slate-300 hover:bg-white/10 hover:text-slate-100"
+                      } disabled:cursor-default disabled:opacity-45`}
+                    >
+                      <span className="mr-2 text-[11px] uppercase tracking-[0.14em] text-slate-400">
+                        S {sceneIndex + 1}
+                      </span>
+                      {sceneItem.title}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </aside>
+      ) : null}
+
       <div
         className="relative h-[100dvh] w-screen shrink-0 overflow-hidden bg-slate-950"
         style={stageSizeStyle}
@@ -1491,13 +1703,9 @@ export function PlayerStoryReader({
             role="dialog"
             aria-modal="true"
             aria-label="World map"
-            initial={
-              prefersReducedMotion ? { opacity: 0 } : { opacity: 0 }
-            }
+            initial={prefersReducedMotion ? { opacity: 0 } : { opacity: 0 }}
             animate={{ opacity: 1 }}
-            exit={
-              prefersReducedMotion ? { opacity: 0 } : { opacity: 0 }
-            }
+            exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0 }}
             transition={{
               duration: mapOverlayMotionDurationMs / 1000,
               ease: MOTION_EASE_OUT
@@ -1506,9 +1714,15 @@ export function PlayerStoryReader({
           >
             <div className="absolute inset-0 flex items-center justify-center p-3 md:p-6">
               <motion.div
-                initial={prefersReducedMotion ? false : { opacity: 0, scale: 0.98 }}
+                initial={
+                  prefersReducedMotion ? false : { opacity: 0, scale: 0.98 }
+                }
                 animate={{ opacity: 1, scale: 1 }}
-                exit={prefersReducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.98 }}
+                exit={
+                  prefersReducedMotion
+                    ? { opacity: 0 }
+                    : { opacity: 0, scale: 0.98 }
+                }
                 transition={{
                   duration: mapOverlayMotionDurationMs / 1000,
                   ease: MOTION_EASE_OUT

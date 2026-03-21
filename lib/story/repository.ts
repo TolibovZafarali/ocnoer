@@ -1584,17 +1584,23 @@ export async function updateBackgroundImageAsset(input: {
   asset.slug = normalizedSlug;
   asset.altText = input.altText;
   asset.updatedAt = nowIsoString();
+  let previousFilePathToDelete: string | null = null;
 
   if (input.file && input.file.size > 0) {
     assertImageFile(input.file, "Background image");
+    previousFilePathToDelete = asset.filePath;
     asset.filePath = await uploadFileToStorage({
       file: input.file,
-      objectPath: `media/background-images/${asset.id}`,
+      objectPath: `media/background-images/${asset.id}/${createEntityId("file")}`,
       cacheControl: "31536000"
     });
   }
 
   await commitSnapshot(snapshot);
+
+  if (previousFilePathToDelete && previousFilePathToDelete !== asset.filePath) {
+    await removeStorageObjects([previousFilePathToDelete]);
+  }
 
   return asset;
 }

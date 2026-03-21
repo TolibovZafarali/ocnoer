@@ -213,6 +213,7 @@ const {
   getSceneDraft,
   reorderDialogueEntry,
   saveSceneDraft,
+  updateBackgroundImageAsset,
   updateCharacterEmotion,
   updateDialogueEntry,
   upsertSceneDraft
@@ -426,6 +427,15 @@ function getPersistedCharacters() {
         id: string;
         imagePath: string;
       }>;
+    }>;
+  };
+}
+
+function getPersistedAssets() {
+  return JSON.parse(storageData.get("authoring/assets.json") ?? "null") as {
+    backgroundImages: Array<{
+      id: string;
+      filePath: string;
     }>;
   };
 }
@@ -918,6 +928,31 @@ describe("non-dialogue commits", () => {
         ?.emotions.find((emotion) => emotion.id === "emotion_1")?.imagePath
     ).toBe(`runtime/${uploadedEmotionPath}`);
     expect(removeMock).toHaveBeenCalledWith(["characters/ocnoer-neutral.png"]);
+    expect(compileRuntimeStoryMock).toHaveBeenCalled();
+  });
+
+  it("stores replacement background images on a new path to avoid stale cache", async () => {
+    await updateBackgroundImageAsset({
+      assetId: "bg_1",
+      label: "Hallway",
+      slug: "hallway",
+      altText: "Castle hallway",
+      file: new File(["new-background"], "hallway-v2.png", {
+        type: "image/png"
+      })
+    });
+
+    const uploadedBackgroundPath = getUploadPaths().find((path) =>
+      path.startsWith("media/background-images/bg_1/")
+    );
+
+    expect(uploadedBackgroundPath).toBeDefined();
+    expect(uploadedBackgroundPath).not.toBe("media/background-images/bg_1");
+    expect(
+      getPersistedAssets().backgroundImages.find((asset) => asset.id === "bg_1")
+        ?.filePath
+    ).toBe(`runtime/${uploadedBackgroundPath}`);
+    expect(removeMock).toHaveBeenCalledWith(["backgrounds/hallway.png"]);
     expect(compileRuntimeStoryMock).toHaveBeenCalled();
   });
 });

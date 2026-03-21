@@ -1264,7 +1264,7 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
               <p>No unpublished draft changes.</p>
             )}
             <p>
-              Saving the scene updates JSON and runtime once for this scene's
+              Saving the scene updates JSON and runtime once for this scene&apos;s
               chapter.
             </p>
           </div>

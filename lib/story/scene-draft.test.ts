@@ -57,6 +57,7 @@ describe("scene draft helpers", () => {
           speakerType: "narrator",
           characterId: null,
           emotionKey: null,
+          dressOptionKeys: [],
           text: "Narration"
         },
         {
@@ -64,6 +65,7 @@ describe("scene draft helpers", () => {
           speakerType: "character",
           characterId: "character_1",
           emotionKey: "neutral",
+          dressOptionKeys: [],
           text: "Character line"
         }
       ]
@@ -86,6 +88,7 @@ describe("scene draft helpers", () => {
             speakerType: "narrator",
             characterId: null,
             emotionKey: null,
+            dressOptionKeys: [],
             text: ""
           }
         ]
@@ -104,6 +107,7 @@ describe("scene draft helpers", () => {
           speakerType: "narrator",
           characterId: null,
           emotionKey: null,
+          dressOptionKeys: [],
           text: ""
         }
       ]

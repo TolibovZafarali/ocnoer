@@ -5,7 +5,11 @@ export const MEDIA_ASSET_TYPES = [
   "background_music"
 ] as const;
 
-export const DIALOGUE_SPEAKER_TYPES = ["narrator", "character"] as const;
+export const DIALOGUE_SPEAKER_TYPES = [
+  "narrator",
+  "character",
+  "dress_prompt"
+] as const;
 
 export type MediaAssetType = (typeof MEDIA_ASSET_TYPES)[number];
 export type DialogueSpeakerType = (typeof DIALOGUE_SPEAKER_TYPES)[number];
@@ -19,6 +23,23 @@ export type CharacterEmotion = {
   updatedAt: string;
 };
 
+export type CharacterDressEmotionOverride = {
+  id: string;
+  emotionKey: string;
+  imagePath: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type CharacterDress = {
+  id: string;
+  key: string;
+  label: string;
+  emotionOverrides: CharacterDressEmotionOverride[];
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type CharacterDefinition = {
   id: string;
   name: string;
@@ -26,6 +47,7 @@ export type CharacterDefinition = {
   bio: string | null;
   defaultEmotionKey: string;
   emotions: CharacterEmotion[];
+  dresses: CharacterDress[];
   createdAt: string;
   updatedAt: string;
 };
@@ -61,15 +83,23 @@ export type DialogueSpeaker =
       type: "character";
       characterId: string;
       emotionKey: string;
+    }
+  | {
+      type: "dress_prompt";
+      characterId: string;
+      dressOptionKeys: string[];
     };
 
-export type DialogueEntry = {
+export type DialogueEntryBase = {
   id: string;
   orderIndex: number;
   text: string;
-  speaker: DialogueSpeaker;
   createdAt: string;
   updatedAt: string;
+};
+
+export type DialogueEntry = DialogueEntryBase & {
+  speaker: DialogueSpeaker;
 };
 
 export type SceneDefinition = {
@@ -106,6 +136,7 @@ export type SceneDraftDialogueEntry = {
   speakerType: DialogueSpeakerType;
   characterId: string | null;
   emotionKey: string | null;
+  dressOptionKeys?: string[];
   text: string;
 };
 
@@ -145,6 +176,17 @@ export type RuntimeCharacterEmotion = {
   imagePath: string;
 };
 
+export type RuntimeCharacterDressEmotionOverride = {
+  emotionKey: string;
+  imagePath: string;
+};
+
+export type RuntimeCharacterDress = {
+  key: string;
+  label: string;
+  emotionOverrides: RuntimeCharacterDressEmotionOverride[];
+};
+
 export type RuntimeCharacter = {
   id: string;
   name: string;
@@ -153,6 +195,7 @@ export type RuntimeCharacter = {
   defaultEmotionKey: string;
   defaultEmotionImagePath: string;
   emotions: RuntimeCharacterEmotion[];
+  dresses: RuntimeCharacterDress[];
 };
 
 export type RuntimeBackgroundImage = {
@@ -179,37 +222,43 @@ export type RuntimeStageCharacter = {
   imagePath: string;
 };
 
-export type RuntimeDialogueEntry =
+export type RuntimeDressPromptOption = {
+  key: string;
+  label: string;
+  previewImagePath: string | null;
+};
+
+export type RuntimeDialogueSpeaker =
   | {
-      id: string;
-      orderIndex: number;
-      text: string;
-      speaker: {
-        type: "narrator";
-      };
-      stage: {
-        left: RuntimeStageCharacter | null;
-        right: RuntimeStageCharacter | null;
-      };
+      type: "narrator";
     }
   | {
-      id: string;
-      orderIndex: number;
-      text: string;
-      speaker: {
-        type: "character";
-        characterId: string;
-        characterName: string;
-        characterSlug: string;
-        emotionKey: string;
-        emotionLabel: string;
-        emotionImagePath: string;
-      };
-      stage: {
-        left: RuntimeStageCharacter | null;
-        right: RuntimeStageCharacter | null;
-      };
+      type: "character";
+      characterId: string;
+      characterName: string;
+      characterSlug: string;
+      emotionKey: string;
+      emotionLabel: string;
+      emotionImagePath: string;
+    }
+  | {
+      type: "dress_prompt";
+      characterId: string;
+      characterName: string;
+      characterSlug: string;
+      dressOptions: RuntimeDressPromptOption[];
     };
+
+export type RuntimeDialogueEntry = {
+  id: string;
+  orderIndex: number;
+  text: string;
+  speaker: RuntimeDialogueSpeaker;
+  stage: {
+    left: RuntimeStageCharacter | null;
+    right: RuntimeStageCharacter | null;
+  };
+};
 
 export type RuntimeScene = {
   id: string;

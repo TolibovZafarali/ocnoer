@@ -11,8 +11,11 @@ import {
 import type {
   RuntimeChapterBundle,
   RuntimeDialogueEntry,
-  RuntimeManifest
+  RuntimeManifest,
+  RuntimeScene,
+  RuntimeStageCharacter
 } from "@/lib/story/types";
+import { getSelectedDressKey, resolveDressImagePath } from "@/lib/story/wardrobe";
 import { getSupabaseEnv, getSupabaseServerEnv } from "@/lib/supabase/env";
 
 export type PlayerRuntimeAssetUrls = {
@@ -72,7 +75,40 @@ function createEmptyPlayerRuntimeAssetUrls(): PlayerRuntimeAssetUrls {
   };
 }
 
-function getVisiblePlayerStageImagePaths(entry: RuntimeDialogueEntry) {
+function resolveStageCharacterImagePath(input: {
+  scene: RuntimeScene;
+  stageCharacter: RuntimeStageCharacter | null;
+  branchFlags: PlayerProgress["branchFlags"];
+}) {
+  if (!input.stageCharacter) {
+    return null;
+  }
+
+  const character =
+    input.scene.characterPool.find(
+      (candidate) => candidate.id === input.stageCharacter?.characterId
+    ) ?? null;
+
+  if (!character) {
+    return input.stageCharacter.imagePath;
+  }
+
+  return (
+    resolveDressImagePath({
+      character,
+      emotionKey: input.stageCharacter.emotionKey,
+      dressKey: getSelectedDressKey(input.branchFlags, character.id)
+    }) ?? input.stageCharacter.imagePath
+  );
+}
+
+function getVisiblePlayerStageImagePaths(input: {
+  scene: RuntimeScene;
+  entry: RuntimeDialogueEntry;
+  branchFlags: PlayerProgress["branchFlags"];
+}) {
+  const { entry } = input;
+
   if (entry.speaker.type !== "character") {
     return {
       leftImagePath: null,
@@ -83,11 +119,19 @@ function getVisiblePlayerStageImagePaths(entry: RuntimeDialogueEntry) {
   return {
     leftImagePath:
       entry.stage.left?.characterId === entry.speaker.characterId
-        ? entry.stage.left.imagePath
+        ? resolveStageCharacterImagePath({
+            scene: input.scene,
+            stageCharacter: entry.stage.left,
+            branchFlags: input.branchFlags
+          })
         : null,
     rightImagePath:
       entry.stage.right?.characterId === entry.speaker.characterId
-        ? entry.stage.right.imagePath
+        ? resolveStageCharacterImagePath({
+            scene: input.scene,
+            stageCharacter: entry.stage.right,
+            branchFlags: input.branchFlags
+          })
         : null
   };
 }
@@ -190,6 +234,7 @@ export function getPlayerRuntimeAssetUrls(input: {
   supabaseUrl: string;
   bundle: RuntimeChapterBundle | null;
   readerState: ReaderState | null;
+  branchFlags?: PlayerProgress["branchFlags"];
 }): PlayerRuntimeAssetUrls {
   if (!input.bundle || !input.readerState) {
     return createEmptyPlayerRuntimeAssetUrls();
@@ -202,7 +247,11 @@ export function getPlayerRuntimeAssetUrls(input: {
     return createEmptyPlayerRuntimeAssetUrls();
   }
 
-  const visibleStageImagePaths = getVisiblePlayerStageImagePaths(entry);
+  const visibleStageImagePaths = getVisiblePlayerStageImagePaths({
+    scene,
+    entry,
+    branchFlags: input.branchFlags ?? {}
+  });
 
   return {
     backgroundImageUrl: toPublicStorageUrl(

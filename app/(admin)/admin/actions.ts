@@ -7,6 +7,7 @@ import { requireAdminSession } from "@/lib/auth/admin";
 import {
   StoryRepositoryError,
   addCharacterEmotion,
+  createCharacterDress,
   createBackgroundImageAsset,
   createBackgroundMusicTrack,
   createChapter,
@@ -18,6 +19,8 @@ import {
   deleteBackgroundMusicTrack,
   deleteChapter,
   deleteCharacter,
+  deleteCharacterDress,
+  deleteCharacterDressEmotionOverride,
   deleteCharacterEmotion,
   deleteDialogueEntry,
   deleteScene,
@@ -25,11 +28,13 @@ import {
   saveSceneDraft,
   reorderDialogueEntry,
   setDefaultCharacterEmotion,
+  upsertCharacterDressEmotionOverride,
   upsertSceneDraft,
   updateBackgroundImageAsset,
   updateBackgroundMusicTrack,
   updateChapter,
   updateCharacter,
+  updateCharacterDress,
   updateCharacterEmotion,
   updateDialogueEntry,
   updateScene
@@ -122,6 +127,16 @@ function getRequiredFile(formData: FormData, key: string, label: string) {
 function getCharacterIds(formData: FormData) {
   return formData
     .getAll("characterIds")
+    .filter(
+      (value): value is string =>
+        typeof value === "string" && value.trim().length > 0
+    )
+    .map((value) => value.trim());
+}
+
+function getDressOptionKeys(formData: FormData) {
+  return formData
+    .getAll("dressOptionKeys")
     .filter(
       (value): value is string =>
         typeof value === "string" && value.trim().length > 0
@@ -670,6 +685,146 @@ export async function deleteCharacterEmotionAction(formData: FormData) {
   });
 }
 
+export async function createCharacterDressAction(formData: FormData) {
+  await runAdminAction({
+    formData,
+    fallbackPath: "/admin/characters",
+    successMessage: "Dress added.",
+    action: async () => {
+      const characterId = getRequiredString(
+        formData,
+        "characterId",
+        "Character id"
+      );
+
+      await createCharacterDress({
+        characterId,
+        dressKey: getRequiredString(formData, "dressKey", "Dress key"),
+        dressLabel: getRequiredString(formData, "dressLabel", "Dress label")
+      });
+
+      return withStatus(
+        `/admin/characters/${characterId}`,
+        "success",
+        "Dress added."
+      );
+    }
+  });
+}
+
+export async function updateCharacterDressAction(formData: FormData) {
+  await runAdminAction({
+    formData,
+    fallbackPath: "/admin/characters",
+    successMessage: "Dress updated.",
+    action: async () => {
+      const characterId = getRequiredString(
+        formData,
+        "characterId",
+        "Character id"
+      );
+
+      await updateCharacterDress({
+        characterId,
+        dressId: getRequiredString(formData, "dressId", "Dress id"),
+        dressKey: getRequiredString(formData, "dressKey", "Dress key"),
+        dressLabel: getRequiredString(formData, "dressLabel", "Dress label")
+      });
+
+      return withStatus(
+        `/admin/characters/${characterId}`,
+        "success",
+        "Dress updated."
+      );
+    }
+  });
+}
+
+export async function deleteCharacterDressAction(formData: FormData) {
+  await runAdminAction({
+    formData,
+    fallbackPath: "/admin/characters",
+    successMessage: "Dress deleted.",
+    action: async () => {
+      const characterId = getRequiredString(
+        formData,
+        "characterId",
+        "Character id"
+      );
+
+      await deleteCharacterDress({
+        characterId,
+        dressId: getRequiredString(formData, "dressId", "Dress id")
+      });
+
+      return withStatus(
+        `/admin/characters/${characterId}`,
+        "success",
+        "Dress deleted."
+      );
+    }
+  });
+}
+
+export async function upsertCharacterDressEmotionOverrideAction(
+  formData: FormData
+) {
+  await runAdminAction({
+    formData,
+    fallbackPath: "/admin/characters",
+    successMessage: "Dress image updated.",
+    action: async () => {
+      const characterId = getRequiredString(
+        formData,
+        "characterId",
+        "Character id"
+      );
+
+      await upsertCharacterDressEmotionOverride({
+        characterId,
+        dressId: getRequiredString(formData, "dressId", "Dress id"),
+        emotionKey: getRequiredString(formData, "emotionKey", "Emotion key"),
+        imageFile: getRequiredFile(formData, "imageFile", "Dress image")
+      });
+
+      return withStatus(
+        `/admin/characters/${characterId}`,
+        "success",
+        "Dress image updated."
+      );
+    }
+  });
+}
+
+export async function deleteCharacterDressEmotionOverrideAction(
+  formData: FormData
+) {
+  await runAdminAction({
+    formData,
+    fallbackPath: "/admin/characters",
+    successMessage: "Dress image removed.",
+    action: async () => {
+      const characterId = getRequiredString(
+        formData,
+        "characterId",
+        "Character id"
+      );
+
+      await deleteCharacterDressEmotionOverride({
+        characterId,
+        dressId: getRequiredString(formData, "dressId", "Dress id"),
+        emotionKey: getRequiredString(formData, "emotionKey", "Emotion key")
+      });
+
+      return withStatus(
+        `/admin/characters/${characterId}`,
+        "success",
+        "Dress image removed."
+      );
+    }
+  });
+}
+
 export async function createBackgroundImageAssetAction(formData: FormData) {
   await runAdminAction({
     formData,
@@ -942,9 +1097,13 @@ export async function createDialogueEntryAction(formData: FormData) {
           getRequiredString(formData, "speakerType", "Speaker type") ===
           "character"
             ? "character"
-            : "narrator",
+            : getRequiredString(formData, "speakerType", "Speaker type") ===
+                "dress_prompt"
+              ? "dress_prompt"
+              : "narrator",
         characterId: getOptionalString(formData, "characterId"),
         emotionKey: getOptionalString(formData, "emotionKey"),
+        dressOptionKeys: getDressOptionKeys(formData),
         text: getRequiredString(formData, "text", "Dialogue text")
       });
 
@@ -988,9 +1147,13 @@ export async function updateDialogueEntryAction(formData: FormData) {
           getRequiredString(formData, "speakerType", "Speaker type") ===
           "character"
             ? "character"
-            : "narrator",
+            : getRequiredString(formData, "speakerType", "Speaker type") ===
+                "dress_prompt"
+              ? "dress_prompt"
+              : "narrator",
         characterId: getOptionalString(formData, "characterId"),
         emotionKey: getOptionalString(formData, "emotionKey"),
+        dressOptionKeys: getDressOptionKeys(formData),
         text: getRequiredString(formData, "text", "Dialogue text")
       });
 

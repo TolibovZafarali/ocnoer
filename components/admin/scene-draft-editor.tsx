@@ -42,14 +42,24 @@ import {
 } from "@/components/admin/forms";
 import { Button } from "@/components/ui/button";
 import { SCENE_DRAFT_TEMP_ID_PREFIX } from "@/lib/story/scene-draft";
+import { isPrimaryLeftStageCharacterSlug } from "@/lib/story/staging";
 import { toPublicStorageUrl } from "@/lib/story/runtime";
+import {
+  BASE_DRESS_OPTION_KEY,
+  BASE_DRESS_OPTION_LABEL
+} from "@/lib/story/wardrobe";
 import type { SceneDraftPayload } from "@/lib/story/types";
 import { cn } from "@/lib/utils";
 
 type CharacterOption = {
   id: string;
   name: string;
+  slug: string;
   emotions: Array<{
+    key: string;
+    label: string;
+  }>;
+  dresses: Array<{
     key: string;
     label: string;
   }>;
@@ -87,9 +97,10 @@ type SaveDraftActionResult =
     };
 
 type DialogueFormValues = {
-  speakerType: "narrator" | "character";
+  speakerType: "narrator" | "character" | "dress_prompt";
   characterId: string | null;
   emotionKey: string | null;
+  dressOptionKeys: string[];
   text: string;
   orderIndex?: number;
 };
@@ -184,6 +195,31 @@ function getDialogueIssue(
     return "Speaker no longer exists.";
   }
 
+  if (entry.speakerType === "dress_prompt") {
+    if (!isPrimaryLeftStageCharacterSlug(character.slug)) {
+      return "Dress prompts currently support only Ocnoer.";
+    }
+
+    if ((entry.dressOptionKeys ?? []).length === 0) {
+      return "Select at least one dress option for this row.";
+    }
+
+    const availableDressKeys = new Set([
+      BASE_DRESS_OPTION_KEY,
+      ...character.dresses.map((dress) => dress.key)
+    ]);
+
+    if (
+      (entry.dressOptionKeys ?? []).some(
+        (dressKey) => !availableDressKeys.has(dressKey)
+      )
+    ) {
+      return "Selected dress option no longer exists.";
+    }
+
+    return null;
+  }
+
   if (!entry.emotionKey) {
     return "Select an emotion for this row.";
   }
@@ -218,14 +254,17 @@ function DialogueDraftForm(props: {
       ),
     [props.allCharacters, props.sceneCharacterIds]
   );
-  const [speakerType, setSpeakerType] = useState<"narrator" | "character">(
-    props.initial?.speakerType ?? "narrator"
-  );
+  const [speakerType, setSpeakerType] = useState<
+    "narrator" | "character" | "dress_prompt"
+  >(props.initial?.speakerType ?? "narrator");
   const [characterId, setCharacterId] = useState<string | null>(
     initialCharacterId
   );
   const [emotionKey, setEmotionKey] = useState<string | null>(
     props.initial?.emotionKey ?? null
+  );
+  const [dressOptionKeys, setDressOptionKeys] = useState<string[]>(
+    props.initial?.dressOptionKeys ?? []
   );
   const [text, setText] = useState(props.initial?.text ?? "");
   const [orderIndex, setOrderIndex] = useState(
@@ -242,7 +281,9 @@ function DialogueDraftForm(props: {
         currentCharacter ?? {
           id: characterId,
           name: `${characterId} (missing)`,
-          emotions: []
+          slug: "",
+          emotions: [],
+          dresses: []
         }
       );
     }
@@ -253,6 +294,13 @@ function DialogueDraftForm(props: {
   const selectedCharacter = useMemo(
     () => availableCharacters.find((item) => item.id === characterId) ?? null,
     [availableCharacters, characterId]
+  );
+  const dressPromptCharacter = useMemo(
+    () =>
+      availableCharacters.find((character) =>
+        isPrimaryLeftStageCharacterSlug(character.slug)
+      ) ?? null,
+    [availableCharacters]
   );
   const availableEmotions = useMemo(() => {
     const emotions = [...(selectedCharacter?.emotions ?? [])];
@@ -270,17 +318,57 @@ function DialogueDraftForm(props: {
 
     return emotions;
   }, [emotionKey, isEditMode, selectedCharacter]);
+  const availableDressOptions = useMemo(() => {
+    const character =
+      speakerType === "dress_prompt" ? dressPromptCharacter : selectedCharacter;
+
+    if (!character) {
+      return [];
+    }
+
+    return [
+      {
+        key: BASE_DRESS_OPTION_KEY,
+        label: BASE_DRESS_OPTION_LABEL
+      },
+      ...character.dresses.map((dress) => ({
+        key: dress.key,
+        label: dress.label
+      }))
+    ];
+  }, [dressPromptCharacter, selectedCharacter, speakerType]);
 
   useEffect(() => {
     setSpeakerType(props.initial?.speakerType ?? "narrator");
     setCharacterId(props.initial?.characterId ?? null);
     setEmotionKey(props.initial?.emotionKey ?? null);
+    setDressOptionKeys(props.initial?.dressOptionKeys ?? []);
     setText(props.initial?.text ?? "");
     setOrderIndex(String(props.initial?.orderIndex ?? 1));
   }, [props.initial, props.resetVersion]);
 
   useEffect(() => {
-    if (speakerType !== "character") {
+    if (speakerType === "narrator") {
+      return;
+    }
+
+    if (speakerType === "dress_prompt") {
+      if (!dressPromptCharacter) {
+        setCharacterId(null);
+        setDressOptionKeys([]);
+        return;
+      }
+
+      if (characterId !== dressPromptCharacter.id) {
+        setCharacterId(dressPromptCharacter.id);
+      }
+
+      setEmotionKey(null);
+      setDressOptionKeys((currentValue) =>
+        currentValue.filter((dressKey) =>
+          availableDressOptions.some((option) => option.key === dressKey)
+        )
+      );
       return;
     }
 
@@ -305,15 +393,28 @@ function DialogueDraftForm(props: {
     }
 
     setEmotionKey(availableEmotions[0]?.key ?? null);
-  }, [availableCharacters, availableEmotions, characterId, emotionKey, speakerType]);
+  }, [
+    availableCharacters,
+    availableDressOptions,
+    availableEmotions,
+    characterId,
+    dressPromptCharacter,
+    emotionKey,
+    speakerType
+  ]);
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     props.onSubmit({
       speakerType,
-      characterId: speakerType === "character" ? characterId : null,
+      characterId:
+        speakerType === "character" || speakerType === "dress_prompt"
+          ? characterId
+          : null,
       emotionKey: speakerType === "character" ? emotionKey : null,
+      dressOptionKeys:
+        speakerType === "dress_prompt" ? dressOptionKeys : [],
       text,
       orderIndex: isEditMode ? Number.parseInt(orderIndex, 10) || 1 : undefined
     });
@@ -336,12 +437,20 @@ function DialogueDraftForm(props: {
             id={`dialogue-speaker-${props.resetVersion ?? "0"}`}
             value={speakerType}
             onChange={(event) =>
-              setSpeakerType(event.target.value as "narrator" | "character")
+              setSpeakerType(
+                event.target.value as
+                  | "narrator"
+                  | "character"
+                  | "dress_prompt"
+              )
             }
           >
             <option value="narrator">Narrator</option>
             {availableCharacters.length > 0 || speakerType === "character" ? (
               <option value="character">Character</option>
+            ) : null}
+            {dressPromptCharacter ? (
+              <option value="dress_prompt">Dress Prompt</option>
             ) : null}
           </SelectInput>
         </Field>
@@ -376,6 +485,52 @@ function DialogueDraftForm(props: {
               </option>
             ))}
           </SelectInput>
+        </Field>
+      ) : null}
+
+      {speakerType === "dress_prompt" ? (
+        <Field
+          label="Dress Options"
+          htmlFor={`dialogue-dresses-${props.resetVersion ?? "0"}`}
+          hint="Select one or more choices the player can pick."
+        >
+          <div
+            id={`dialogue-dresses-${props.resetVersion ?? "0"}`}
+            className="space-y-2 rounded-xl border border-slate-200 bg-white p-3"
+          >
+            {availableDressOptions.length === 0 ? (
+              <p className="text-sm text-slate-500">
+                Ocnoer must be present in the scene cast to add a dress prompt.
+              </p>
+            ) : (
+              availableDressOptions.map((dressOption) => {
+                const checked = dressOptionKeys.includes(dressOption.key);
+
+                return (
+                  <label
+                    key={dressOption.key}
+                    className="flex items-center gap-3 text-sm text-slate-700"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={(event) =>
+                        setDressOptionKeys((currentValue) =>
+                          event.target.checked
+                            ? [...currentValue, dressOption.key]
+                            : currentValue.filter(
+                                (value) => value !== dressOption.key
+                              )
+                        )
+                      }
+                      className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                    />
+                    <span>{dressOption.label}</span>
+                  </label>
+                );
+              })
+            )}
+          </div>
         </Field>
       ) : null}
 
@@ -443,10 +598,29 @@ function SortableDialogueDraftCard(props: {
     allCharactersById
   );
   const characterName =
-    props.item.speakerType === "character" && props.item.characterId
+    props.item.speakerType === "dress_prompt"
+      ? "Dress Prompt"
+      : props.item.speakerType === "character" && props.item.characterId
       ? (allCharactersById.get(props.item.characterId)?.name ??
         `${props.item.characterId} (missing)`)
       : "Narrator";
+  const dressOptionLabels =
+    props.item.speakerType === "dress_prompt" && props.item.characterId
+      ? (props.item.dressOptionKeys ?? []).map((dressKey) => {
+          const promptCharacterId = props.item.characterId as string;
+
+          if (dressKey === BASE_DRESS_OPTION_KEY) {
+            return BASE_DRESS_OPTION_LABEL;
+          }
+
+          return (
+            allCharactersById
+              .get(promptCharacterId)
+              ?.dresses.find((dress) => dress.key === dressKey)
+              ?.label ?? `${dressKey} (missing)`
+          );
+        })
+      : [];
   const emotionLabel =
     props.item.speakerType === "character" &&
     props.item.characterId &&
@@ -529,6 +703,9 @@ function SortableDialogueDraftCard(props: {
             <Pill>Order {props.orderIndex}</Pill>
             <Pill>{characterName}</Pill>
             {emotionLabel ? <Pill>{emotionLabel}</Pill> : null}
+            {dressOptionLabels.map((label) => (
+              <Pill key={label}>{label}</Pill>
+            ))}
             {issue ? <Pill tone="warning">Needs review</Pill> : null}
           </>
         }
@@ -697,8 +874,16 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
         {
           id: createTempDialogueId(),
           speakerType: values.speakerType,
-          characterId: values.speakerType === "character" ? values.characterId : null,
+          characterId:
+            values.speakerType === "character" ||
+            values.speakerType === "dress_prompt"
+              ? values.characterId
+              : null,
           emotionKey: values.speakerType === "character" ? values.emotionKey : null,
+          dressOptionKeys:
+            values.speakerType === "dress_prompt"
+              ? values.dressOptionKeys
+              : [],
           text: values.text
         }
       ]
@@ -715,9 +900,16 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
               ...entry,
               speakerType: values.speakerType,
               characterId:
-                values.speakerType === "character" ? values.characterId : null,
+                values.speakerType === "character" ||
+                values.speakerType === "dress_prompt"
+                  ? values.characterId
+                  : null,
               emotionKey:
                 values.speakerType === "character" ? values.emotionKey : null,
+              dressOptionKeys:
+                values.speakerType === "dress_prompt"
+                  ? values.dressOptionKeys
+                  : [],
               text: values.text
             }
           : entry

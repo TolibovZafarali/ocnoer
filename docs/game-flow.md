@@ -45,6 +45,7 @@ For MVP, a dialogue entry can be:
 - narrator text
 - character speech
 - character thought
+- dress prompt
 - player input prompt
 
 ## Scene Rendering Rules
@@ -83,7 +84,14 @@ Important runtime boundary:
 
 Interaction is intentionally limited.
 
-The only interactive writing moment in MVP is when the player speaks with Alvyn Rivers.
+The player can make visual-only wardrobe selections for Ocnoer and can later submit free-text responses to Alvyn Rivers.
+
+During wardrobe moments:
+
+1. the story reaches a dialogue entry configured as a dress prompt
+2. the player chooses one of the authored dress options
+3. the choice is stored in local reader progress under `branchFlags`
+4. later Ocnoer portraits use that dress until another authored dress prompt changes it again
 
 During those moments:
 
@@ -108,6 +116,7 @@ Checkpoint data includes:
 - chapter public id
 - scene public id
 - dialogue entry public id
+- local `branchFlags` for visual-only reader state such as Ocnoer’s active dress
 - last-read timestamp
 
 Resume behavior:
@@ -145,6 +154,12 @@ This preserves stable in-progress sessions even when the admin publishes a newer
 - collects free-text input from the player
 - saves the response for admin review
 
+### Dress Prompt
+
+- appears only in authored Ocnoer wardrobe moments
+- displays one or more dress choices, including the reserved default option
+- updates portrait art only and does not branch the story
+
 ## Scene Composition Expectations
 
 Each scene should be authored as a coherent presentation unit.
@@ -155,6 +170,7 @@ Minimum authoring expectations:
 - assign its dialogue sequence
 - assign background media when needed
 - link any required character portraits
+- link any required Ocnoer dress options when a wardrobe prompt is present
 - identify whether the scene includes a player prompt
 
 ## Example Flow
@@ -166,9 +182,11 @@ A typical progression should look like this:
 3. Narrator text sets the tone.
 4. Ocnoer speaks from the left.
 5. Another character replies from the right.
-6. A later scene includes an Alvyn conversation prompt.
-7. The player enters a response.
-8. The story continues on the same linear path.
+6. A later scene includes an Ocnoer dress prompt.
+7. The player selects a dress and the next scenes use that portrait art.
+8. A later scene includes an Alvyn conversation prompt.
+9. The player enters a response.
+10. The story continues on the same linear path.
 
 ## Out Of Scope For MVP
 

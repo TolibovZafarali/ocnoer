@@ -5,6 +5,7 @@
 All uploaded media is stored in `SUPABASE_RUNTIME_BUCKET`:
 
 - character emotions: `media/characters/<characterId>/<emotionId>`
+- character dress overrides: `media/characters/<characterId>/dresses/<dressId>/<assetId>`
 - background images: `media/background-images/<assetId>`
 - music tracks: `media/background-music/<assetId>`
 
@@ -29,7 +30,7 @@ Runtime output is regenerated after every admin mutation:
 - `runtime/assets.json`
 - `runtime/chapters/<chapterId>.json`
 
-Each chapter bundle contains ordered scenes, dialogue, selected emotion image paths, scene media, scene cast pool, and compiled left/right stage data for the player.
+Each chapter bundle contains ordered scenes, dialogue, dress prompts, selected emotion image paths, scene media, scene cast pool, dress metadata, and compiled left/right stage data for the player.
 
 ## Authoring Workflow
 
@@ -41,6 +42,9 @@ Each chapter bundle contains ordered scenes, dialogue, selected emotion image pa
 - Rename emotion keys and labels
 - Choose default emotion
 - Prevent deleting the last remaining emotion
+- Create dress variants for Ocnoer
+- Upload per-emotion dress overrides only where the dress art differs from the base character
+- Prevent deleting a dress while a dress prompt still references it
 
 ### Assets
 
@@ -64,6 +68,8 @@ Each chapter bundle contains ordered scenes, dialogue, selected emotion image pa
 
 - Narrator or selected scene character
 - Character rows must choose one of that character’s emotions
+- Dress prompt rows are available only when Ocnoer is part of the scene cast
+- Dress prompt rows choose one or more dress options, including the reserved `__base__` option for reverting to the default dress
 - Dialogue entries get stable ids for progress persistence
 
 ## Runtime Loading
@@ -75,10 +81,11 @@ Each chapter bundle contains ordered scenes, dialogue, selected emotion image pa
 
 The player does not call a dynamic chapter/scene/dialogue API.
 
+Local reader progress also stores visual-only `branchFlags`, including the active Ocnoer dress selection under `dress:<characterId>`.
+
 ## Admin Protection
 
 - Password from `ADMIN_PASSWORD`
 - Server validates submitted password
 - Success sets an HttpOnly cookie
 - `/admin` pages and server actions require that cookie
-

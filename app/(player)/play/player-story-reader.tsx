@@ -60,6 +60,10 @@ import {
   loadPlayerRuntimeSession,
   toPublicStorageUrl
 } from "@/lib/story/runtime";
+import {
+  getDressBranchFlagKey,
+  BASE_DRESS_OPTION_KEY
+} from "@/lib/story/wardrobe";
 
 type PlayerStoryReaderProps = {
   manifestPath: string;
@@ -451,9 +455,10 @@ export function PlayerStoryReader({
       getPlayerRuntimeAssetUrls({
         supabaseUrl,
         bundle,
-        readerState
+        readerState,
+        branchFlags
       }),
-    [bundle, readerState, supabaseUrl]
+    [branchFlags, bundle, readerState, supabaseUrl]
   );
   const backgroundImageUrl = activeAssetUrls.backgroundImageUrl;
   const backgroundMusicUrl = useMemo(
@@ -598,6 +603,16 @@ export function PlayerStoryReader({
     () => Array.from(activeEntry?.text ?? ""),
     [activeEntry?.text]
   );
+  const dressPromptOptions = useMemo(() => {
+    if (activeEntry?.speaker.type !== "dress_prompt") {
+      return [];
+    }
+
+    return activeEntry.speaker.dressOptions.map((option) => ({
+      ...option,
+      previewUrl: toPublicStorageUrl(supabaseUrl, option.previewImagePath)
+    }));
+  }, [activeEntry, supabaseUrl]);
   const leftCharacterImageUrl = activeAssetUrls.leftCharacterImageUrl;
   const rightCharacterImageUrl = activeAssetUrls.rightCharacterImageUrl;
   const isSceneTransition = boundaryState?.type === "scene-transition";
@@ -698,7 +713,14 @@ export function PlayerStoryReader({
   ]);
   const canCompleteTyping =
     showDialogueCard && !prefersReducedMotion && presentationPhase === "typing";
-  const showContinueButton = showDialogueCard && presentationPhase === "ready";
+  const showDressPromptOptions =
+    showDialogueCard &&
+    presentationPhase === "ready" &&
+    activeEntry?.speaker.type === "dress_prompt";
+  const showContinueButton =
+    showDialogueCard &&
+    presentationPhase === "ready" &&
+    activeEntry?.speaker.type !== "dress_prompt";
 
   useEffect(() => {
     if (!isSceneTransition || !pendingSceneState) {
@@ -1059,6 +1081,30 @@ export function PlayerStoryReader({
     readerState
   ]);
 
+  const handleDressSelect = useCallback(
+    async (dressKey: string) => {
+      if (
+        isLoadingChapter ||
+        presentationPhase !== "ready" ||
+        !entry ||
+        entry.speaker.type !== "dress_prompt"
+      ) {
+        return;
+      }
+
+      const promptSpeaker = entry.speaker;
+
+      setBranchFlags((currentValue) => ({
+        ...currentValue,
+        [getDressBranchFlagKey(promptSpeaker.characterId)]:
+          dressKey || BASE_DRESS_OPTION_KEY
+      }));
+
+      await handleAdvance();
+    },
+    [entry, handleAdvance, isLoadingChapter, presentationPhase]
+  );
+
   const handleRestart = useCallback(async () => {
     if (!manifest?.firstChapterId) {
       return;
@@ -1334,6 +1380,43 @@ export function PlayerStoryReader({
                   <p className="font-dialogue min-h-[3.5rem] text-base leading-7 text-slate-100 md:text-lg md:leading-8">
                     {dialogueTextNodes}
                   </p>
+
+                  {showDressPromptOptions ? (
+                    <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                      {dressPromptOptions.map((option) => (
+                        <button
+                          key={option.key}
+                          onClick={() => void handleDressSelect(option.key)}
+                          disabled={isLoadingChapter}
+                          type="button"
+                          className="group overflow-hidden rounded-2xl border border-white/10 bg-white/5 text-left transition hover:border-white/25 hover:bg-white/10 disabled:cursor-default disabled:opacity-45"
+                        >
+                          {option.previewUrl ? (
+                            <img
+                              src={option.previewUrl}
+                              alt={option.label}
+                              className="aspect-[4/5] w-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex aspect-[4/5] w-full items-center justify-center bg-black/20 text-sm text-slate-400">
+                              No preview
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between gap-3 px-4 py-3">
+                            <span className="text-sm font-medium text-slate-100">
+                              {option.label}
+                            </span>
+                            <span
+                              aria-hidden
+                              className="material-symbols-outlined text-slate-400 transition group-hover:text-slate-100"
+                            >
+                              arrow_forward
+                            </span>
+                          </div>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
 
                   <div className="mt-6 flex min-h-9 justify-end">
                     <AnimatePresence initial={false}>

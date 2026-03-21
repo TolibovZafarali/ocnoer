@@ -13,6 +13,7 @@ import {
   parseSceneDraftPayload
 } from "@/lib/story/scene-draft";
 import { slugify } from "@/lib/story/slug";
+import { isPrimaryLeftStageCharacterSlug } from "@/lib/story/staging";
 import type {
   AssetsCatalogFile,
   BackgroundImageAsset,
@@ -27,6 +28,7 @@ import type {
   StoryAuthoringSnapshot
 } from "@/lib/story/types";
 import { STORY_SCHEMA_VERSION } from "@/lib/story/types";
+import { BASE_DRESS_OPTION_KEY } from "@/lib/story/wardrobe";
 import { getAdminSupabaseClient } from "@/lib/supabase/admin";
 import { getSupabaseServerEnv } from "@/lib/supabase/env";
 
@@ -36,6 +38,8 @@ const AUTHORING_CHARACTERS_PATH = "authoring/characters.json";
 const AUTHORING_ASSETS_PATH = "authoring/assets.json";
 const AUTHORING_CHAPTERS_PATH = "authoring/chapters.json";
 const RUNTIME_PREFIX = "runtime";
+const STORAGE_FETCH_FAILURE_MESSAGE =
+  "Unable to reach Supabase storage while loading authoring data. Check your Supabase URL, network connection, and Supabase project availability.";
 
 export type StoredSceneDraft = {
   sceneId: string;
@@ -142,6 +146,20 @@ function moveItemWithinOrderedScope<
   return orderedItems;
 }
 
+function normalizeDialogueEntry(entry: DialogueEntry): DialogueEntry {
+  if (entry.speaker.type !== "dress_prompt") {
+    return entry;
+  }
+
+  return {
+    ...entry,
+    speaker: {
+      ...entry.speaker,
+      dressOptionKeys: [...new Set(entry.speaker.dressOptionKeys)]
+    }
+  };
+}
+
 function sortSnapshot(
   snapshot: StoryAuthoringSnapshot
 ): StoryAuthoringSnapshot {
@@ -151,7 +169,15 @@ function sortSnapshot(
         ...character,
         emotions: [...character.emotions].sort((left, right) =>
           left.label.localeCompare(right.label)
-        )
+        ),
+        dresses: [...(character.dresses ?? [])]
+          .map((dress) => ({
+            ...dress,
+            emotionOverrides: [...(dress.emotionOverrides ?? [])].sort(
+              (left, right) => left.emotionKey.localeCompare(right.emotionKey)
+            )
+          }))
+          .sort((left, right) => left.label.localeCompare(right.label))
       }))
       .sort((left, right) => left.name.localeCompare(right.name)),
     backgroundImages: [...snapshot.backgroundImages].sort((left, right) =>
@@ -165,7 +191,7 @@ function sortSnapshot(
       scenes: sortByOrderIndex(chapter.scenes).map((scene) => ({
         ...scene,
         characterIds: [...new Set(scene.characterIds)],
-        dialogue: sortByOrderIndex(scene.dialogue)
+        dialogue: sortByOrderIndex(scene.dialogue).map(normalizeDialogueEntry)
       }))
     }))
   };
@@ -385,19 +411,66 @@ function isStorageMissingError(error: unknown) {
   );
 }
 
-async function readJsonFile<T>(objectPath: string, fallback: T): Promise<T> {
+function isStorageFetchFailureError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const record = error as Record<string, unknown>;
+  const message =
+    typeof record.message === "string" ? record.message : String(error);
+  const code =
+    typeof record.code === "string" ? record.code.toLowerCase() : "";
+
+  return (
+    /fetch failed|network request failed|getaddrinfo|econnreset|enotfound/i.test(
+      message
+    ) ||
+    code === "fetch_error"
+  );
+}
+
+async function downloadStorageJson(objectPath: string) {
   const { runtimeBucket } = getSupabaseServerEnv();
   const supabase = getAdminSupabaseClient();
-  const { data, error } = await supabase.storage
-    .from(runtimeBucket)
-    .download(objectPath);
+  let data: Blob | null = null;
+  let error: Error | null = null;
+
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    const nextResult = await supabase.storage.from(runtimeBucket).download(objectPath);
+    data = nextResult.data;
+    error = nextResult.error;
+
+    if (!nextResult.error || !isStorageFetchFailureError(nextResult.error)) {
+      break;
+    }
+  }
+
+  return {
+    data,
+    error
+  };
+}
+
+async function readJsonFile<T>(objectPath: string, fallback: T): Promise<T> {
+  const { data, error } = await downloadStorageJson(objectPath);
 
   if (error) {
     if (isStorageMissingError(error)) {
       return fallback;
     }
 
+    if (isStorageFetchFailureError(error)) {
+      throw new StoryRepositoryError(STORAGE_FETCH_FAILURE_MESSAGE);
+    }
+
     throw new StoryRepositoryError(error.message);
+  }
+
+  if (!data) {
+    throw new StoryRepositoryError(
+      `Storage download for ${objectPath} returned no data.`
+    );
   }
 
   try {
@@ -858,6 +931,34 @@ function ensureUniqueEmotionKey(
   }
 }
 
+function ensureUniqueDressKey(
+  character: CharacterDefinition,
+  dressKey: string,
+  excludeDressId?: string
+) {
+  const isTaken = character.dresses.some(
+    (dress) => dress.key === dressKey && dress.id !== excludeDressId
+  );
+
+  if (isTaken) {
+    throw new StoryRepositoryError(
+      "Dress key must be unique for the character."
+    );
+  }
+}
+
+function findDressPromptCharacter(
+  snapshot: StoryAuthoringSnapshot,
+  scene: SceneDefinition
+) {
+  return (
+    scene.characterIds
+      .map((characterId) => findCharacterOrThrow(snapshot, characterId))
+      .find((character) => isPrimaryLeftStageCharacterSlug(character.slug)) ??
+    null
+  );
+}
+
 function ensureSceneCharactersExist(
   snapshot: StoryAuthoringSnapshot,
   characterIds: string[]
@@ -867,14 +968,84 @@ function ensureSceneCharactersExist(
   }
 }
 
-function assertSpeakerSelection(input: {
+function assertDialogueSelection(input: {
   snapshot: StoryAuthoringSnapshot;
   scene: SceneDefinition;
-  speakerType: "narrator" | "character";
+  speakerType: "narrator" | "character" | "dress_prompt";
   characterId: string | null;
   emotionKey: string | null;
+  dressOptionKeys?: string[];
 }) {
   if (input.speakerType === "narrator") {
+    return;
+  }
+
+  if (input.speakerType === "dress_prompt") {
+    if (!input.characterId) {
+      throw new StoryRepositoryError("Dress prompt requires a character.");
+    }
+
+    if (!input.scene.characterIds.includes(input.characterId)) {
+      throw new StoryRepositoryError(
+        "Dress prompt character must be selected in the scene character pool."
+      );
+    }
+
+    const character = findCharacterOrThrow(input.snapshot, input.characterId);
+
+    if (!isPrimaryLeftStageCharacterSlug(character.slug)) {
+      throw new StoryRepositoryError(
+        "Dress prompts currently support only Ocnoer."
+      );
+    }
+
+    const sceneDressCharacter = findDressPromptCharacter(
+      input.snapshot,
+      input.scene
+    );
+
+    if (!sceneDressCharacter || sceneDressCharacter.id !== character.id) {
+      throw new StoryRepositoryError(
+        "Dress prompt requires Ocnoer to be present in the scene cast."
+      );
+    }
+
+    const optionKeys = input.dressOptionKeys ?? [];
+
+    if (optionKeys.length === 0) {
+      throw new StoryRepositoryError(
+        "Dress prompt requires at least one dress option."
+      );
+    }
+
+    const uniqueOptionKeys = new Set<string>();
+
+    for (const optionKey of optionKeys) {
+      if (!optionKey) {
+        throw new StoryRepositoryError(
+          "Dress prompt option keys must not be empty."
+        );
+      }
+
+      if (uniqueOptionKeys.has(optionKey)) {
+        throw new StoryRepositoryError(
+          "Dress prompt contains duplicate dress options."
+        );
+      }
+
+      uniqueOptionKeys.add(optionKey);
+
+      if (optionKey === BASE_DRESS_OPTION_KEY) {
+        continue;
+      }
+
+      if (!character.dresses.some((dress) => dress.key === optionKey)) {
+        throw new StoryRepositoryError(
+          "Selected dress does not belong to the prompt character."
+        );
+      }
+    }
+
     return;
   }
 
@@ -932,6 +1103,36 @@ function assertSceneDialogueStillValid(
           "Scene dialogue references an emotion that no longer exists."
         );
       }
+
+      continue;
+    }
+
+    if (speaker.type === "dress_prompt") {
+      const character = findCharacterOrThrow(snapshot, speaker.characterId);
+
+      if (!isPrimaryLeftStageCharacterSlug(character.slug)) {
+        throw new StoryRepositoryError(
+          "Scene dialogue contains a dress prompt for an unsupported character."
+        );
+      }
+
+      if (!nextCharacterIds.includes(character.id)) {
+        throw new StoryRepositoryError(
+          "Cannot remove Ocnoer from the scene cast while a dress prompt still references her."
+        );
+      }
+
+      for (const optionKey of speaker.dressOptionKeys) {
+        if (optionKey === BASE_DRESS_OPTION_KEY) {
+          continue;
+        }
+
+        if (!character.dresses.some((dress) => dress.key === optionKey)) {
+          throw new StoryRepositoryError(
+            "Scene dialogue references a dress that no longer exists."
+          );
+        }
+      }
     }
   }
 }
@@ -961,6 +1162,23 @@ function updateEmotionReferences(
   });
 }
 
+function updateDressEmotionOverrideReferences(
+  character: CharacterDefinition,
+  input: {
+    previousEmotionKey: string;
+    nextEmotionKey: string;
+  }
+) {
+  character.dresses.forEach((dress) => {
+    dress.emotionOverrides.forEach((override) => {
+      if (override.emotionKey === input.previousEmotionKey) {
+        override.emotionKey = input.nextEmotionKey;
+        override.updatedAt = nowIsoString();
+      }
+    });
+  });
+}
+
 function isEmotionReferenced(
   snapshot: StoryAuthoringSnapshot,
   input: {
@@ -975,6 +1193,52 @@ function isEmotionReferenced(
           entry.speaker.type === "character" &&
           entry.speaker.characterId === input.characterId &&
           entry.speaker.emotionKey === input.emotionKey
+      )
+    )
+  );
+}
+
+function updateDressReferences(
+  snapshot: StoryAuthoringSnapshot,
+  input: {
+    characterId: string;
+    previousDressKey: string;
+    nextDressKey: string;
+  }
+) {
+  snapshot.chapters.forEach((chapter) => {
+    chapter.scenes.forEach((scene) => {
+      scene.dialogue.forEach((entry) => {
+        if (
+          entry.speaker.type === "dress_prompt" &&
+          entry.speaker.characterId === input.characterId
+        ) {
+          entry.speaker.dressOptionKeys = entry.speaker.dressOptionKeys.map(
+            (dressKey) =>
+              dressKey === input.previousDressKey
+                ? input.nextDressKey
+                : dressKey
+          );
+        }
+      });
+    });
+  });
+}
+
+function isDressReferenced(
+  snapshot: StoryAuthoringSnapshot,
+  input: {
+    characterId: string;
+    dressKey: string;
+  }
+) {
+  return snapshot.chapters.some((chapter) =>
+    chapter.scenes.some((scene) =>
+      scene.dialogue.some(
+        (entry) =>
+          entry.speaker.type === "dress_prompt" &&
+          entry.speaker.characterId === input.characterId &&
+          entry.speaker.dressOptionKeys.includes(input.dressKey)
       )
     )
   );
@@ -1158,10 +1422,24 @@ export async function saveSceneDraft(input: {
     dialogueIds.add(rawId);
 
     const text = assertValidSceneDraftText(entry.text, "Dialogue text");
+    const characterId = normalizeOptionalSceneDraftValue(entry.characterId);
+    const emotionKey = normalizeOptionalSceneDraftValue(entry.emotionKey);
+    const dressOptionKeys = [...new Set(entry.dressOptionKeys ?? [])];
+    const existingEntry = existingEntriesById.get(rawId);
+
+    assertDialogueSelection({
+      snapshot,
+      scene: {
+        ...scene,
+        characterIds: nextCharacterIds
+      },
+      speakerType: entry.speakerType,
+      characterId,
+      emotionKey,
+      dressOptionKeys
+    });
 
     if (entry.speakerType === "narrator") {
-      const existingEntry = existingEntriesById.get(rawId);
-
       return {
         id: isSceneDraftTempId(rawId) ? createEntityId("dialogue") : rawId,
         orderIndex: index + 1,
@@ -1174,34 +1452,23 @@ export async function saveSceneDraft(input: {
       };
     }
 
-    const characterId = normalizeOptionalSceneDraftValue(entry.characterId);
-    const emotionKey = normalizeOptionalSceneDraftValue(entry.emotionKey);
-
-    if (!characterId || !emotionKey) {
-      throw new StoryRepositoryError(
-        "Character dialogue requires both a character and an emotion."
-      );
-    }
-
-    if (!nextCharacterIds.includes(characterId)) {
-      throw new StoryRepositoryError(
-        "Dialogue speaker must be selected in the scene character pool."
-      );
-    }
-
-    const character = findCharacterOrThrow(snapshot, characterId);
-    const emotion = character.emotions.find((item) => item.key === emotionKey);
-
-    if (!emotion) {
-      throw new StoryRepositoryError(
-        "Selected emotion does not belong to the speaker."
-      );
-    }
-
-    const existingEntry = existingEntriesById.get(rawId);
-
     if (!isSceneDraftTempId(rawId) && !existingEntry) {
       throw new StoryRepositoryError("Dialogue entry not found.");
+    }
+
+    if (entry.speakerType === "dress_prompt") {
+      return {
+        id: isSceneDraftTempId(rawId) ? createEntityId("dialogue") : rawId,
+        orderIndex: index + 1,
+        text,
+        speaker: {
+          type: "dress_prompt",
+          characterId: characterId as string,
+          dressOptionKeys
+        },
+        createdAt: existingEntry?.createdAt ?? timestamp,
+        updatedAt: timestamp
+      };
     }
 
     return {
@@ -1210,8 +1477,8 @@ export async function saveSceneDraft(input: {
       text,
       speaker: {
         type: "character",
-        characterId,
-        emotionKey
+        characterId: characterId as string,
+        emotionKey: emotionKey as string
       },
       createdAt: existingEntry?.createdAt ?? timestamp,
       updatedAt: timestamp
@@ -1297,6 +1564,7 @@ export async function createCharacter(input: {
         updatedAt: timestamp
       }
     ],
+    dresses: [],
     createdAt: timestamp,
     updatedAt: timestamp
   };
@@ -1344,7 +1612,12 @@ export async function deleteCharacter(characterId: string) {
   );
   await commitSnapshot(snapshot);
   await removeStorageObjects(
-    character.emotions.map((emotion) => emotion.imagePath)
+    [
+      ...character.emotions.map((emotion) => emotion.imagePath),
+      ...character.dresses.flatMap((dress) =>
+        dress.emotionOverrides.map((override) => override.imagePath)
+      )
+    ]
   );
 }
 
@@ -1438,6 +1711,10 @@ export async function updateCharacterEmotion(input: {
       previousEmotionKey,
       nextEmotionKey
     });
+    updateDressEmotionOverrideReferences(character, {
+      previousEmotionKey,
+      nextEmotionKey
+    });
   }
 
   character.updatedAt = nowIsoString();
@@ -1509,6 +1786,11 @@ export async function deleteCharacterEmotion(input: {
   character.emotions = character.emotions.filter(
     (item) => item.id !== input.emotionId
   );
+  character.dresses.forEach((dress) => {
+    dress.emotionOverrides = dress.emotionOverrides.filter(
+      (override) => override.emotionKey !== emotion.key
+    );
+  });
 
   if (character.defaultEmotionKey === emotion.key) {
     character.defaultEmotionKey = character.emotions[0].key;
@@ -1518,6 +1800,213 @@ export async function deleteCharacterEmotion(input: {
 
   await commitSnapshot(snapshot);
   await removeStorageObjects([emotion.imagePath]);
+}
+
+export async function createCharacterDress(input: {
+  characterId: string;
+  dressKey: string;
+  dressLabel: string;
+}) {
+  const snapshot = await loadAuthoringSnapshot();
+  const character = findCharacterOrThrow(snapshot, input.characterId);
+  const dressId = createEntityId("dress");
+  const normalizedDressKey = normalizeSlugInput(
+    input.dressKey,
+    input.dressLabel
+  );
+
+  if (normalizedDressKey === BASE_DRESS_OPTION_KEY) {
+    throw new StoryRepositoryError(
+      `"${BASE_DRESS_OPTION_KEY}" is reserved for the default dress option.`
+    );
+  }
+
+  ensureUniqueDressKey(character, normalizedDressKey);
+
+  const timestamp = nowIsoString();
+
+  character.dresses.push({
+    id: dressId,
+    key: normalizedDressKey,
+    label: input.dressLabel.trim(),
+    emotionOverrides: [],
+    createdAt: timestamp,
+    updatedAt: timestamp
+  });
+  character.updatedAt = timestamp;
+
+  await commitSnapshot(snapshot);
+
+  return character;
+}
+
+export async function updateCharacterDress(input: {
+  characterId: string;
+  dressId: string;
+  dressKey: string;
+  dressLabel: string;
+}) {
+  const snapshot = await loadAuthoringSnapshot();
+  const character = findCharacterOrThrow(snapshot, input.characterId);
+  const dress = character.dresses.find((item) => item.id === input.dressId);
+
+  if (!dress) {
+    throw new StoryRepositoryError("Dress not found.");
+  }
+
+  const previousDressKey = dress.key;
+  const nextDressKey = normalizeSlugInput(input.dressKey, input.dressLabel);
+
+  if (nextDressKey === BASE_DRESS_OPTION_KEY) {
+    throw new StoryRepositoryError(
+      `"${BASE_DRESS_OPTION_KEY}" is reserved for the default dress option.`
+    );
+  }
+
+  ensureUniqueDressKey(character, nextDressKey, dress.id);
+
+  dress.key = nextDressKey;
+  dress.label = input.dressLabel.trim();
+  dress.updatedAt = nowIsoString();
+  character.updatedAt = nowIsoString();
+
+  if (previousDressKey !== nextDressKey) {
+    updateDressReferences(snapshot, {
+      characterId: character.id,
+      previousDressKey,
+      nextDressKey
+    });
+  }
+
+  await commitSnapshot(snapshot);
+
+  return character;
+}
+
+export async function deleteCharacterDress(input: {
+  characterId: string;
+  dressId: string;
+}) {
+  const snapshot = await loadAuthoringSnapshot();
+  const character = findCharacterOrThrow(snapshot, input.characterId);
+  const dress = character.dresses.find((item) => item.id === input.dressId);
+
+  if (!dress) {
+    throw new StoryRepositoryError("Dress not found.");
+  }
+
+  if (
+    isDressReferenced(snapshot, {
+      characterId: character.id,
+      dressKey: dress.key
+    })
+  ) {
+    throw new StoryRepositoryError(
+      "Cannot delete a dress while a dress prompt still references it."
+    );
+  }
+
+  character.dresses = character.dresses.filter((item) => item.id !== dress.id);
+  character.updatedAt = nowIsoString();
+
+  await commitSnapshot(snapshot);
+  await removeStorageObjects(
+    dress.emotionOverrides.map((override) => override.imagePath)
+  );
+}
+
+export async function upsertCharacterDressEmotionOverride(input: {
+  characterId: string;
+  dressId: string;
+  emotionKey: string;
+  imageFile: File;
+}) {
+  assertRequiredFile(input.imageFile, "Dress image");
+  assertImageFile(input.imageFile, "Dress image");
+
+  const snapshot = await loadAuthoringSnapshot();
+  const character = findCharacterOrThrow(snapshot, input.characterId);
+  const dress = character.dresses.find((item) => item.id === input.dressId);
+
+  if (!dress) {
+    throw new StoryRepositoryError("Dress not found.");
+  }
+
+  if (!character.emotions.some((emotion) => emotion.key === input.emotionKey)) {
+    throw new StoryRepositoryError(
+      "Dress override emotion must belong to the character."
+    );
+  }
+
+  const existingOverride =
+    dress.emotionOverrides.find(
+      (override) => override.emotionKey === input.emotionKey
+    ) ?? null;
+  const previousImagePath = existingOverride?.imagePath ?? null;
+  const objectPath = existingOverride
+    ? `media/characters/${character.id}/dresses/${dress.id}/${existingOverride.id}/${createEntityId("file")}`
+    : `media/characters/${character.id}/dresses/${dress.id}/${createEntityId("override")}`;
+  const nextImagePath = await uploadFileToStorage({
+    file: input.imageFile,
+    objectPath,
+    cacheControl: "31536000"
+  });
+  const timestamp = nowIsoString();
+
+  if (existingOverride) {
+    existingOverride.imagePath = nextImagePath;
+    existingOverride.updatedAt = timestamp;
+  } else {
+    dress.emotionOverrides.push({
+      id: createEntityId("dress_override"),
+      emotionKey: input.emotionKey,
+      imagePath: nextImagePath,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+  }
+
+  dress.updatedAt = timestamp;
+  character.updatedAt = timestamp;
+
+  await commitSnapshot(snapshot);
+
+  if (previousImagePath && previousImagePath !== nextImagePath) {
+    await removeStorageObjects([previousImagePath]);
+  }
+
+  return character;
+}
+
+export async function deleteCharacterDressEmotionOverride(input: {
+  characterId: string;
+  dressId: string;
+  emotionKey: string;
+}) {
+  const snapshot = await loadAuthoringSnapshot();
+  const character = findCharacterOrThrow(snapshot, input.characterId);
+  const dress = character.dresses.find((item) => item.id === input.dressId);
+
+  if (!dress) {
+    throw new StoryRepositoryError("Dress not found.");
+  }
+
+  const override = dress.emotionOverrides.find(
+    (item) => item.emotionKey === input.emotionKey
+  );
+
+  if (!override) {
+    throw new StoryRepositoryError("Dress emotion override not found.");
+  }
+
+  dress.emotionOverrides = dress.emotionOverrides.filter(
+    (item) => item.id !== override.id
+  );
+  dress.updatedAt = nowIsoString();
+  character.updatedAt = nowIsoString();
+
+  await commitSnapshot(snapshot);
+  await removeStorageObjects([override.imagePath]);
 }
 
 export async function createBackgroundImageAsset(input: {
@@ -1893,9 +2382,10 @@ export async function createDialogueEntry(input: {
   chapterId: string;
   sceneId: string;
   orderIndex?: number;
-  speakerType: "narrator" | "character";
+  speakerType: "narrator" | "character" | "dress_prompt";
   characterId: string | null;
   emotionKey: string | null;
+  dressOptionKeys?: string[];
   text: string;
 }) {
   const snapshot = await loadAuthoringSnapshot();
@@ -1904,12 +2394,13 @@ export async function createDialogueEntry(input: {
   const orderIndex = input.orderIndex ?? getNextOrderIndex(scene.dialogue);
 
   ensureUniqueDialogueOrder(scene, orderIndex);
-  assertSpeakerSelection({
+  assertDialogueSelection({
     snapshot,
     scene,
     speakerType: input.speakerType,
     characterId: input.characterId,
-    emotionKey: input.emotionKey
+    emotionKey: input.emotionKey,
+    dressOptionKeys: input.dressOptionKeys
   });
 
   const entry: DialogueEntry = {
@@ -1921,6 +2412,12 @@ export async function createDialogueEntry(input: {
         ? {
             type: "narrator"
           }
+        : input.speakerType === "dress_prompt"
+          ? {
+              type: "dress_prompt",
+              characterId: input.characterId as string,
+              dressOptionKeys: [...new Set(input.dressOptionKeys ?? [])]
+            }
         : {
             type: "character",
             characterId: input.characterId as string,
@@ -1943,9 +2440,10 @@ export async function updateDialogueEntry(input: {
   sceneId: string;
   dialogueEntryId: string;
   orderIndex: number;
-  speakerType: "narrator" | "character";
+  speakerType: "narrator" | "character" | "dress_prompt";
   characterId: string | null;
   emotionKey: string | null;
+  dressOptionKeys?: string[];
   text: string;
 }) {
   const snapshot = await loadAuthoringSnapshot();
@@ -1957,12 +2455,13 @@ export async function updateDialogueEntry(input: {
   if (!orderChanged) {
     ensureUniqueDialogueOrder(scene, input.orderIndex, entry.id);
   }
-  assertSpeakerSelection({
+  assertDialogueSelection({
     snapshot,
     scene,
     speakerType: input.speakerType,
     characterId: input.characterId,
-    emotionKey: input.emotionKey
+    emotionKey: input.emotionKey,
+    dressOptionKeys: input.dressOptionKeys
   });
 
   entry.text = input.text.trim();
@@ -1971,6 +2470,12 @@ export async function updateDialogueEntry(input: {
       ? {
           type: "narrator"
         }
+      : input.speakerType === "dress_prompt"
+        ? {
+            type: "dress_prompt",
+            characterId: input.characterId as string,
+            dressOptionKeys: [...new Set(input.dressOptionKeys ?? [])]
+          }
       : {
           type: "character",
           characterId: input.characterId as string,

@@ -306,6 +306,7 @@ describe("createDialogueEntryAction", () => {
       speakerType: "narrator",
       characterId: null,
       emotionKey: null,
+      dressOptionKeys: [],
       text: "A new line"
     });
     expect(getAdminStoryDataMock).not.toHaveBeenCalled();

@@ -11,6 +11,7 @@ Project admin_story_authoring_erd {
 Enum dialogue_kind {
   speech
   narrator
+  dress_prompt
 }
 
 Table background_images {
@@ -98,6 +99,45 @@ Table character_emotions {
   '''
 }
 
+Table character_dresses {
+  id text [pk]
+  character_id text [not null]
+  key text [not null]
+  label text
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    character_id
+    (character_id, key) [unique]
+  }
+
+  Note: '''
+  Reusable wardrobe variants for a character.
+  MVP reader behavior only consumes dress prompts for Ocnoer, but the authoring model keeps dress ownership on the character.
+  '''
+}
+
+Table character_dress_overrides {
+  id text [pk]
+  character_dress_id text [not null]
+  character_emotion_id text [not null]
+  image_path text [not null]
+  created_at timestamp [not null, default: `now()`]
+  updated_at timestamp [not null, default: `now()`]
+
+  indexes {
+    character_dress_id
+    character_emotion_id
+    (character_dress_id, character_emotion_id) [unique]
+  }
+
+  Note: '''
+  Optional per-emotion image override for a dress.
+  Missing overrides fall back to the base character emotion image at runtime.
+  '''
+}
+
 Table scene_characters {
   id text [pk]
   scene_id text [not null]
@@ -123,6 +163,8 @@ Table dialogue_entries {
   text text [not null]
   scene_character_id text
   character_emotion_id text
+  prompt_character_id text
+  dress_option_keys json
   created_at timestamp [not null, default: `now()`]
   updated_at timestamp [not null, default: `now()`]
 
@@ -130,14 +172,17 @@ Table dialogue_entries {
     scene_id
     scene_character_id
     character_emotion_id
+    prompt_character_id
     (scene_id, order_index) [unique]
   }
 
   Note: '''
   speech rows require both scene_character_id and character_emotion_id.
   narrator rows must leave both null.
+  dress_prompt rows require prompt_character_id and dress_option_keys, and must leave scene_character_id and character_emotion_id null.
   Business rule: a speech row must reference a scene_character from the same scene and a character_emotion owned by that same character.
   The chosen emotion is stored on the dialogue row so old dialogue does not change if the character default changes later.
+  Dress option keys are stored on the dialogue row so prompts stay stable even if dress labels change later.
   '''
 }
 
@@ -146,6 +191,9 @@ Ref: scenes.background_image_id > background_images.id
 Ref: scenes.background_music_track_id > background_music_tracks.id
 
 Ref: character_emotions.character_id > characters.id
+Ref: character_dresses.character_id > characters.id
+Ref: character_dress_overrides.character_dress_id > character_dresses.id
+Ref: character_dress_overrides.character_emotion_id > character_emotions.id
 
 Ref: scene_characters.scene_id > scenes.id
 Ref: scene_characters.character_id > characters.id
@@ -153,3 +201,4 @@ Ref: scene_characters.character_id > characters.id
 Ref: dialogue_entries.scene_id > scenes.id
 Ref: dialogue_entries.scene_character_id > scene_characters.id
 Ref: dialogue_entries.character_emotion_id > character_emotions.id
+Ref: dialogue_entries.prompt_character_id > characters.id

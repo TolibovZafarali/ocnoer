@@ -5,10 +5,15 @@ import { notFound } from "next/navigation";
 
 import {
   addCharacterEmotionAction,
+  createCharacterDressAction,
   deleteCharacterAction,
+  deleteCharacterDressAction,
+  deleteCharacterDressEmotionOverrideAction,
   deleteCharacterEmotionAction,
   setDefaultCharacterEmotionAction,
   updateCharacterAction,
+  updateCharacterDressAction,
+  upsertCharacterDressEmotionOverrideAction,
   updateCharacterEmotionAction
 } from "@/app/(admin)/admin/actions";
 import {
@@ -33,6 +38,7 @@ import {
   PRIMARY_LEFT_STAGE_CHARACTER_SLUG,
   isPrimaryLeftStageCharacterSlug
 } from "@/lib/story/staging";
+import { getDressPreviewImagePath } from "@/lib/story/wardrobe";
 import { getSupabaseEnv } from "@/lib/supabase/env";
 
 type CharacterDetailPageProps = {
@@ -59,7 +65,8 @@ function countCharacterReferences(
 
         scene.dialogue.forEach((entry) => {
           if (
-            entry.speaker.type === "character" &&
+            (entry.speaker.type === "character" ||
+              entry.speaker.type === "dress_prompt") &&
             entry.speaker.characterId === characterId
           ) {
             totals.dialogueCount += 1;
@@ -88,6 +95,28 @@ function countEmotionDialogueReferences(
               entry.speaker.type === "character" &&
               entry.speaker.characterId === input.characterId &&
               entry.speaker.emotionKey === input.emotionKey
+          ).length
+        );
+      }, 0)
+    );
+  }, 0);
+}
+
+function countDressPromptReferences(
+  story: Awaited<ReturnType<typeof getAdminStoryData>>,
+  input: { characterId: string; dressKey: string }
+) {
+  return story.chapters.reduce((count, chapter) => {
+    return (
+      count +
+      chapter.scenes.reduce((sceneCount, scene) => {
+        return (
+          sceneCount +
+          scene.dialogue.filter(
+            (entry) =>
+              entry.speaker.type === "dress_prompt" &&
+              entry.speaker.characterId === input.characterId &&
+              entry.speaker.dressOptionKeys.includes(input.dressKey)
           ).length
         );
       }, 0)
@@ -181,6 +210,7 @@ export default async function CharacterDetailPage({
 
               <div className="flex flex-wrap gap-2">
                 <Pill>{character.emotions.length} emotions</Pill>
+                <Pill>{character.dresses.length} dresses</Pill>
                 <Pill>Default: {character.defaultEmotionKey}</Pill>
                 <Pill>{character.slug}</Pill>
                 {isLeftStageAnchor ? (
@@ -501,6 +531,375 @@ export default async function CharacterDetailPage({
             </AdminCardGrid>
           )}
         </section>
+
+        {isLeftStageAnchor ? (
+          <>
+            <SectionCard
+              title="Add Dress"
+              description="Create a reusable dress variant for Ocnoer. Each dress can override any subset of Ocnoer’s emotion portraits."
+            >
+              <form action={createCharacterDressAction} className="space-y-4">
+                <input type="hidden" name="characterId" value={character.id} />
+                <input type="hidden" name="returnTo" value={returnTo} />
+
+                <div className="grid gap-4 lg:grid-cols-2">
+                  <Field label="Dress Key" htmlFor="dress-key">
+                    <TextInput
+                      id="dress-key"
+                      name="dressKey"
+                      placeholder="mourning"
+                      required
+                    />
+                  </Field>
+
+                  <Field label="Dress Label" htmlFor="dress-label">
+                    <TextInput
+                      id="dress-label"
+                      name="dressLabel"
+                      placeholder="Mourning Dress"
+                      required
+                    />
+                  </Field>
+                </div>
+
+                <div className="flex justify-end">
+                  <Button type="submit">Add Dress</Button>
+                </div>
+              </form>
+            </SectionCard>
+
+            <section className="space-y-4">
+              <div className="space-y-1">
+                <h2 className="text-lg font-semibold text-slate-950">
+                  Dresses
+                </h2>
+                <p className="text-sm text-slate-600">
+                  Dress prompts currently apply only to Ocnoer. Each dress can
+                  override whichever emotion images are needed for the next
+                  scenes; any missing emotion falls back to the base character
+                  image automatically.
+                </p>
+              </div>
+
+              {character.dresses.length === 0 ? (
+                <AdminEmptyState
+                  title="No Dresses Yet"
+                  description="Add a dress above before using wardrobe prompts in scenes."
+                />
+              ) : (
+                <AdminCardGrid className="xl:grid-cols-2">
+                  {character.dresses.map((dress) => {
+                    const dressPreviewUrl = toPublicStorageUrl(
+                      supabaseUrl,
+                      getDressPreviewImagePath({
+                        character,
+                        dressKey: dress.key
+                      })
+                    );
+                    const dressReferenceCount = countDressPromptReferences(
+                      story,
+                      {
+                        characterId: character.id,
+                        dressKey: dress.key
+                      }
+                    );
+                    const isDressDeleteBlocked = dressReferenceCount > 0;
+
+                    return (
+                      <AdminCard
+                        key={dress.id}
+                        title={dress.label}
+                        eyebrow={dress.key}
+                        media={
+                          dressPreviewUrl ? (
+                            <img
+                              src={dressPreviewUrl}
+                              alt={`${character.name} ${dress.label}`}
+                              className="aspect-[4/5] w-full object-cover"
+                            />
+                          ) : (
+                            <div className="flex aspect-[4/5] items-center justify-center bg-slate-100 text-sm text-slate-500">
+                              No preview
+                            </div>
+                          )
+                        }
+                        description={
+                          <div className="space-y-4">
+                            <p className="text-sm text-slate-600">
+                              {dress.emotionOverrides.length === 0
+                                ? "No overrides yet. Base emotion art will be used until overrides are uploaded."
+                                : `${dress.emotionOverrides.length} emotion override${dress.emotionOverrides.length === 1 ? "" : "s"} configured.`}
+                            </p>
+
+                            <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                              <summary className="cursor-pointer text-sm font-medium text-slate-800">
+                                Edit dress and manage overrides
+                              </summary>
+
+                              <div className="mt-3 space-y-4">
+                                <form
+                                  action={updateCharacterDressAction}
+                                  className="space-y-3"
+                                >
+                                  <input
+                                    type="hidden"
+                                    name="characterId"
+                                    value={character.id}
+                                  />
+                                  <input
+                                    type="hidden"
+                                    name="dressId"
+                                    value={dress.id}
+                                  />
+                                  <input
+                                    type="hidden"
+                                    name="returnTo"
+                                    value={returnTo}
+                                  />
+
+                                  <Field
+                                    label="Dress Key"
+                                    htmlFor={`dress-key-${dress.id}`}
+                                  >
+                                    <TextInput
+                                      id={`dress-key-${dress.id}`}
+                                      name="dressKey"
+                                      defaultValue={dress.key}
+                                      required
+                                    />
+                                  </Field>
+
+                                  <Field
+                                    label="Dress Label"
+                                    htmlFor={`dress-label-${dress.id}`}
+                                  >
+                                    <TextInput
+                                      id={`dress-label-${dress.id}`}
+                                      name="dressLabel"
+                                      defaultValue={dress.label}
+                                      required
+                                    />
+                                  </Field>
+
+                                  <div className="flex justify-end">
+                                    <Button
+                                      type="submit"
+                                      size="sm"
+                                      variant="outline"
+                                    >
+                                      Save Dress
+                                    </Button>
+                                  </div>
+                                </form>
+
+                                <div className="space-y-3 border-t border-slate-200 pt-4">
+                                  <p className="text-sm text-slate-600">
+                                    Upload one image per emotion only where the
+                                    dress should override the base portrait.
+                                  </p>
+
+                                  <div className="space-y-4">
+                                    {character.emotions.map((emotion) => {
+                                      const override =
+                                        dress.emotionOverrides.find(
+                                          (item) =>
+                                            item.emotionKey === emotion.key
+                                        ) ?? null;
+                                      const overrideUrl = toPublicStorageUrl(
+                                        supabaseUrl,
+                                        override?.imagePath ?? null
+                                      );
+
+                                      return (
+                                        <div
+                                          key={`${dress.id}:${emotion.key}`}
+                                          className="rounded-xl border border-slate-200 bg-white p-3"
+                                        >
+                                          <div className="flex flex-wrap items-start gap-4">
+                                            <div className="w-24 overflow-hidden rounded-xl border border-slate-200 bg-slate-100">
+                                              {overrideUrl ? (
+                                                <img
+                                                  src={overrideUrl}
+                                                  alt={`${dress.label} ${emotion.label}`}
+                                                  className="aspect-[4/5] w-full object-cover"
+                                                />
+                                              ) : (
+                                                <div className="flex aspect-[4/5] items-center justify-center px-2 text-center text-xs text-slate-500">
+                                                  Base image
+                                                </div>
+                                              )}
+                                            </div>
+
+                                            <div className="min-w-0 flex-1 space-y-3">
+                                              <div>
+                                                <p className="font-medium text-slate-800">
+                                                  {emotion.label}
+                                                </p>
+                                                <p className="text-xs text-slate-500">
+                                                  {emotion.key}
+                                                </p>
+                                              </div>
+
+                                              <form
+                                                action={
+                                                  upsertCharacterDressEmotionOverrideAction
+                                                }
+                                                className="grid gap-3 lg:grid-cols-[1fr_auto]"
+                                              >
+                                                <input
+                                                  type="hidden"
+                                                  name="characterId"
+                                                  value={character.id}
+                                                />
+                                                <input
+                                                  type="hidden"
+                                                  name="dressId"
+                                                  value={dress.id}
+                                                />
+                                                <input
+                                                  type="hidden"
+                                                  name="emotionKey"
+                                                  value={emotion.key}
+                                                />
+                                                <input
+                                                  type="hidden"
+                                                  name="returnTo"
+                                                  value={returnTo}
+                                                />
+                                                <TextInput
+                                                  name="imageFile"
+                                                  type="file"
+                                                  accept="image/*"
+                                                  required
+                                                />
+                                                <Button
+                                                  type="submit"
+                                                  size="sm"
+                                                  variant="outline"
+                                                >
+                                                  {override
+                                                    ? "Replace Override"
+                                                    : "Upload Override"}
+                                                </Button>
+                                              </form>
+
+                                              {override ? (
+                                                <form
+                                                  action={
+                                                    deleteCharacterDressEmotionOverrideAction
+                                                  }
+                                                  className="flex justify-end"
+                                                >
+                                                  <input
+                                                    type="hidden"
+                                                    name="characterId"
+                                                    value={character.id}
+                                                  />
+                                                  <input
+                                                    type="hidden"
+                                                    name="dressId"
+                                                    value={dress.id}
+                                                  />
+                                                  <input
+                                                    type="hidden"
+                                                    name="emotionKey"
+                                                    value={emotion.key}
+                                                  />
+                                                  <input
+                                                    type="hidden"
+                                                    name="returnTo"
+                                                    value={returnTo}
+                                                  />
+                                                  <Button
+                                                    type="submit"
+                                                    size="sm"
+                                                    variant="destructive"
+                                                  >
+                                                    Remove Override
+                                                  </Button>
+                                                </form>
+                                              ) : null}
+                                            </div>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+
+                                <div className="border-t border-slate-200 pt-4">
+                                  <p className="text-sm text-slate-600">
+                                    {isDressDeleteBlocked
+                                      ? `Delete is blocked while ${dressReferenceCount} dress prompt ${dressReferenceCount === 1 ? "row still references" : "rows still reference"} this dress.`
+                                      : "Delete permanently removes this dress and all of its uploaded override images."}
+                                  </p>
+                                  <form
+                                    action={deleteCharacterDressAction}
+                                    className="mt-3 space-y-3"
+                                  >
+                                    <input
+                                      type="hidden"
+                                      name="characterId"
+                                      value={character.id}
+                                    />
+                                    <input
+                                      type="hidden"
+                                      name="dressId"
+                                      value={dress.id}
+                                    />
+                                    <input
+                                      type="hidden"
+                                      name="returnTo"
+                                      value={returnTo}
+                                    />
+                                    {!isDressDeleteBlocked ? (
+                                      <label className="flex items-start gap-3 rounded-xl border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-900">
+                                        <input
+                                          type="checkbox"
+                                          name="confirmDelete"
+                                          value="yes"
+                                          required
+                                          className="mt-0.5 h-4 w-4 rounded border-rose-300 text-rose-700"
+                                        />
+                                        <span>
+                                          I understand that deleting this dress
+                                          removes all of its override images.
+                                        </span>
+                                      </label>
+                                    ) : null}
+                                    <div className="flex justify-end">
+                                      <Button
+                                        type="submit"
+                                        size="sm"
+                                        variant="destructive"
+                                        disabled={isDressDeleteBlocked}
+                                      >
+                                        Delete Dress
+                                      </Button>
+                                    </div>
+                                  </form>
+                                </div>
+                              </div>
+                            </details>
+                          </div>
+                        }
+                        footer={
+                          <>
+                            <Pill>{dress.label}</Pill>
+                            <Pill>{dress.key}</Pill>
+                            <Pill>
+                              {dress.emotionOverrides.length} overrides
+                            </Pill>
+                          </>
+                        }
+                      />
+                    );
+                  })}
+                </AdminCardGrid>
+              )}
+            </section>
+          </>
+        ) : null}
 
         <SectionCard
           title="Delete Character"

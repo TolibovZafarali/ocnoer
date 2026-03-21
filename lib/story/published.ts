@@ -18,6 +18,11 @@ import type {
 } from "@/lib/story/types";
 import { PRIMARY_LEFT_STAGE_CHARACTER_SLUG } from "@/lib/story/staging";
 import { STORY_SCHEMA_VERSION } from "@/lib/story/types";
+import {
+  BASE_DRESS_OPTION_KEY,
+  BASE_DRESS_OPTION_LABEL,
+  getDressPreviewImagePath
+} from "@/lib/story/wardrobe";
 
 type RuntimeCompileContext = {
   characters: RuntimeCharacter[];
@@ -51,6 +56,14 @@ function toRuntimeCharacter(character: CharacterDefinition): RuntimeCharacter {
       key: emotion.key,
       label: emotion.label,
       imagePath: emotion.imagePath
+    })),
+    dresses: character.dresses.map((dress) => ({
+      key: dress.key,
+      label: dress.label,
+      emotionOverrides: dress.emotionOverrides.map((override) => ({
+        emotionKey: override.emotionKey,
+        imagePath: override.imagePath
+      }))
     }))
   };
 }
@@ -110,6 +123,24 @@ function isPrimaryLeftStageCharacter(character: RuntimeCharacter) {
   return character.slug === PRIMARY_LEFT_STAGE_CHARACTER_SLUG;
 }
 
+function createDressPromptOptions(
+  character: RuntimeCharacter,
+  dressOptionKeys: string[]
+) {
+  return dressOptionKeys.map((dressKey) => ({
+    key: dressKey,
+    label:
+      dressKey === BASE_DRESS_OPTION_KEY
+        ? BASE_DRESS_OPTION_LABEL
+        : (character.dresses.find((dress) => dress.key === dressKey)?.label ??
+          dressKey),
+    previewImagePath: getDressPreviewImagePath({
+      character,
+      dressKey
+    })
+  }));
+}
+
 function compileScene(input: {
   scene: StoryAuthoringSnapshot["chapters"][number]["scenes"][number];
   charactersById: Map<string, RuntimeCharacter>;
@@ -163,6 +194,36 @@ function compileScene(input: {
           text: entry.text,
           speaker: {
             type: "narrator"
+          },
+          stage: {
+            left: cloneStageCharacter(leftStage),
+            right: cloneStageCharacter(rightStage)
+          }
+        };
+      }
+
+      if (entry.speaker.type === "dress_prompt") {
+        const promptCharacter = input.charactersById.get(entry.speaker.characterId);
+
+        if (!promptCharacter) {
+          throw new Error(
+            `Dialogue entry "${entry.id}" references an unknown dress prompt character.`
+          );
+        }
+
+        return {
+          id: entry.id,
+          orderIndex: entry.orderIndex,
+          text: entry.text,
+          speaker: {
+            type: "dress_prompt",
+            characterId: promptCharacter.id,
+            characterName: promptCharacter.name,
+            characterSlug: promptCharacter.slug,
+            dressOptions: createDressPromptOptions(
+              promptCharacter,
+              entry.speaker.dressOptionKeys
+            )
           },
           stage: {
             left: cloneStageCharacter(leftStage),

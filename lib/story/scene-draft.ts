@@ -58,6 +58,7 @@ function parseSceneDraftDialogueEntry(
     speakerType,
     characterId: asNullableString(value.characterId),
     emotionKey: asNullableString(value.emotionKey),
+    dressOptionKeys: asStringArray(value.dressOptionKeys) ?? [],
     text
   };
 }
@@ -77,9 +78,16 @@ export function createSceneDraftPayload(
       id: entry.id,
       speakerType: entry.speaker.type,
       characterId:
-        entry.speaker.type === "character" ? entry.speaker.characterId : null,
+        entry.speaker.type === "character" ||
+        entry.speaker.type === "dress_prompt"
+          ? entry.speaker.characterId
+          : null,
       emotionKey:
         entry.speaker.type === "character" ? entry.speaker.emotionKey : null,
+      dressOptionKeys:
+        entry.speaker.type === "dress_prompt"
+          ? [...entry.speaker.dressOptionKeys]
+          : [],
       text: entry.text
     }))
   };

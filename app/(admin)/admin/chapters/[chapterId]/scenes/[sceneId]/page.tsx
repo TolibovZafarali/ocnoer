@@ -127,9 +127,14 @@ export default async function SceneDetailPage({
           characters={story.characters.map((character) => ({
             id: character.id,
             name: character.name,
+            slug: character.slug,
             emotions: character.emotions.map((emotion) => ({
               key: emotion.key,
               label: emotion.label
+            })),
+            dresses: character.dresses.map((dress) => ({
+              key: dress.key,
+              label: dress.label
             }))
           }))}
           upsertDraftAction={upsertSceneDraftAction}

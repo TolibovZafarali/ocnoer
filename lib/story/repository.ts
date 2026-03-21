@@ -40,6 +40,8 @@ const AUTHORING_CHAPTERS_PATH = "authoring/chapters.json";
 const RUNTIME_PREFIX = "runtime";
 const STORAGE_FETCH_FAILURE_MESSAGE =
   "Unable to reach Supabase storage while loading authoring data. Check your Supabase URL, network connection, and Supabase project availability.";
+const STORAGE_FETCH_MAX_ATTEMPTS = 4;
+const STORAGE_FETCH_RETRY_BASE_DELAY_MS = 150;
 
 export type StoredSceneDraft = {
   sceneId: string;
@@ -102,6 +104,14 @@ function withBucketPath(objectPath: string) {
 
 function nowIsoString() {
   return new Date().toISOString();
+}
+
+async function waitForStorageRetryDelay(attempt: number) {
+  const durationMs = STORAGE_FETCH_RETRY_BASE_DELAY_MS * 2 ** attempt;
+
+  await new Promise<void>((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
 }
 
 function normalizeSlugInput(value: string, fallback: string) {
@@ -222,8 +232,9 @@ function toStoredSceneDraft(value: {
 }
 
 function getSceneDraftDelegate() {
-  const delegate = (prisma as unknown as { adminSceneDraft?: SceneDraftDelegate })
-    .adminSceneDraft;
+  const delegate = (
+    prisma as unknown as { adminSceneDraft?: SceneDraftDelegate }
+  ).adminSceneDraft;
 
   if (
     !delegate ||
@@ -419,14 +430,12 @@ function isStorageFetchFailureError(error: unknown) {
   const record = error as Record<string, unknown>;
   const message =
     typeof record.message === "string" ? record.message : String(error);
-  const code =
-    typeof record.code === "string" ? record.code.toLowerCase() : "";
+  const code = typeof record.code === "string" ? record.code.toLowerCase() : "";
 
   return (
     /fetch failed|network request failed|getaddrinfo|econnreset|enotfound/i.test(
       message
-    ) ||
-    code === "fetch_error"
+    ) || code === "fetch_error"
   );
 }
 
@@ -436,13 +445,19 @@ async function downloadStorageJson(objectPath: string) {
   let data: Blob | null = null;
   let error: Error | null = null;
 
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    const nextResult = await supabase.storage.from(runtimeBucket).download(objectPath);
+  for (let attempt = 0; attempt < STORAGE_FETCH_MAX_ATTEMPTS; attempt += 1) {
+    const nextResult = await supabase.storage
+      .from(runtimeBucket)
+      .download(objectPath);
     data = nextResult.data;
     error = nextResult.error;
 
     if (!nextResult.error || !isStorageFetchFailureError(nextResult.error)) {
       break;
+    }
+
+    if (attempt + 1 < STORAGE_FETCH_MAX_ATTEMPTS) {
+      await waitForStorageRetryDelay(attempt);
     }
   }
 
@@ -634,28 +649,40 @@ async function persistAuthoringSnapshot(snapshot: StoryAuthoringSnapshot) {
   const updatedAt = nowIsoString();
 
   await Promise.all([
-    writeJsonFile(AUTHORING_CHARACTERS_PATH, {
-      schemaVersion: STORY_SCHEMA_VERSION,
-      updatedAt,
-      characters: normalizedSnapshot.characters
-    } satisfies CharactersCatalogFile, {
-      cacheControl: "0"
-    }),
-    writeJsonFile(AUTHORING_ASSETS_PATH, {
-      schemaVersion: STORY_SCHEMA_VERSION,
-      updatedAt,
-      backgroundImages: normalizedSnapshot.backgroundImages,
-      backgroundMusicTracks: normalizedSnapshot.backgroundMusicTracks
-    } satisfies AssetsCatalogFile, {
-      cacheControl: "0"
-    }),
-    writeJsonFile(AUTHORING_CHAPTERS_PATH, {
-      schemaVersion: STORY_SCHEMA_VERSION,
-      updatedAt,
-      chapters: normalizedSnapshot.chapters
-    } satisfies ChaptersCatalogFile, {
-      cacheControl: "0"
-    })
+    writeJsonFile(
+      AUTHORING_CHARACTERS_PATH,
+      {
+        schemaVersion: STORY_SCHEMA_VERSION,
+        updatedAt,
+        characters: normalizedSnapshot.characters
+      } satisfies CharactersCatalogFile,
+      {
+        cacheControl: "0"
+      }
+    ),
+    writeJsonFile(
+      AUTHORING_ASSETS_PATH,
+      {
+        schemaVersion: STORY_SCHEMA_VERSION,
+        updatedAt,
+        backgroundImages: normalizedSnapshot.backgroundImages,
+        backgroundMusicTracks: normalizedSnapshot.backgroundMusicTracks
+      } satisfies AssetsCatalogFile,
+      {
+        cacheControl: "0"
+      }
+    ),
+    writeJsonFile(
+      AUTHORING_CHAPTERS_PATH,
+      {
+        schemaVersion: STORY_SCHEMA_VERSION,
+        updatedAt,
+        chapters: normalizedSnapshot.chapters
+      } satisfies ChaptersCatalogFile,
+      {
+        cacheControl: "0"
+      }
+    )
   ]);
 
   return normalizedSnapshot;
@@ -665,13 +692,17 @@ async function persistChaptersSnapshot(snapshot: StoryAuthoringSnapshot) {
   const normalizedSnapshot = sortSnapshot(snapshot);
   const updatedAt = nowIsoString();
 
-  await writeJsonFile(AUTHORING_CHAPTERS_PATH, {
-    schemaVersion: STORY_SCHEMA_VERSION,
-    updatedAt,
-    chapters: normalizedSnapshot.chapters
-  } satisfies ChaptersCatalogFile, {
-    cacheControl: "0"
-  });
+  await writeJsonFile(
+    AUTHORING_CHAPTERS_PATH,
+    {
+      schemaVersion: STORY_SCHEMA_VERSION,
+      updatedAt,
+      chapters: normalizedSnapshot.chapters
+    } satisfies ChaptersCatalogFile,
+    {
+      cacheControl: "0"
+    }
+  );
 
   return normalizedSnapshot;
 }
@@ -1368,7 +1399,9 @@ export async function saveSceneDraft(input: {
   }
 
   if (storedDraft.chapterId !== input.chapterId) {
-    throw new StoryRepositoryError("Scene draft no longer matches its chapter.");
+    throw new StoryRepositoryError(
+      "Scene draft no longer matches its chapter."
+    );
   }
 
   const snapshot = await loadAuthoringSnapshot();
@@ -1611,14 +1644,12 @@ export async function deleteCharacter(characterId: string) {
     (item) => item.id !== characterId
   );
   await commitSnapshot(snapshot);
-  await removeStorageObjects(
-    [
-      ...character.emotions.map((emotion) => emotion.imagePath),
-      ...character.dresses.flatMap((dress) =>
-        dress.emotionOverrides.map((override) => override.imagePath)
-      )
-    ]
-  );
+  await removeStorageObjects([
+    ...character.emotions.map((emotion) => emotion.imagePath),
+    ...character.dresses.flatMap((dress) =>
+      dress.emotionOverrides.map((override) => override.imagePath)
+    )
+  ]);
 }
 
 export async function addCharacterEmotion(input: {
@@ -2418,11 +2449,11 @@ export async function createDialogueEntry(input: {
               characterId: input.characterId as string,
               dressOptionKeys: [...new Set(input.dressOptionKeys ?? [])]
             }
-        : {
-            type: "character",
-            characterId: input.characterId as string,
-            emotionKey: input.emotionKey as string
-          },
+          : {
+              type: "character",
+              characterId: input.characterId as string,
+              emotionKey: input.emotionKey as string
+            },
     createdAt: nowIsoString(),
     updatedAt: nowIsoString()
   };
@@ -2476,11 +2507,11 @@ export async function updateDialogueEntry(input: {
             characterId: input.characterId as string,
             dressOptionKeys: [...new Set(input.dressOptionKeys ?? [])]
           }
-      : {
-          type: "character",
-          characterId: input.characterId as string,
-          emotionKey: input.emotionKey as string
-        };
+        : {
+            type: "character",
+            characterId: input.characterId as string,
+            emotionKey: input.emotionKey as string
+          };
   entry.updatedAt = nowIsoString();
   scene.updatedAt = nowIsoString();
   chapter.updatedAt = nowIsoString();

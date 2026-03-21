@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SCENE_DRAFT_TEMP_ID_PREFIX } from "@/lib/story/scene-draft";
 import type { SceneDraftPayload } from "@/lib/story/types";
@@ -16,7 +16,20 @@ const adminSceneDraftStore = new Map<
   }
 >();
 
-const downloadMock = vi.fn(async (objectPath: string) => {
+type StorageDownloadResult = {
+  data: {
+    text: () => Promise<string>;
+  } | null;
+  error: {
+    statusCode?: number | string;
+    message: string;
+    code?: string;
+  } | null;
+};
+
+async function downloadFromStorage(
+  objectPath: string
+): Promise<StorageDownloadResult> {
   const value = storageData.get(objectPath);
 
   if (value == null) {
@@ -35,7 +48,9 @@ const downloadMock = vi.fn(async (objectPath: string) => {
     },
     error: null
   };
-});
+}
+
+const downloadMock = vi.fn(downloadFromStorage);
 
 const uploadMock = vi.fn(
   async (
@@ -166,8 +181,8 @@ const compileRuntimeStoryMock = vi.fn(
   })
 );
 
-const compileRuntimeChapterBundleMock = vi.fn(
-  (input: { chapterId: string }) => createCompiledChapterBundle(input.chapterId)
+const compileRuntimeChapterBundleMock = vi.fn((input: { chapterId: string }) =>
+  createCompiledChapterBundle(input.chapterId)
 );
 
 vi.mock("@/lib/story/published", () => ({
@@ -210,6 +225,7 @@ const {
   createDialogueEntry,
   deleteDialogueEntry,
   discardSceneDraft,
+  getAdminStoryData,
   getSceneDraft,
   reorderDialogueEntry,
   saveSceneDraft,
@@ -405,13 +421,15 @@ function getPersistedStory() {
           id: string;
           orderIndex: number;
           text: string;
-          speaker: {
-            type: "narrator";
-          } | {
-            type: "character";
-            characterId: string;
-            emotionKey: string;
-          };
+          speaker:
+            | {
+                type: "narrator";
+              }
+            | {
+                type: "character";
+                characterId: string;
+                emotionKey: string;
+              };
         }>;
         updatedAt: string;
       }>;
@@ -442,8 +460,9 @@ function getPersistedAssets() {
 
 function getPersistedScene(sceneId = "scene_1") {
   return (
-    getPersistedStory().chapters[0]?.scenes.find((scene) => scene.id === sceneId) ??
-    null
+    getPersistedStory().chapters[0]?.scenes.find(
+      (scene) => scene.id === sceneId
+    ) ?? null
   );
 }
 
@@ -463,7 +482,9 @@ function expectChapterScopedWrites() {
   expect(compileRuntimeStoryMock).not.toHaveBeenCalled();
   expect(compileRuntimeChapterBundleMock).toHaveBeenCalledWith({
     snapshot: expect.objectContaining({
-      chapters: expect.arrayContaining([expect.objectContaining({ id: "chapter_1" })])
+      chapters: expect.arrayContaining([
+        expect.objectContaining({ id: "chapter_1" })
+      ])
     }),
     chapterId: "chapter_1",
     bucket: "runtime",
@@ -485,32 +506,106 @@ function createDraftPayload(
       characterIds: ["character_1"],
       ...overrides?.scene
     },
-    dialogue:
-      overrides?.dialogue ?? [
-        {
-          id: "dialogue_3",
-          speakerType: "character",
-          characterId: "character_1",
-          emotionKey: "angry",
-          text: "Third revised"
-        },
-        {
-          id: "dialogue_1",
-          speakerType: "narrator",
-          characterId: null,
-          emotionKey: null,
-          text: "First revised"
-        },
-        {
-          id: `${SCENE_DRAFT_TEMP_ID_PREFIX}new-entry`,
-          speakerType: "character",
-          characterId: "character_1",
-          emotionKey: "neutral",
-          text: "Fresh line"
-        }
-      ]
+    dialogue: overrides?.dialogue ?? [
+      {
+        id: "dialogue_3",
+        speakerType: "character",
+        characterId: "character_1",
+        emotionKey: "angry",
+        text: "Third revised"
+      },
+      {
+        id: "dialogue_1",
+        speakerType: "narrator",
+        characterId: null,
+        emotionKey: null,
+        text: "First revised"
+      },
+      {
+        id: `${SCENE_DRAFT_TEMP_ID_PREFIX}new-entry`,
+        speakerType: "character",
+        characterId: "character_1",
+        emotionKey: "neutral",
+        text: "Fresh line"
+      }
+    ]
   };
 }
+
+describe("authoring snapshot loading", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    storageData.clear();
+    adminSceneDraftStore.clear();
+    seedAuthoringStorage();
+  });
+
+  afterEach(() => {
+    downloadMock.mockImplementation(downloadFromStorage);
+  });
+
+  it("retries transient storage fetch failures before returning story data", async () => {
+    const attemptsByPath = new Map<string, number>();
+
+    downloadMock.mockImplementation(async (objectPath: string) => {
+      const attempts = (attemptsByPath.get(objectPath) ?? 0) + 1;
+      attemptsByPath.set(objectPath, attempts);
+
+      if (attempts < 3) {
+        return {
+          data: null,
+          error: {
+            code: "fetch_error",
+            message: "fetch failed"
+          }
+        };
+      }
+
+      const value = storageData.get(objectPath);
+
+      if (value == null) {
+        return {
+          data: null,
+          error: {
+            statusCode: 404,
+            message: "Not found"
+          }
+        };
+      }
+
+      return {
+        data: {
+          text: async () => value
+        },
+        error: null
+      };
+    });
+
+    const story = await getAdminStoryData();
+
+    expect(story.characters).toHaveLength(1);
+    expect(story.backgroundImages).toHaveLength(2);
+    expect(story.chapters).toHaveLength(1);
+    expect(attemptsByPath.get("authoring/characters.json")).toBe(3);
+    expect(attemptsByPath.get("authoring/assets.json")).toBe(3);
+    expect(attemptsByPath.get("authoring/chapters.json")).toBe(3);
+  });
+
+  it("throws a repository error after repeated storage fetch failures", async () => {
+    downloadMock.mockImplementation(async () => ({
+      data: null,
+      error: {
+        code: "fetch_error",
+        message: "fetch failed"
+      }
+    }));
+
+    await expect(getAdminStoryData()).rejects.toMatchObject({
+      message:
+        "Unable to reach Supabase storage while loading authoring data. Check your Supabase URL, network connection, and Supabase project availability."
+    });
+  });
+});
 
 describe("dialogue mutations", () => {
   beforeEach(() => {
@@ -531,9 +626,9 @@ describe("dialogue mutations", () => {
     });
 
     expect(entry.orderIndex).toBe(10);
-    expect(getPersistedDialogue().map((dialogue) => dialogue.orderIndex)).toEqual(
-      [1, 4, 9, 10]
-    );
+    expect(
+      getPersistedDialogue().map((dialogue) => dialogue.orderIndex)
+    ).toEqual([1, 4, 9, 10]);
     expect(
       downloadMock.mock.calls.filter(
         ([objectPath]) => objectPath === "authoring/chapters.json"
@@ -713,9 +808,7 @@ describe("saveSceneDraft", () => {
     expect(getPersistedScene("scene_2")?.orderIndex).toBe(1);
     expect(getPersistedDialogue()).toHaveLength(3);
     expect(getPersistedDialogue().map((entry) => entry.orderIndex)).toEqual([
-      1,
-      2,
-      3
+      1, 2, 3
     ]);
     expect(getPersistedDialogue().map((entry) => entry.id)).not.toContain(
       "dialogue_2"
@@ -738,12 +831,10 @@ describe("saveSceneDraft", () => {
         type: "narrator"
       }
     });
-    expect(getPersistedDialogue()[2]?.id).toMatch(
-      /^dialogue_[a-f0-9]+$/i
-    );
-    expect(getPersistedDialogue()[2]?.id.startsWith(SCENE_DRAFT_TEMP_ID_PREFIX)).toBe(
-      false
-    );
+    expect(getPersistedDialogue()[2]?.id).toMatch(/^dialogue_[a-f0-9]+$/i);
+    expect(
+      getPersistedDialogue()[2]?.id.startsWith(SCENE_DRAFT_TEMP_ID_PREFIX)
+    ).toBe(false);
     expect(adminSceneDraftStore.has("scene_1")).toBe(false);
     expectChapterScopedWrites();
   });
@@ -791,8 +882,8 @@ describe("saveSceneDraft", () => {
           orderIndex: 1,
           backgroundImageAssetId: "bg_1",
           backgroundMusicAssetId: null,
-          characterIds: [],
-          },
+          characterIds: []
+        },
         dialogue: [
           {
             id: "dialogue_3",
@@ -921,10 +1012,12 @@ describe("non-dialogue commits", () => {
     );
 
     expect(uploadedEmotionPath).toBeDefined();
-    expect(uploadedEmotionPath).not.toBe("media/characters/character_1/emotion_1");
+    expect(uploadedEmotionPath).not.toBe(
+      "media/characters/character_1/emotion_1"
+    );
     expect(
-      getPersistedCharacters().characters
-        .find((character) => character.id === "character_1")
+      getPersistedCharacters()
+        .characters.find((character) => character.id === "character_1")
         ?.emotions.find((emotion) => emotion.id === "emotion_1")?.imagePath
     ).toBe(`runtime/${uploadedEmotionPath}`);
     expect(removeMock).toHaveBeenCalledWith(["characters/ocnoer-neutral.png"]);

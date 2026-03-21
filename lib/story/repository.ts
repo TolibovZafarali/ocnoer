@@ -1,4 +1,6 @@
 import { randomUUID } from "node:crypto";
+import { readFile } from "node:fs/promises";
+import path from "node:path";
 
 import type { Prisma } from "@prisma/client";
 
@@ -23,6 +25,10 @@ import type {
   CharacterDefinition,
   CharactersCatalogFile,
   DialogueEntry,
+  RuntimeBackgroundImage,
+  RuntimeBackgroundMusic,
+  RuntimeChapterBundle,
+  RuntimeCharacter,
   SceneDefinition,
   SceneDraftPayload,
   StoryAuthoringSnapshot
@@ -42,6 +48,11 @@ const STORAGE_FETCH_FAILURE_MESSAGE =
   "Unable to reach Supabase storage while loading authoring data. Check your Supabase URL, network connection, and Supabase project availability.";
 const STORAGE_FETCH_MAX_ATTEMPTS = 4;
 const STORAGE_FETCH_RETRY_BASE_DELAY_MS = 150;
+const LOCAL_AUTHORING_FALLBACK_DIR_ENV = "LOCAL_AUTHORING_FALLBACK_DIR";
+const DEFAULT_LOCAL_AUTHORING_FALLBACK_DIR = "/private/tmp/ocnoer-chapters";
+const LOCAL_AUTHORING_CHARACTERS_FILE = "authoring_characters.json";
+const LOCAL_AUTHORING_ASSETS_FILE = "authoring_assets.json";
+const LOCAL_AUTHORING_CHAPTERS_FILE = "authoring_chapters.json";
 
 export type StoredSceneDraft = {
   sceneId: string;
@@ -629,7 +640,248 @@ function loadDefaultChaptersFile(): ChaptersCatalogFile {
   };
 }
 
-async function loadAuthoringSnapshot(): Promise<StoryAuthoringSnapshot> {
+function isNodeFileNotFoundError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  return (
+    "code" in error &&
+    typeof (error as { code?: unknown }).code === "string" &&
+    (error as { code: string }).code === "ENOENT"
+  );
+}
+
+function getLocalAuthoringFallbackDirectory() {
+  const configuredDirectory = process.env[LOCAL_AUTHORING_FALLBACK_DIR_ENV];
+  const normalizedDirectory = configuredDirectory?.trim();
+
+  if (normalizedDirectory) {
+    return normalizedDirectory;
+  }
+
+  if (process.env.NODE_ENV === "development") {
+    return DEFAULT_LOCAL_AUTHORING_FALLBACK_DIR;
+  }
+
+  return null;
+}
+
+function createFallbackEntityId(
+  prefix: string,
+  ...parts: Array<string | number | null | undefined>
+) {
+  const normalized = parts
+    .map((part) => String(part ?? "").trim().toLowerCase())
+    .map((part) => part.replace(/[^a-z0-9_-]+/g, "_"))
+    .filter(Boolean)
+    .join("_");
+
+  return `${prefix}_${normalized || "item"}`;
+}
+
+function toFallbackCharacterDefinition(character: RuntimeCharacter) {
+  const timestamp = nowIsoString();
+
+  return {
+    id: character.id,
+    name: character.name,
+    slug: normalizeSlugInput(character.slug, character.name || character.id),
+    bio: character.bio,
+    defaultEmotionKey:
+      character.defaultEmotionKey || character.emotions[0]?.key || "default",
+    emotions: (character.emotions ?? []).map((emotion, index) => ({
+      id: createFallbackEntityId(
+        "emotion",
+        character.id,
+        emotion.key || String(index)
+      ),
+      key: emotion.key,
+      label: emotion.label,
+      imagePath: emotion.imagePath,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    })),
+    dresses: (character.dresses ?? []).map((dress, dressIndex) => ({
+      id: createFallbackEntityId(
+        "dress",
+        character.id,
+        dress.key || String(dressIndex)
+      ),
+      key: dress.key,
+      label: dress.label,
+      emotionOverrides: (dress.emotionOverrides ?? []).map(
+        (override, overrideIndex) => ({
+          id: createFallbackEntityId(
+            "dress_override",
+            character.id,
+            dress.key || String(dressIndex),
+            override.emotionKey || String(overrideIndex)
+          ),
+          emotionKey: override.emotionKey,
+          imagePath: override.imagePath,
+          createdAt: timestamp,
+          updatedAt: timestamp
+        })
+      ),
+      createdAt: timestamp,
+      updatedAt: timestamp
+    })),
+    createdAt: timestamp,
+    updatedAt: timestamp
+  } satisfies CharacterDefinition;
+}
+
+function toFallbackBackgroundImageAsset(image: RuntimeBackgroundImage) {
+  const timestamp = nowIsoString();
+
+  return {
+    id: image.id,
+    type: "background_image",
+    label: image.label,
+    slug: normalizeSlugInput(image.slug, image.label || image.id),
+    altText: image.altText,
+    filePath: image.filePath,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  } satisfies BackgroundImageAsset;
+}
+
+function toFallbackBackgroundMusicTrack(track: RuntimeBackgroundMusic) {
+  const timestamp = nowIsoString();
+
+  return {
+    id: track.id,
+    type: "background_music",
+    label: track.label,
+    slug: normalizeSlugInput(track.slug, track.label || track.id),
+    filePath: track.filePath,
+    createdAt: timestamp,
+    updatedAt: timestamp
+  } satisfies BackgroundMusicTrack;
+}
+
+async function readLocalJsonFile<T>(filePath: string): Promise<T | null> {
+  try {
+    const contents = await readFile(filePath, "utf8");
+
+    return JSON.parse(contents) as T;
+  } catch (error) {
+    if (isNodeFileNotFoundError(error)) {
+      return null;
+    }
+
+    return null;
+  }
+}
+
+async function hydrateFallbackSnapshotFromRuntimeBundles(
+  fallbackDirectory: string,
+  chapters: ChapterDefinition[],
+  charactersById: Map<string, CharacterDefinition>,
+  backgroundImagesById: Map<string, BackgroundImageAsset>,
+  backgroundMusicTracksById: Map<string, BackgroundMusicTrack>
+) {
+  await Promise.all(
+    chapters.map(async (chapter) => {
+      const bundle = await readLocalJsonFile<RuntimeChapterBundle>(
+        path.join(fallbackDirectory, `${chapter.id}.json`)
+      );
+
+      if (!bundle?.chapter?.scenes) {
+        return;
+      }
+
+      for (const scene of bundle.chapter.scenes) {
+        if (
+          scene.backgroundImage &&
+          !backgroundImagesById.has(scene.backgroundImage.id)
+        ) {
+          backgroundImagesById.set(
+            scene.backgroundImage.id,
+            toFallbackBackgroundImageAsset(scene.backgroundImage)
+          );
+        }
+
+        if (
+          scene.backgroundMusic &&
+          !backgroundMusicTracksById.has(scene.backgroundMusic.id)
+        ) {
+          backgroundMusicTracksById.set(
+            scene.backgroundMusic.id,
+            toFallbackBackgroundMusicTrack(scene.backgroundMusic)
+          );
+        }
+
+        for (const character of scene.characterPool ?? []) {
+          if (charactersById.has(character.id)) {
+            continue;
+          }
+
+          charactersById.set(
+            character.id,
+            toFallbackCharacterDefinition(character)
+          );
+        }
+      }
+    })
+  );
+}
+
+async function loadLocalAuthoringSnapshotFallback(): Promise<StoryAuthoringSnapshot | null> {
+  const fallbackDirectory = getLocalAuthoringFallbackDirectory();
+
+  if (!fallbackDirectory) {
+    return null;
+  }
+
+  const [charactersFile, assetsFile, chaptersFile] = await Promise.all([
+    readLocalJsonFile<CharactersCatalogFile>(
+      path.join(fallbackDirectory, LOCAL_AUTHORING_CHARACTERS_FILE)
+    ),
+    readLocalJsonFile<AssetsCatalogFile>(
+      path.join(fallbackDirectory, LOCAL_AUTHORING_ASSETS_FILE)
+    ),
+    readLocalJsonFile<ChaptersCatalogFile>(
+      path.join(fallbackDirectory, LOCAL_AUTHORING_CHAPTERS_FILE)
+    )
+  ]);
+
+  const chapters = chaptersFile?.chapters ?? [];
+
+  if (chapters.length === 0) {
+    return null;
+  }
+
+  const charactersById = new Map(
+    (charactersFile?.characters ?? []).map((character) => [character.id, character])
+  );
+  const backgroundImagesById = new Map(
+    (assetsFile?.backgroundImages ?? []).map((asset) => [asset.id, asset])
+  );
+  const backgroundMusicTracksById = new Map(
+    (assetsFile?.backgroundMusicTracks ?? []).map((asset) => [asset.id, asset])
+  );
+
+  if (!charactersFile || !assetsFile) {
+    await hydrateFallbackSnapshotFromRuntimeBundles(
+      fallbackDirectory,
+      chapters,
+      charactersById,
+      backgroundImagesById,
+      backgroundMusicTracksById
+    );
+  }
+
+  return sortSnapshot({
+    characters: [...charactersById.values()],
+    backgroundImages: [...backgroundImagesById.values()],
+    backgroundMusicTracks: [...backgroundMusicTracksById.values()],
+    chapters
+  });
+}
+
+async function loadAuthoringSnapshotFromStorage(): Promise<StoryAuthoringSnapshot> {
   const [charactersFile, assetsFile, chaptersFile] = await Promise.all([
     readJsonFile(AUTHORING_CHARACTERS_PATH, loadDefaultCharactersFile()),
     readJsonFile(AUTHORING_ASSETS_PATH, loadDefaultAssetsFile()),
@@ -642,6 +894,25 @@ async function loadAuthoringSnapshot(): Promise<StoryAuthoringSnapshot> {
     backgroundMusicTracks: assetsFile.backgroundMusicTracks ?? [],
     chapters: chaptersFile.chapters ?? []
   });
+}
+
+async function loadAuthoringSnapshot(): Promise<StoryAuthoringSnapshot> {
+  try {
+    return await loadAuthoringSnapshotFromStorage();
+  } catch (error) {
+    if (
+      error instanceof StoryRepositoryError &&
+      error.message === STORAGE_FETCH_FAILURE_MESSAGE
+    ) {
+      const localFallbackSnapshot = await loadLocalAuthoringSnapshotFallback();
+
+      if (localFallbackSnapshot) {
+        return localFallbackSnapshot;
+      }
+    }
+
+    throw error;
+  }
 }
 
 async function persistAuthoringSnapshot(snapshot: StoryAuthoringSnapshot) {

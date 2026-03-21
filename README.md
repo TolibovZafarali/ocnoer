@@ -46,6 +46,7 @@ Ocnoer is a single Next.js app with:
 - `NEXT_PUBLIC_SUPABASE_ANON_KEY`
 - `SUPABASE_SERVICE_ROLE_KEY`
 - `SUPABASE_RUNTIME_BUCKET`
+- `LOCAL_AUTHORING_FALLBACK_DIR` (optional, dev only)
 - `ADMIN_PASSWORD`
 
 `SUPABASE_RUNTIME_BUCKET` now holds authoring JSON, generated runtime JSON, and uploaded media.
@@ -66,4 +67,3 @@ Ocnoer is a single Next.js app with:
 - [game-flow.md](/Users/zafaralitolibov/Documents/ocnoer/docs/game-flow.md)
 - [development-guide.md](/Users/zafaralitolibov/Documents/ocnoer/docs/development-guide.md)
 - [roadmap.md](/Users/zafaralitolibov/Documents/ocnoer/docs/roadmap.md)
-

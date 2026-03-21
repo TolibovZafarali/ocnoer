@@ -1,3 +1,7 @@
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SCENE_DRAFT_TEMP_ID_PREFIX } from "@/lib/story/scene-draft";
@@ -604,6 +608,212 @@ describe("authoring snapshot loading", () => {
       message:
         "Unable to reach Supabase storage while loading authoring data. Check your Supabase URL, network connection, and Supabase project availability."
     });
+  });
+
+  it("loads local chapter fallback data in development when storage is unreachable", async () => {
+    downloadMock.mockImplementation(async () => ({
+      data: null,
+      error: {
+        code: "fetch_error",
+        message: "fetch failed"
+      }
+    }));
+
+    const fallbackDirectory = await mkdtemp(
+      path.join(os.tmpdir(), "ocnoer-authoring-fallback-")
+    );
+    const mutableEnv = process.env as Record<string, string | undefined>;
+    const previousFallbackDirectory = process.env.LOCAL_AUTHORING_FALLBACK_DIR;
+    const previousNodeEnv = process.env.NODE_ENV;
+
+    try {
+      mutableEnv.NODE_ENV = "development";
+      mutableEnv.LOCAL_AUTHORING_FALLBACK_DIR = fallbackDirectory;
+
+      await writeFile(
+        path.join(fallbackDirectory, "authoring_chapters.json"),
+        JSON.stringify(
+          {
+            schemaVersion: 1,
+            updatedAt: "2026-03-20T05:00:00.000Z",
+            chapters: [
+              {
+                id: "chapter_local_1",
+                title: "Local Chapter",
+                slug: "local-chapter",
+                orderIndex: 1,
+                scenes: [
+                  {
+                    id: "scene_local_1",
+                    title: "Local Scene",
+                    orderIndex: 1,
+                    backgroundImageAssetId: "bg_local_1",
+                    backgroundMusicAssetId: "music_local_1",
+                    characterIds: ["character_local_1"],
+                    dialogue: [
+                      {
+                        id: "dialogue_local_1",
+                        orderIndex: 1,
+                        text: "Fallback line",
+                        speaker: {
+                          type: "character",
+                          characterId: "character_local_1",
+                          emotionKey: "sad"
+                        },
+                        createdAt: "2026-03-20T05:00:00.000Z",
+                        updatedAt: "2026-03-20T05:00:00.000Z"
+                      }
+                    ],
+                    createdAt: "2026-03-20T05:00:00.000Z",
+                    updatedAt: "2026-03-20T05:00:00.000Z"
+                  }
+                ],
+                createdAt: "2026-03-20T05:00:00.000Z",
+                updatedAt: "2026-03-20T05:00:00.000Z"
+              }
+            ]
+          },
+          null,
+          2
+        ),
+        "utf8"
+      );
+
+      await writeFile(
+        path.join(fallbackDirectory, "chapter_local_1.json"),
+        JSON.stringify(
+          {
+            schemaVersion: 1,
+            generatedAt: "2026-03-20T05:00:00.000Z",
+            chapter: {
+              id: "chapter_local_1",
+              title: "Local Chapter",
+              slug: "local-chapter",
+              orderIndex: 1,
+              scenes: [
+                {
+                  id: "scene_local_1",
+                  title: "Local Scene",
+                  orderIndex: 1,
+                  backgroundImage: {
+                    id: "bg_local_1",
+                    label: "Local Hall",
+                    slug: "local-hall",
+                    altText: "Local hall",
+                    filePath: "runtime/media/background-images/bg_local_1"
+                  },
+                  backgroundMusic: {
+                    id: "music_local_1",
+                    label: "Storm Theme",
+                    slug: "storm-theme",
+                    filePath: "runtime/media/background-music/music_local_1"
+                  },
+                  characterPool: [
+                    {
+                      id: "character_local_1",
+                      name: "Ocnoer",
+                      slug: "ocnoer",
+                      bio: null,
+                      defaultEmotionKey: "default",
+                      defaultEmotionImagePath:
+                        "runtime/media/characters/character_local_1/default",
+                      emotions: [
+                        {
+                          key: "default",
+                          label: "Default",
+                          imagePath:
+                            "runtime/media/characters/character_local_1/default"
+                        },
+                        {
+                          key: "sad",
+                          label: "Sad",
+                          imagePath:
+                            "runtime/media/characters/character_local_1/sad"
+                        }
+                      ],
+                      dresses: []
+                    }
+                  ],
+                  dialogue: [
+                    {
+                      id: "dialogue_local_1",
+                      orderIndex: 1,
+                      text: "Fallback line",
+                      speaker: {
+                        type: "character",
+                        characterId: "character_local_1",
+                        characterName: "Ocnoer",
+                        characterSlug: "ocnoer",
+                        emotionKey: "sad",
+                        emotionLabel: "Sad",
+                        emotionImagePath:
+                          "runtime/media/characters/character_local_1/sad"
+                      },
+                      stage: {
+                        left: null,
+                        right: null
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            nextChapterId: null
+          },
+          null,
+          2
+        ),
+        "utf8"
+      );
+
+      const story = await getAdminStoryData();
+
+      expect(story.chapters).toHaveLength(1);
+      expect(story.chapters[0]?.id).toBe("chapter_local_1");
+      expect(story.backgroundImages).toEqual([
+        expect.objectContaining({
+          id: "bg_local_1",
+          label: "Local Hall"
+        })
+      ]);
+      expect(story.backgroundMusicTracks).toEqual([
+        expect.objectContaining({
+          id: "music_local_1",
+          label: "Storm Theme"
+        })
+      ]);
+      expect(story.characters).toEqual([
+        expect.objectContaining({
+          id: "character_local_1",
+          defaultEmotionKey: "default",
+          emotions: expect.arrayContaining([
+            expect.objectContaining({
+              key: "default"
+            }),
+            expect.objectContaining({
+              key: "sad"
+            })
+          ])
+        })
+      ]);
+    } finally {
+      if (previousFallbackDirectory == null) {
+        delete mutableEnv.LOCAL_AUTHORING_FALLBACK_DIR;
+      } else {
+        mutableEnv.LOCAL_AUTHORING_FALLBACK_DIR = previousFallbackDirectory;
+      }
+
+      if (previousNodeEnv == null) {
+        delete mutableEnv.NODE_ENV;
+      } else {
+        mutableEnv.NODE_ENV = previousNodeEnv;
+      }
+
+      await rm(fallbackDirectory, {
+        recursive: true,
+        force: true
+      });
+    }
   });
 });
 

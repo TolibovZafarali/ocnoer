@@ -20,6 +20,10 @@ body {
   font-family: var(--font-character-name), "Times New Roman", cursive;
 }
 
+.font-dress-prompt {
+  font-family: var(--font-dress-prompt), "Brush Script MT", cursive;
+}
+
 .material-symbols-outlined {
   font-family: "Material Symbols Outlined";
   font-weight: normal;

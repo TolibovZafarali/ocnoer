@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { Literata, Tangerine } from "next/font/google";
+import { Imperial_Script, Literata, Tangerine } from "next/font/google";
 
 import "./globals.css";
 
@@ -15,6 +15,13 @@ const characterNameFont = Tangerine({
   weight: ["400", "700"],
   display: "swap",
   variable: "--font-character-name"
+});
+
+const dressPromptFont = Imperial_Script({
+  subsets: ["latin"],
+  weight: ["400"],
+  display: "swap",
+  variable: "--font-dress-prompt"
 });
 
 export const metadata: Metadata = {
@@ -36,7 +43,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
         />
       </head>
       <body
-        className={`${dialogueFont.variable} ${characterNameFont.variable}`}
+        className={`${dialogueFont.variable} ${characterNameFont.variable} ${dressPromptFont.variable}`}
       >
         {children}
       </body>

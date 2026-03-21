@@ -267,6 +267,10 @@ export function PlayerStoryReader({
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [isMapImageReady, setIsMapImageReady] = useState(false);
   const [desktopNavGutterWidth, setDesktopNavGutterWidth] = useState(0);
+  const [dressPromptIndex, setDressPromptIndex] = useState(0);
+  const [dressPromptMotionDirection, setDressPromptMotionDirection] = useState<
+    -1 | 1
+  >(1);
 
   const lineEnterDurationMs = prefersReducedMotion
     ? REDUCED_MOTION_DURATION_MS
@@ -641,6 +645,12 @@ export function PlayerStoryReader({
       previewUrl: toPublicStorageUrl(supabaseUrl, option.previewImagePath)
     }));
   }, [activeEntry, supabaseUrl]);
+  const selectedDressPromptOption =
+    dressPromptOptions.length > 0
+      ? dressPromptOptions[
+          Math.min(dressPromptIndex, dressPromptOptions.length - 1)
+        ] ?? null
+      : null;
   const leftCharacterImageUrl = activeAssetUrls.leftCharacterImageUrl;
   const rightCharacterImageUrl = activeAssetUrls.rightCharacterImageUrl;
   const isSceneTransition = boundaryState?.type === "scene-transition";
@@ -758,6 +768,25 @@ export function PlayerStoryReader({
   );
   const showDesktopSceneNavigation =
     desktopSceneNavPanelWidth >= DESKTOP_SCENE_NAV_MIN_GUTTER_WIDTH_PX;
+  const dressPromptCardVariants = useMemo(
+    () => ({
+      enter: (direction: -1 | 1) =>
+        prefersReducedMotion
+          ? { opacity: 1, x: 0, scale: 1 }
+          : { opacity: 0, x: direction * 22, scale: 0.985 },
+      center: { opacity: 1, x: 0, scale: 1 },
+      exit: (direction: -1 | 1) =>
+        prefersReducedMotion
+          ? { opacity: 0, x: 0, scale: 1 }
+          : { opacity: 0, x: direction * -22, scale: 0.985 }
+    }),
+    [prefersReducedMotion]
+  );
+
+  useEffect(() => {
+    setDressPromptIndex(0);
+    setDressPromptMotionDirection(1);
+  }, [activeEntry?.id]);
 
   useEffect(() => {
     if (!isSceneTransition || !pendingSceneState) {
@@ -1234,6 +1263,36 @@ export function PlayerStoryReader({
     [entry, handleAdvance, isLoadingChapter, presentationPhase]
   );
 
+  const handlePreviousDressPromptOption = useCallback(() => {
+    if (dressPromptOptions.length <= 1) {
+      return;
+    }
+
+    setDressPromptMotionDirection(-1);
+    setDressPromptIndex((currentIndex) => {
+      if (currentIndex <= 0) {
+        return dressPromptOptions.length - 1;
+      }
+
+      return currentIndex - 1;
+    });
+  }, [dressPromptOptions.length]);
+
+  const handleNextDressPromptOption = useCallback(() => {
+    if (dressPromptOptions.length <= 1) {
+      return;
+    }
+
+    setDressPromptMotionDirection(1);
+    setDressPromptIndex((currentIndex) => {
+      if (currentIndex >= dressPromptOptions.length - 1) {
+        return 0;
+      }
+
+      return currentIndex + 1;
+    });
+  }, [dressPromptOptions.length]);
+
   const handleRestart = useCallback(async () => {
     if (!manifest?.firstChapterId) {
       return;
@@ -1589,50 +1648,104 @@ export function PlayerStoryReader({
                     </div>
                   ) : null}
 
-                  <p className="font-dialogue min-h-[3.5rem] text-base leading-7 text-slate-100 md:text-lg md:leading-8">
+                  <p
+                    className={`min-h-[3.5rem] text-slate-100 ${
+                      resolvedEntry.speaker.type === "dress_prompt"
+                        ? "font-dress-prompt text-center text-[2.4rem] leading-[1.15] md:text-[2.8rem]"
+                        : "font-dialogue text-base leading-7 md:text-lg md:leading-8"
+                    }`}
+                  >
                     {dialogueTextNodes}
                   </p>
 
-                  {showDressPromptOptions ? (
-                    <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                      {dressPromptOptions.map((option) => (
+                  {showDressPromptOptions && selectedDressPromptOption ? (
+                    <div className="mt-6">
+                      <div className="flex items-center justify-center gap-2 md:gap-3">
                         <button
-                          key={option.key}
-                          onClick={() => void handleDressSelect(option.key)}
-                          disabled={isLoadingChapter}
+                          onClick={handlePreviousDressPromptOption}
+                          disabled={
+                            isLoadingChapter || dressPromptOptions.length <= 1
+                          }
                           type="button"
-                          className="group overflow-hidden rounded-2xl border border-white/10 bg-white/5 text-left transition hover:border-white/25 hover:bg-white/10 disabled:cursor-default disabled:opacity-45"
+                          aria-label="Previous dress option"
+                          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/15 bg-black/25 text-slate-100 transition-colors hover:border-white/30 hover:text-white disabled:cursor-default disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                         >
-                          {option.previewUrl ? (
-                            <img
-                              src={option.previewUrl}
-                              alt={option.label}
-                              className="aspect-[4/5] w-full object-cover"
-                            />
-                          ) : (
-                            <div className="flex aspect-[4/5] w-full items-center justify-center bg-black/20 text-sm text-slate-400">
-                              No preview
-                            </div>
-                          )}
-                          <div className="flex items-center justify-between gap-3 px-4 py-3">
-                            <span className="text-sm font-medium text-slate-100">
-                              {option.label}
-                            </span>
-                            <span
-                              aria-hidden
-                              className="material-symbols-outlined text-slate-400 transition group-hover:text-slate-100"
-                            >
-                              arrow_forward
-                            </span>
-                          </div>
+                          <span
+                            aria-hidden
+                            className="material-symbols-outlined text-[20px]"
+                          >
+                            arrow_back
+                          </span>
                         </button>
-                      ))}
+
+                        <div className="relative w-[min(58vw,13.5rem)] shrink-0">
+                          <div className="relative aspect-[4/5] w-full">
+                            <AnimatePresence
+                              initial={false}
+                              mode="wait"
+                              custom={dressPromptMotionDirection}
+                            >
+                              <motion.button
+                                key={selectedDressPromptOption.key}
+                                custom={dressPromptMotionDirection}
+                                initial="enter"
+                                animate="center"
+                                exit="exit"
+                                variants={dressPromptCardVariants}
+                                transition={{
+                                  duration: prefersReducedMotion ? 0 : 0.28,
+                                  ease: MOTION_EASE_OUT
+                                }}
+                                onClick={() =>
+                                  void handleDressSelect(selectedDressPromptOption.key)
+                                }
+                                disabled={isLoadingChapter}
+                                type="button"
+                                className="absolute inset-0 overflow-hidden rounded-2xl border border-white/10 bg-white/5 transition hover:border-white/25 hover:bg-white/10 disabled:cursor-default disabled:opacity-45"
+                              >
+                                {selectedDressPromptOption.previewUrl ? (
+                                  <img
+                                    src={selectedDressPromptOption.previewUrl}
+                                    alt={selectedDressPromptOption.label}
+                                    className="h-full w-full object-contain"
+                                  />
+                                ) : (
+                                  <div className="flex h-full w-full items-center justify-center bg-black/20 text-sm text-slate-400">
+                                    No preview
+                                  </div>
+                                )}
+                              </motion.button>
+                            </AnimatePresence>
+                          </div>
+
+                          <div className="mt-2 text-center text-xs text-slate-400">
+                            {dressPromptIndex + 1} of {dressPromptOptions.length}
+                          </div>
+                        </div>
+
+                        <button
+                          onClick={handleNextDressPromptOption}
+                          disabled={
+                            isLoadingChapter || dressPromptOptions.length <= 1
+                          }
+                          type="button"
+                          aria-label="Next dress option"
+                          className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/15 bg-black/25 text-slate-100 transition-colors hover:border-white/30 hover:text-white disabled:cursor-default disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                        >
+                          <span
+                            aria-hidden
+                            className="material-symbols-outlined text-[20px]"
+                          >
+                            arrow_forward
+                          </span>
+                        </button>
+                      </div>
                     </div>
                   ) : null}
 
-                  <div className="mt-6 flex min-h-9 justify-end">
-                    <AnimatePresence initial={false}>
-                      {showContinueButton ? (
+                  {showContinueButton ? (
+                    <div className="mt-6 flex justify-end">
+                      <AnimatePresence initial={false}>
                         <motion.div
                           initial={
                             prefersReducedMotion ? false : { opacity: 0, y: 10 }
@@ -1665,9 +1778,9 @@ export function PlayerStoryReader({
                             </span>
                           </button>
                         </motion.div>
-                      ) : null}
-                    </AnimatePresence>
-                  </div>
+                      </AnimatePresence>
+                    </div>
+                  ) : null}
                 </motion.div>
               </AnimatePresence>
             </div>

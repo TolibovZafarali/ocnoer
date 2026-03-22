@@ -62,6 +62,7 @@ Each chapter bundle contains ordered scenes, dialogue, dress prompts, selected e
   - order index
   - background image
   - optional music
+  - whether Ocnoer should carry the previously selected dress into this scene
   - selected scene character pool
 
 ### Dialogue
@@ -82,6 +83,7 @@ Each chapter bundle contains ordered scenes, dialogue, dress prompts, selected e
 The player does not call a dynamic chapter/scene/dialogue API.
 
 Local reader progress also stores visual-only `branchFlags`, including the active Ocnoer dress selection under `dress:<characterId>`.
+If a scene disables dress carry, the player resets to `__base__` at scene start and that default persists until a later dress prompt selection.
 
 ## Admin Protection
 

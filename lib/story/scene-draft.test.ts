@@ -14,6 +14,7 @@ describe("scene draft helpers", () => {
       orderIndex: 1,
       backgroundImageAssetId: "bg_1",
       backgroundMusicAssetId: null,
+      carryOcnoerDressSelection: true,
       characterIds: ["character_1"],
       dialogue: [
         {
@@ -61,6 +62,7 @@ describe("scene draft helpers", () => {
         orderIndex: 1,
         backgroundImageAssetId: "bg_1",
         backgroundMusicAssetId: null,
+        carryOcnoerDressSelection: true,
         characterIds: ["character_1"]
       },
       dialogue: [
@@ -100,6 +102,7 @@ describe("scene draft helpers", () => {
           orderIndex: 1,
           backgroundImageAssetId: "bg_1",
           backgroundMusicAssetId: null,
+          carryOcnoerDressSelection: false,
           characterIds: ["character_1"]
         },
         dialogue: [
@@ -127,6 +130,7 @@ describe("scene draft helpers", () => {
         orderIndex: 1,
         backgroundImageAssetId: "bg_1",
         backgroundMusicAssetId: null,
+        carryOcnoerDressSelection: false,
         characterIds: ["character_1"]
       },
       dialogue: [
@@ -152,9 +156,51 @@ describe("scene draft helpers", () => {
     expect(
       parseSceneDraftPayload({
         scene: {
+          title: "Scene Two",
+          orderIndex: 2,
+          backgroundImageAssetId: "bg_1",
+          backgroundMusicAssetId: null,
+          characterIds: ["character_1"]
+        },
+        dialogue: [
+          {
+            id: "dialogue_3",
+            speakerType: "narrator",
+            characterId: null,
+            emotionKey: null,
+            dressOptionKeys: [],
+            text: "Line"
+          }
+        ]
+      })
+    ).toEqual({
+      scene: {
+        title: "Scene Two",
+        orderIndex: 2,
+        backgroundImageAssetId: "bg_1",
+        backgroundMusicAssetId: null,
+        carryOcnoerDressSelection: true,
+        characterIds: ["character_1"]
+      },
+      dialogue: [
+        {
+          id: "dialogue_3",
+          speakerType: "narrator",
+          characterId: null,
+          emotionKey: null,
+          dressOptionKeys: [],
+          text: "Line"
+        }
+      ]
+    });
+
+    expect(
+      parseSceneDraftPayload({
+        scene: {
           title: "Scene One",
           orderIndex: 1,
           backgroundImageAssetId: "bg_1",
+          carryOcnoerDressSelection: true,
           characterIds: ["character_1"]
         },
         dialogue: [

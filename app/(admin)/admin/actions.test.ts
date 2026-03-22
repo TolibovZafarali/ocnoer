@@ -78,6 +78,7 @@ const sceneDraftPayload = {
     orderIndex: 1,
     backgroundImageAssetId: "bg_1",
     backgroundMusicAssetId: null,
+    carryOcnoerDressSelection: true,
     characterIds: ["character_1"]
   },
   dialogue: [

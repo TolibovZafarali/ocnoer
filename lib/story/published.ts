@@ -300,6 +300,7 @@ function compileScene(input: {
     orderIndex: input.scene.orderIndex,
     backgroundImage,
     backgroundMusic,
+    carryOcnoerDressSelection: input.scene.carryOcnoerDressSelection ?? true,
     characterPool,
     dialogue
   };

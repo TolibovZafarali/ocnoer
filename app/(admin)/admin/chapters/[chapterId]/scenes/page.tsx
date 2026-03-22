@@ -172,6 +172,32 @@ export default async function ChapterScenesPage({
               </Field>
 
               <Field
+                label="Dress Carry"
+                htmlFor="carry-ocnoer-dress-selection"
+                hint="When enabled, Ocnoer keeps the currently selected dress from prior scenes."
+              >
+                <label
+                  htmlFor="carry-ocnoer-dress-selection"
+                  className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+                >
+                  <input
+                    type="hidden"
+                    name="carryOcnoerDressSelection"
+                    value="false"
+                  />
+                  <input
+                    id="carry-ocnoer-dress-selection"
+                    type="checkbox"
+                    name="carryOcnoerDressSelection"
+                    value="true"
+                    defaultChecked
+                    className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                  />
+                  <span>Carry selected dress from previous scenes</span>
+                </label>
+              </Field>
+
+              <Field
                 label="Scene Characters"
                 htmlFor="scene-character-pool"
                 hint="Selected characters are available as dialogue speakers in this scene."

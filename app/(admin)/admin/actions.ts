@@ -91,6 +91,22 @@ function getOptionalInteger(
   return parsed.value;
 }
 
+function getOptionalBoolean(formData: FormData, key: string) {
+  const values = formData
+    .getAll(key)
+    .filter((value): value is string => typeof value === "string")
+    .map((value) => value.trim().toLowerCase())
+    .filter(Boolean);
+
+  if (values.length === 0) {
+    return null;
+  }
+
+  const normalized = values[values.length - 1];
+
+  return normalized === "on" || normalized === "true" || normalized === "yes";
+}
+
 function getRequiredInteger(
   formData: FormData,
   key: string,
@@ -1009,6 +1025,8 @@ export async function createSceneAction(formData: FormData) {
           formData,
           "backgroundMusicAssetId"
         ),
+        carryOcnoerDressSelection:
+          getOptionalBoolean(formData, "carryOcnoerDressSelection") ?? true,
         characterIds: getCharacterIds(formData)
       });
 
@@ -1047,6 +1065,8 @@ export async function updateSceneAction(formData: FormData) {
           formData,
           "backgroundMusicAssetId"
         ),
+        carryOcnoerDressSelection:
+          getOptionalBoolean(formData, "carryOcnoerDressSelection") ?? true,
         characterIds: getCharacterIds(formData)
       });
 

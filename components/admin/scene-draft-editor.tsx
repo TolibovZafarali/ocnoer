@@ -853,7 +853,7 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
 
   function updateSceneField(
     field: keyof SceneDraftPayload["scene"],
-    value: string | number | string[] | null
+    value: string | number | boolean | string[] | null
   ) {
     setActionError(null);
     setDraft((currentDraft) => ({
@@ -1137,6 +1137,31 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
                   </option>
                 ))}
               </SelectInput>
+            </Field>
+
+            <Field
+              label="Dress Carry"
+              htmlFor="scene-draft-carry-ocnoer-dress"
+              hint="When disabled, this scene resets Ocnoer to the default dress at scene start."
+            >
+              <label
+                htmlFor="scene-draft-carry-ocnoer-dress"
+                className="flex items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm text-slate-700"
+              >
+                <input
+                  id="scene-draft-carry-ocnoer-dress"
+                  type="checkbox"
+                  checked={draft.scene.carryOcnoerDressSelection}
+                  onChange={(event) =>
+                    updateSceneField(
+                      "carryOcnoerDressSelection",
+                      event.target.checked
+                    )
+                  }
+                  className="h-4 w-4 rounded border-slate-300 text-slate-900"
+                />
+                <span>Carry selected dress from previous scenes</span>
+              </label>
             </Field>
 
             <Field

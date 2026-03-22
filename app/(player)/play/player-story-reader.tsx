@@ -61,6 +61,7 @@ import {
   toPublicStorageUrl
 } from "@/lib/story/runtime";
 import {
+  applySceneDressCarrySelection,
   getDressBranchFlagKey,
   BASE_DRESS_OPTION_KEY
 } from "@/lib/story/wardrobe";
@@ -450,6 +451,20 @@ export function PlayerStoryReader({
     bundle && readerState
       ? getCurrentDialogue(bundle.chapter, readerState)
       : null;
+
+  useEffect(() => {
+    if (!scene) {
+      return;
+    }
+
+    setBranchFlags((currentValue) => {
+      return applySceneDressCarrySelection({
+        scene,
+        branchFlags: currentValue
+      });
+    });
+  }, [scene?.id, scene?.carryOcnoerDressSelection, scene?.characterPool]);
+
   const runtimeAvailability = getRuntimeAvailability({
     manifest,
     bundle,

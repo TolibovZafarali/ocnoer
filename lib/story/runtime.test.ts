@@ -37,6 +37,7 @@ function createScene(input: {
         input.backgroundImagePath ?? `runtime/media/background-${input.id}.png`
     },
     backgroundMusic: null,
+    carryOcnoerDressSelection: true,
     characterPool: [],
     dialogue: input.dialogueIds.map((dialogueId, index) => ({
       id: dialogueId,
@@ -343,6 +344,7 @@ describe("getPlayerRuntimeAssetUrls", () => {
             filePath: "runtime/media/opening-background.png"
           },
           backgroundMusic: null,
+          carryOcnoerDressSelection: true,
           characterPool: [],
           dialogue: [
             {

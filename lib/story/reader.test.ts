@@ -34,6 +34,7 @@ function createScene(input: {
       filePath: `runtime/media/${input.id}.png`
     },
     backgroundMusic: null,
+    carryOcnoerDressSelection: true,
     characterPool: [],
     dialogue: input.dialogueIds.map((dialogueId, index) => ({
       id: dialogueId,

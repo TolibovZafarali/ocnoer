@@ -95,6 +95,7 @@ const snapshot: StoryAuthoringSnapshot = {
           orderIndex: 1,
           backgroundImageAssetId: "bg_hall",
           backgroundMusicAssetId: "music_theme",
+          carryOcnoerDressSelection: true,
           characterIds: ["character_ocnoer", "character_ren"],
           createdAt: "2026-03-16T00:00:00.000Z",
           updatedAt: "2026-03-16T00:00:00.000Z",
@@ -179,6 +180,7 @@ describe("compileRuntimeStory", () => {
 
     expect(scene?.backgroundImage.filePath).toBe("runtime/media/hall.png");
     expect(scene?.backgroundMusic?.filePath).toBe("runtime/media/theme.mp3");
+    expect(scene?.carryOcnoerDressSelection).toBe(true);
     expect(narratorEntry?.stage.left?.characterSlug).toBe("ocnoer");
     expect(narratorEntry?.stage.right).toBeNull();
     expect(renEntry?.stage.left?.characterSlug).toBe("ocnoer");
@@ -212,6 +214,7 @@ describe("compileRuntimeStory", () => {
                 orderIndex: 1,
                 backgroundImageAssetId: "bg_hall",
                 backgroundMusicAssetId: null,
+                carryOcnoerDressSelection: true,
                 characterIds: ["character_ren"],
                 createdAt: "2026-03-16T00:00:00.000Z",
                 updatedAt: "2026-03-16T00:00:00.000Z",
@@ -252,6 +255,7 @@ describe("compileRuntimeStory", () => {
     const bundle = compiled.chapterBundles[0]?.bundle;
     const renEntry = bundle?.chapter.scenes[0]?.dialogue[1];
 
+    expect(bundle?.chapter.scenes[0]?.carryOcnoerDressSelection).toBe(true);
     expect(renEntry?.speaker.type).toBe("character");
     expect(renEntry?.stage.left?.characterSlug).toBe("ren");
     expect(renEntry?.stage.right).toBeNull();

@@ -22,6 +22,10 @@ function asInteger(value: unknown) {
   return typeof value === "number" && Number.isInteger(value) ? value : null;
 }
 
+function asBoolean(value: unknown) {
+  return typeof value === "boolean" ? value : null;
+}
+
 function asStringArray(value: unknown) {
   if (!Array.isArray(value)) {
     return null;
@@ -74,6 +78,7 @@ export function createSceneDraftPayload(
       orderIndex: scene.orderIndex,
       backgroundImageAssetId: scene.backgroundImageAssetId,
       backgroundMusicAssetId: scene.backgroundMusicAssetId,
+      carryOcnoerDressSelection: scene.carryOcnoerDressSelection ?? true,
       characterIds: [...scene.characterIds]
     },
     dialogue: scene.dialogue.map((entry) => ({
@@ -108,6 +113,10 @@ export function parseSceneDraftPayload(
   const backgroundMusicAssetId = asNullableString(
     value.scene.backgroundMusicAssetId
   );
+  const carryOcnoerDressSelection =
+    value.scene.carryOcnoerDressSelection == null
+      ? true
+      : asBoolean(value.scene.carryOcnoerDressSelection);
   const characterIds = asStringArray(value.scene.characterIds);
   const dialogue = value.dialogue
     .map(parseSceneDraftDialogueEntry)
@@ -120,6 +129,7 @@ export function parseSceneDraftPayload(
     title == null ||
     orderIndex == null ||
     backgroundImageAssetId == null ||
+    carryOcnoerDressSelection == null ||
     characterIds == null ||
     dialogue.length !== value.dialogue.length
   ) {
@@ -132,6 +142,7 @@ export function parseSceneDraftPayload(
       orderIndex,
       backgroundImageAssetId,
       backgroundMusicAssetId,
+      carryOcnoerDressSelection,
       characterIds
     },
     dialogue

@@ -334,6 +334,7 @@ function seedAuthoringStorage() {
               orderIndex: 1,
               backgroundImageAssetId: "bg_1",
               backgroundMusicAssetId: null,
+              carryOcnoerDressSelection: true,
               characterIds: ["character_1"],
               dialogue: [
                 {
@@ -378,6 +379,7 @@ function seedAuthoringStorage() {
               orderIndex: 2,
               backgroundImageAssetId: "bg_2",
               backgroundMusicAssetId: null,
+              carryOcnoerDressSelection: true,
               characterIds: [],
               dialogue: [],
               createdAt: "2026-03-17T00:00:00.000Z",
@@ -420,6 +422,7 @@ function getPersistedStory() {
         orderIndex: number;
         backgroundImageAssetId: string;
         backgroundMusicAssetId: string | null;
+        carryOcnoerDressSelection: boolean;
         characterIds: string[];
         dialogue: Array<{
           id: string;
@@ -498,15 +501,17 @@ function expectChapterScopedWrites() {
   expect(removeMock).not.toHaveBeenCalled();
 }
 
-function createDraftPayload(
-  overrides?: Partial<SceneDraftPayload>
-): SceneDraftPayload {
+function createDraftPayload(overrides?: {
+  scene?: Partial<SceneDraftPayload["scene"]>;
+  dialogue?: SceneDraftPayload["dialogue"];
+}): SceneDraftPayload {
   return {
     scene: {
       title: "Scene One Revised",
       orderIndex: 2,
       backgroundImageAssetId: "bg_2",
       backgroundMusicAssetId: "music_1",
+      carryOcnoerDressSelection: true,
       characterIds: ["character_1"],
       ...overrides?.scene
     },
@@ -770,6 +775,9 @@ describe("authoring snapshot loading", () => {
 
       expect(story.chapters).toHaveLength(1);
       expect(story.chapters[0]?.id).toBe("chapter_local_1");
+      expect(story.chapters[0]?.scenes[0]?.carryOcnoerDressSelection).toBe(
+        true
+      );
       expect(story.backgroundImages).toEqual([
         expect.objectContaining({
           id: "bg_local_1",
@@ -1006,6 +1014,7 @@ describe("saveSceneDraft", () => {
       orderIndex: 2,
       backgroundImageAssetId: "bg_2",
       backgroundMusicAssetId: "music_1",
+      carryOcnoerDressSelection: true,
       characterIds: ["character_1"]
     });
     expect(persistedScene).toMatchObject({
@@ -1013,6 +1022,7 @@ describe("saveSceneDraft", () => {
       orderIndex: 2,
       backgroundImageAssetId: "bg_2",
       backgroundMusicAssetId: "music_1",
+      carryOcnoerDressSelection: true,
       characterIds: ["character_1"]
     });
     expect(getPersistedScene("scene_2")?.orderIndex).toBe(1);

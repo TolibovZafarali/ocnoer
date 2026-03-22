@@ -91,7 +91,8 @@ During wardrobe moments:
 1. the story reaches a dialogue entry configured as a dress prompt
 2. the player chooses one of the authored dress options
 3. the choice is stored in local reader progress under `branchFlags`
-4. later Ocnoer portraits use that dress until another authored dress prompt changes it again
+4. later Ocnoer portraits use that dress while scenes keep `carryOcnoerDressSelection` enabled
+5. when a scene disables `carryOcnoerDressSelection`, Ocnoer resets to the default dress at scene start and stays default until another authored dress prompt changes it again
 
 During those moments:
 

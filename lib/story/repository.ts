@@ -211,6 +211,7 @@ function sortSnapshot(
       ...chapter,
       scenes: sortByOrderIndex(chapter.scenes).map((scene) => ({
         ...scene,
+        carryOcnoerDressSelection: scene.carryOcnoerDressSelection ?? true,
         characterIds: [...new Set(scene.characterIds)],
         dialogue: sortByOrderIndex(scene.dialogue).map(normalizeDialogueEntry)
       }))
@@ -1798,6 +1799,7 @@ export async function saveSceneDraft(input: {
   scene.title = nextTitle;
   scene.backgroundImageAssetId = backgroundImageAssetId;
   scene.backgroundMusicAssetId = backgroundMusicAssetId;
+  scene.carryOcnoerDressSelection = draft.scene.carryOcnoerDressSelection;
   scene.characterIds = nextCharacterIds;
   scene.dialogue = nextDialogue;
   scene.updatedAt = timestamp;
@@ -2584,6 +2586,7 @@ export async function createScene(input: {
   orderIndex: number;
   backgroundImageAssetId: string;
   backgroundMusicAssetId: string | null;
+  carryOcnoerDressSelection: boolean;
   characterIds: string[];
 }) {
   const snapshot = await loadAuthoringSnapshot();
@@ -2606,6 +2609,7 @@ export async function createScene(input: {
     orderIndex: input.orderIndex,
     backgroundImageAssetId: input.backgroundImageAssetId,
     backgroundMusicAssetId: input.backgroundMusicAssetId,
+    carryOcnoerDressSelection: input.carryOcnoerDressSelection,
     characterIds,
     dialogue: [],
     createdAt: nowIsoString(),
@@ -2626,6 +2630,7 @@ export async function updateScene(input: {
   orderIndex: number;
   backgroundImageAssetId: string;
   backgroundMusicAssetId: string | null;
+  carryOcnoerDressSelection: boolean;
   characterIds: string[];
 }) {
   const snapshot = await loadAuthoringSnapshot();
@@ -2649,6 +2654,7 @@ export async function updateScene(input: {
   scene.title = input.title.trim();
   scene.backgroundImageAssetId = input.backgroundImageAssetId;
   scene.backgroundMusicAssetId = input.backgroundMusicAssetId;
+  scene.carryOcnoerDressSelection = input.carryOcnoerDressSelection;
   scene.characterIds = nextCharacterIds;
   scene.updatedAt = nowIsoString();
   chapter.updatedAt = nowIsoString();

@@ -12,6 +12,162 @@ body {
   color: rgb(15 23 42);
 }
 
+.admin-area-theme {
+  transition:
+    background-color 180ms ease,
+    color 180ms ease,
+    border-color 180ms ease;
+}
+
+.admin-theme-dark {
+  color-scheme: dark;
+}
+
+.admin-theme-dark .admin-area-shell {
+  background: linear-gradient(180deg, #050a16 0%, #0f172a 100%);
+  color: rgb(226 232 240);
+}
+
+.admin-theme-dark .admin-area-header {
+  border-color: rgb(51 65 85);
+  background: rgb(15 23 42 / 90%);
+}
+
+.admin-theme-dark .admin-theme-toggle {
+  border-color: rgb(71 85 105);
+  background: rgb(15 23 42);
+  color: rgb(203 213 225);
+}
+
+.admin-theme-dark .admin-theme-toggle:hover {
+  border-color: rgb(100 116 139);
+  color: rgb(248 250 252);
+}
+
+.admin-theme-dark [class~="bg-white"] {
+  background-color: rgb(15 23 42);
+}
+
+.admin-theme-dark [class~="bg-white/90"] {
+  background-color: rgb(15 23 42 / 90%);
+}
+
+.admin-theme-dark [class~="bg-slate-50"] {
+  background-color: rgb(15 23 42);
+}
+
+.admin-theme-dark [class~="bg-slate-50/70"] {
+  background-color: rgb(30 41 59 / 70%);
+}
+
+.admin-theme-dark [class~="bg-slate-100"] {
+  background-color: rgb(30 41 59);
+}
+
+.admin-theme-dark [class~="text-slate-950"] {
+  color: rgb(248 250 252);
+}
+
+.admin-theme-dark [class~="text-slate-900"] {
+  color: rgb(226 232 240);
+}
+
+.admin-theme-dark [class~="text-slate-800"] {
+  color: rgb(226 232 240);
+}
+
+.admin-theme-dark [class~="text-slate-700"] {
+  color: rgb(203 213 225);
+}
+
+.admin-theme-dark [class~="text-slate-600"] {
+  color: rgb(148 163 184);
+}
+
+.admin-theme-dark [class~="text-slate-500"] {
+  color: rgb(148 163 184);
+}
+
+.admin-theme-dark [class~="border-slate-200"] {
+  border-color: rgb(51 65 85);
+}
+
+.admin-theme-dark [class~="border-slate-300"] {
+  border-color: rgb(71 85 105);
+}
+
+.admin-theme-dark [class~="hover:border-slate-300"]:hover {
+  border-color: rgb(100 116 139);
+}
+
+.admin-theme-dark [class~="hover:text-slate-950"]:hover {
+  color: rgb(248 250 252);
+}
+
+.admin-theme-dark [class~="hover:bg-slate-100"]:hover {
+  background-color: rgb(30 41 59);
+}
+
+.admin-theme-dark [class~="focus:border-slate-400"]:focus {
+  border-color: rgb(100 116 139);
+}
+
+.admin-theme-dark [class~="focus:ring-slate-200"]:focus {
+  --tw-ring-color: rgb(51 65 85 / 85%);
+}
+
+.admin-theme-dark [class~="focus-visible:ring-slate-300"]:focus-visible {
+  --tw-ring-color: rgb(71 85 105 / 90%);
+}
+
+.admin-theme-dark [class~="focus:ring-slate-400"]:focus {
+  --tw-ring-color: rgb(100 116 139 / 90%);
+}
+
+.admin-theme-dark [class~="border-emerald-200"] {
+  border-color: rgb(6 95 70);
+}
+
+.admin-theme-dark [class~="bg-emerald-50"] {
+  background-color: rgb(6 78 59 / 35%);
+}
+
+.admin-theme-dark [class~="text-emerald-800"] {
+  color: rgb(110 231 183);
+}
+
+.admin-theme-dark [class~="border-amber-200"] {
+  border-color: rgb(180 83 9);
+}
+
+.admin-theme-dark [class~="bg-amber-50"] {
+  background-color: rgb(146 64 14 / 35%);
+}
+
+.admin-theme-dark [class~="text-amber-800"] {
+  color: rgb(252 211 77);
+}
+
+.admin-theme-dark [class~="border-rose-200"] {
+  border-color: rgb(190 24 93 / 75%);
+}
+
+.admin-theme-dark [class~="bg-rose-50"] {
+  background-color: rgb(136 19 55 / 35%);
+}
+
+.admin-theme-dark [class~="text-rose-800"] {
+  color: rgb(251 113 133);
+}
+
+.admin-theme-dark [class~="border-rose-300"] {
+  border-color: rgb(225 29 72 / 75%);
+}
+
+.admin-theme-dark [class~="text-rose-700"] {
+  color: rgb(251 113 133);
+}
+
 .font-dialogue {
   font-family: var(--font-dialogue), Georgia, serif;
 }

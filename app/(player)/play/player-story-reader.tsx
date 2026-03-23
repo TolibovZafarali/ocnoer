@@ -129,6 +129,7 @@ const SCENE_TRANSITION_HOLD_START = 0.42;
 const SCENE_TRANSITION_HOLD_END = 0.58;
 const SCENE_TRANSITION_SWAP_PROGRESS = 0.5;
 const SCENE_TRANSITION_MAX_OPACITY = 1;
+const OPENING_SCENE_FADE_DURATION_MS = 1200;
 const MAP_OVERLAY_DURATION_MS = 340;
 const DESKTOP_SCENE_NAV_MIN_GUTTER_WIDTH_PX = 220;
 const DESKTOP_SCENE_NAV_HORIZONTAL_PADDING_PX = 12;
@@ -228,6 +229,7 @@ export function PlayerStoryReader({
       initialBundle ? [[initialBundle.chapter.id, initialBundle]] : []
     )
   );
+  const hasPlayedOpeningSceneFadeRef = useRef(false);
   const initialResumeResolvedRef = useRef(false);
   const previousNormalEntryRef = useRef<RuntimeDialogueEntry | null>(null);
   const previousShowDialogueCardRef = useRef(false);
@@ -267,6 +269,8 @@ export function PlayerStoryReader({
   const [isTapHeaderVisible, setIsTapHeaderVisible] = useState(false);
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [isMapImageReady, setIsMapImageReady] = useState(false);
+  const [isOpeningSceneFadeVisible, setIsOpeningSceneFadeVisible] =
+    useState(false);
   const [desktopNavGutterWidth, setDesktopNavGutterWidth] = useState(0);
   const [dressPromptIndex, setDressPromptIndex] = useState(0);
   const [dressPromptMotionDirection, setDressPromptMotionDirection] = useState<
@@ -285,6 +289,9 @@ export function PlayerStoryReader({
   const mapOverlayMotionDurationMs = prefersReducedMotion
     ? REDUCED_MOTION_DURATION_MS
     : MAP_OVERLAY_DURATION_MS;
+  const openingSceneFadeDurationMs = prefersReducedMotion
+    ? REDUCED_MOTION_DURATION_MS
+    : OPENING_SCENE_FADE_DURATION_MS;
 
   const loadBundle = useMemo(
     () =>
@@ -451,6 +458,7 @@ export function PlayerStoryReader({
     bundle && readerState
       ? getCurrentDialogue(bundle.chapter, readerState)
       : null;
+  const hasPlayableSceneReady = Boolean(scene && entry);
 
   useEffect(() => {
     if (!scene) {
@@ -464,6 +472,40 @@ export function PlayerStoryReader({
       });
     });
   }, [scene?.id, scene?.carryOcnoerDressSelection, scene?.characterPool]);
+
+  useEffect(() => {
+    if (
+      hasPlayedOpeningSceneFadeRef.current ||
+      !hasPlayableSceneReady ||
+      isLoading ||
+      isResolvingResume ||
+      boundaryState
+    ) {
+      return;
+    }
+
+    hasPlayedOpeningSceneFadeRef.current = true;
+    setIsOpeningSceneFadeVisible(true);
+  }, [
+    boundaryState,
+    hasPlayableSceneReady,
+    isLoading,
+    isResolvingResume
+  ]);
+
+  useEffect(() => {
+    if (!isOpeningSceneFadeVisible) {
+      return;
+    }
+
+    const timer = window.setTimeout(() => {
+      setIsOpeningSceneFadeVisible(false);
+    }, openingSceneFadeDurationMs);
+
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, [isOpeningSceneFadeVisible, openingSceneFadeDurationMs]);
 
   const runtimeAvailability = getRuntimeAvailability({
     manifest,
@@ -1503,6 +1545,19 @@ export function PlayerStoryReader({
 
         <div className="relative z-10 h-full">
           <AnimatePresence initial={false}>
+            {isOpeningSceneFadeVisible ? (
+              <motion.div
+                key="opening-scene-fade"
+                initial={{ opacity: 1 }}
+                animate={{ opacity: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{
+                  duration: openingSceneFadeDurationMs / 1000,
+                  ease: MOTION_EASE_OUT
+                }}
+                className="pointer-events-none absolute inset-0 z-30 bg-black will-change-opacity"
+              />
+            ) : null}
             {isTransitionCard ? (
               <motion.div
                 key={`scene-transition-${pendingSceneState?.sceneIndex ?? "none"}-${pendingSceneState?.dialogueIndex ?? "none"}`}

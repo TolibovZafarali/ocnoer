@@ -41,7 +41,10 @@ import {
   TextInput
 } from "@/components/admin/forms";
 import { Button } from "@/components/ui/button";
-import { SCENE_DRAFT_TEMP_ID_PREFIX } from "@/lib/story/scene-draft";
+import {
+  SCENE_DRAFT_TEMP_ID_PREFIX,
+  parseSceneDraftPayload
+} from "@/lib/story/scene-draft";
 import { isPrimaryLeftStageCharacterSlug } from "@/lib/story/staging";
 import { toPublicStorageUrl } from "@/lib/story/runtime";
 import {
@@ -134,6 +137,61 @@ type SceneDraftEditorProps = {
     returnTo: string;
   }) => Promise<SaveDraftActionResult>;
 };
+
+const LOCAL_SCENE_DRAFT_SCHEMA_VERSION = 1;
+
+type LocalSceneDraftEnvelope = {
+  schemaVersion: number;
+  chapterId: string;
+  sceneId: string;
+  sourceSceneUpdatedAt: string;
+  savedAt: string;
+  payload: SceneDraftPayload;
+};
+
+function getLocalSceneDraftStorageKey(chapterId: string, sceneId: string) {
+  return `ocnoer:scene-draft:v1:${chapterId}:${sceneId}`;
+}
+
+function parseLocalSceneDraftEnvelope(
+  rawValue: string | null,
+  input: {
+    chapterId: string;
+    sceneId: string;
+    sourceSceneUpdatedAt: string;
+  }
+): LocalSceneDraftEnvelope | null {
+  if (!rawValue) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(rawValue) as Record<string, unknown>;
+    const payload = parseSceneDraftPayload(parsed.payload);
+
+    if (
+      !payload ||
+      parsed.schemaVersion !== LOCAL_SCENE_DRAFT_SCHEMA_VERSION ||
+      parsed.chapterId !== input.chapterId ||
+      parsed.sceneId !== input.sceneId ||
+      parsed.sourceSceneUpdatedAt !== input.sourceSceneUpdatedAt ||
+      typeof parsed.savedAt !== "string"
+    ) {
+      return null;
+    }
+
+    return {
+      schemaVersion: LOCAL_SCENE_DRAFT_SCHEMA_VERSION,
+      chapterId: input.chapterId,
+      sceneId: input.sceneId,
+      sourceSceneUpdatedAt: input.sourceSceneUpdatedAt,
+      savedAt: parsed.savedAt,
+      payload
+    };
+  } catch {
+    return null;
+  }
+}
 
 function createTempDialogueId() {
   const suffix =
@@ -716,6 +774,10 @@ function SortableDialogueDraftCard(props: {
 
 export function SceneDraftEditor(props: SceneDraftEditorProps) {
   const router = useRouter();
+  const localDraftStorageKey = useMemo(
+    () => getLocalSceneDraftStorageKey(props.chapterId, props.sceneId),
+    [props.chapterId, props.sceneId]
+  );
   const charactersById = useMemo(
     () => new Map(props.characters.map((character) => [character.id, character])),
     [props.characters]
@@ -742,6 +804,9 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
   >("idle");
   const [draftError, setDraftError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [localRecoveryMessage, setLocalRecoveryMessage] = useState<
+    string | null
+  >(null);
   const [createResetVersion, setCreateResetVersion] = useState(0);
   const [isSavingScene, startSaveTransition] = useTransition();
   const [isDiscardingDraft, startDiscardTransition] = useTransition();
@@ -779,6 +844,87 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
   );
 
   draftRef.current = draft;
+
+  function clearLocalDraftBackup() {
+    try {
+      window.localStorage.removeItem(localDraftStorageKey);
+    } catch {
+      return;
+    }
+  }
+
+  useEffect(() => {
+    if (props.initialDraftLoaded) {
+      return;
+    }
+
+    let rawDraftValue: string | null = null;
+
+    try {
+      rawDraftValue = window.localStorage.getItem(localDraftStorageKey);
+    } catch {
+      return;
+    }
+
+    const localDraft = parseLocalSceneDraftEnvelope(rawDraftValue, {
+      chapterId: props.chapterId,
+      sceneId: props.sceneId,
+      sourceSceneUpdatedAt: props.initialSourceSceneUpdatedAt
+    });
+
+    if (!localDraft) {
+      return;
+    }
+
+    const recoveredHash = getDraftHash(localDraft.payload);
+
+    if (recoveredHash === getDraftHash(props.initialDraft)) {
+      return;
+    }
+
+    setDraft(localDraft.payload);
+    setLocalRecoveryMessage(
+      `Recovered an unsaved local draft from ${new Date(localDraft.savedAt).toLocaleString()}.`
+    );
+  }, [
+    localDraftStorageKey,
+    props.chapterId,
+    props.initialDraft,
+    props.initialDraftLoaded,
+    props.initialSourceSceneUpdatedAt,
+    props.sceneId
+  ]);
+
+  useEffect(() => {
+    if (!hasDirtyDraft) {
+      return;
+    }
+
+    const envelope: LocalSceneDraftEnvelope = {
+      schemaVersion: LOCAL_SCENE_DRAFT_SCHEMA_VERSION,
+      chapterId: props.chapterId,
+      sceneId: props.sceneId,
+      sourceSceneUpdatedAt: props.initialSourceSceneUpdatedAt,
+      savedAt: new Date().toISOString(),
+      payload: draft
+    };
+
+    try {
+      window.localStorage.setItem(
+        localDraftStorageKey,
+        JSON.stringify(envelope)
+      );
+    } catch {
+      return;
+    }
+  }, [
+    draft,
+    hasDirtyDraft,
+    localDraftStorageKey,
+    props.chapterId,
+    props.initialSourceSceneUpdatedAt,
+    props.sceneId
+  ]);
 
   async function persistDraft(nextDraft: SceneDraftPayload) {
     const nextHash = getDraftHash(nextDraft);
@@ -979,6 +1125,8 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
           return;
         }
 
+        clearLocalDraftBackup();
+        setLocalRecoveryMessage(null);
         router.replace(result.redirectTo);
         router.refresh();
       })();
@@ -999,6 +1147,8 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
           return;
         }
 
+        clearLocalDraftBackup();
+        setLocalRecoveryMessage(null);
         router.replace(result.redirectTo);
         router.refresh();
       })();
@@ -1023,6 +1173,9 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
           Unsaved draft loaded. Scene updates stay in draft storage until you
           click <span className="font-medium">Save Scene</span>.
         </Notice>
+      ) : null}
+      {localRecoveryMessage ? (
+        <Notice kind="success">{localRecoveryMessage}</Notice>
       ) : null}
 
       {actionError ? <Notice kind="error">{actionError}</Notice> : null}

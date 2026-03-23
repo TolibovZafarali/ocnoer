@@ -25,6 +25,7 @@ import {
   deleteDialogueEntry,
   deleteScene,
   getAdminStoryData,
+  isSceneDraftStorageUnavailableError,
   saveSceneDraft,
   reorderDialogueEntry,
   setDefaultCharacterEmotion,
@@ -410,15 +411,23 @@ export async function saveSceneDraftAction(
   await requireAdminSession();
 
   try {
-    await upsertSceneDraft({
-      sceneId: input.sceneId,
-      chapterId: input.chapterId,
-      sourceSceneUpdatedAt: input.sourceSceneUpdatedAt,
-      payload: input.payload
-    });
+    try {
+      await upsertSceneDraft({
+        sceneId: input.sceneId,
+        chapterId: input.chapterId,
+        sourceSceneUpdatedAt: input.sourceSceneUpdatedAt,
+        payload: input.payload
+      });
+    } catch (error) {
+      if (!isSceneDraftStorageUnavailableError(error)) {
+        throw error;
+      }
+    }
+
     await saveSceneDraft({
       chapterId: input.chapterId,
-      sceneId: input.sceneId
+      sceneId: input.sceneId,
+      payload: input.payload
     });
 
     await revalidateStoryPaths([

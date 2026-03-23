@@ -43,6 +43,7 @@ export class StoryRepositoryError extends Error {}
 const AUTHORING_CHARACTERS_PATH = "authoring/characters.json";
 const AUTHORING_ASSETS_PATH = "authoring/assets.json";
 const AUTHORING_CHAPTERS_PATH = "authoring/chapters.json";
+const AUTHORING_HISTORY_PREFIX = "history/authoring";
 const RUNTIME_PREFIX = "runtime";
 const STORAGE_FETCH_FAILURE_MESSAGE =
   "Unable to reach Supabase storage while loading authoring data. Check your Supabase URL, network connection, and Supabase project availability.";
@@ -115,6 +116,12 @@ function withBucketPath(objectPath: string) {
 
 function nowIsoString() {
   return new Date().toISOString();
+}
+
+function createAuthoringHistoryVersionId(updatedAt: string) {
+  const normalizedTimestamp = updatedAt.replace(/[:.]/g, "-");
+
+  return `${normalizedTimestamp}-${randomUUID().slice(0, 8)}`;
 }
 
 async function waitForStorageRetryDelay(attempt: number) {
@@ -275,22 +282,56 @@ function isMissingSceneDraftTableError(error: unknown) {
   );
 }
 
+function isSceneDraftStorageConnectionError(error: unknown) {
+  if (!error || typeof error !== "object") {
+    return false;
+  }
+
+  const record = error as Record<string, unknown>;
+  const message =
+    typeof record.message === "string" ? record.message : String(error);
+  const code =
+    typeof record.code === "string" ? record.code.toUpperCase() : "";
+
+  return (
+    code === "P1001" ||
+    code === "P1002" ||
+    /can't reach database server|database server at .*timed out|connection.*(refused|reset|terminated|timed out)|enotfound|econnrefused|econnreset|etimedout|getaddrinfo/i.test(
+      message
+    )
+  );
+}
+
 function getSceneDraftStorageUnavailableMessage() {
-  return "Scene draft storage is unavailable until the latest database migration is applied.";
+  return "Scene draft storage is unavailable right now. You can still save the scene, but draft autosave may not persist until database connectivity is restored.";
+}
+
+export function isSceneDraftStorageUnavailableError(error: unknown) {
+  if (
+    error instanceof StoryRepositoryError &&
+    error.message === getSceneDraftStorageUnavailableMessage()
+  ) {
+    return true;
+  }
+
+  return (
+    isMissingSceneDraftTableError(error) ||
+    isSceneDraftStorageConnectionError(error)
+  );
 }
 
 async function findSceneDraftRecord(sceneId: string) {
   const delegate = getSceneDraftDelegate();
 
-  if (delegate) {
-    return delegate.findUnique({
-      where: {
-        sceneId
-      }
-    });
-  }
-
   try {
+    if (delegate) {
+      return await delegate.findUnique({
+        where: {
+          sceneId
+        }
+      });
+    }
+
     const rows = await prisma.$queryRawUnsafe<SceneDraftRecord[]>(
       `SELECT "sceneId", "chapterId", "sourceSceneUpdatedAt", "payload", "createdAt", "updatedAt"
        FROM "public"."AdminSceneDraft"
@@ -301,7 +342,7 @@ async function findSceneDraftRecord(sceneId: string) {
 
     return rows[0] ?? null;
   } catch (error) {
-    if (isMissingSceneDraftTableError(error)) {
+    if (isSceneDraftStorageUnavailableError(error)) {
       return null;
     }
 
@@ -319,26 +360,26 @@ async function upsertSceneDraftRecord(input: {
   const payload = input.payload as Prisma.InputJsonValue;
   const delegate = getSceneDraftDelegate();
 
-  if (delegate) {
-    return delegate.upsert({
-      where: {
-        sceneId: input.sceneId
-      },
-      update: {
-        chapterId: input.chapterId,
-        sourceSceneUpdatedAt,
-        payload
-      },
-      create: {
-        sceneId: input.sceneId,
-        chapterId: input.chapterId,
-        sourceSceneUpdatedAt,
-        payload
-      }
-    });
-  }
-
   try {
+    if (delegate) {
+      return await delegate.upsert({
+        where: {
+          sceneId: input.sceneId
+        },
+        update: {
+          chapterId: input.chapterId,
+          sourceSceneUpdatedAt,
+          payload
+        },
+        create: {
+          sceneId: input.sceneId,
+          chapterId: input.chapterId,
+          sourceSceneUpdatedAt,
+          payload
+        }
+      });
+    }
+
     const rows = await prisma.$queryRawUnsafe<SceneDraftRecord[]>(
       `INSERT INTO "public"."AdminSceneDraft" (
          "sceneId",
@@ -370,7 +411,7 @@ async function upsertSceneDraftRecord(input: {
 
     return record;
   } catch (error) {
-    if (isMissingSceneDraftTableError(error)) {
+    if (isSceneDraftStorageUnavailableError(error)) {
       throw new StoryRepositoryError(getSceneDraftStorageUnavailableMessage());
     }
 
@@ -382,19 +423,20 @@ async function deleteSceneDraftRecords(
   sceneId: string,
   options?: {
     ignoreMissingTable?: boolean;
+    ignoreStorageUnavailable?: boolean;
   }
 ) {
   const delegate = getSceneDraftDelegate();
 
-  if (delegate) {
-    return delegate.deleteMany({
-      where: {
-        sceneId
-      }
-    });
-  }
-
   try {
+    if (delegate) {
+      return await delegate.deleteMany({
+        where: {
+          sceneId
+        }
+      });
+    }
+
     const count = await prisma.$executeRawUnsafe(
       `DELETE FROM "public"."AdminSceneDraft" WHERE "sceneId" = $1`,
       sceneId
@@ -406,6 +448,16 @@ async function deleteSceneDraftRecords(
   } catch (error) {
     if (isMissingSceneDraftTableError(error)) {
       if (options?.ignoreMissingTable) {
+        return {
+          count: 0
+        };
+      }
+
+      throw new StoryRepositoryError(getSceneDraftStorageUnavailableMessage());
+    }
+
+    if (isSceneDraftStorageConnectionError(error)) {
+      if (options?.ignoreStorageUnavailable) {
         return {
           count: 0
         };
@@ -919,38 +971,47 @@ async function loadAuthoringSnapshot(): Promise<StoryAuthoringSnapshot> {
 async function persistAuthoringSnapshot(snapshot: StoryAuthoringSnapshot) {
   const normalizedSnapshot = sortSnapshot(snapshot);
   const updatedAt = nowIsoString();
+  const historyVersionId = createAuthoringHistoryVersionId(updatedAt);
+  const charactersFile = {
+    schemaVersion: STORY_SCHEMA_VERSION,
+    updatedAt,
+    characters: normalizedSnapshot.characters
+  } satisfies CharactersCatalogFile;
+  const assetsFile = {
+    schemaVersion: STORY_SCHEMA_VERSION,
+    updatedAt,
+    backgroundImages: normalizedSnapshot.backgroundImages,
+    backgroundMusicTracks: normalizedSnapshot.backgroundMusicTracks
+  } satisfies AssetsCatalogFile;
+  const chaptersFile = {
+    schemaVersion: STORY_SCHEMA_VERSION,
+    updatedAt,
+    chapters: normalizedSnapshot.chapters
+  } satisfies ChaptersCatalogFile;
 
   await Promise.all([
+    writeJsonFile(AUTHORING_CHARACTERS_PATH, charactersFile, {
+      cacheControl: "0"
+    }),
+    writeJsonFile(AUTHORING_ASSETS_PATH, assetsFile, {
+      cacheControl: "0"
+    }),
+    writeJsonFile(AUTHORING_CHAPTERS_PATH, chaptersFile, {
+      cacheControl: "0"
+    }),
     writeJsonFile(
-      AUTHORING_CHARACTERS_PATH,
-      {
-        schemaVersion: STORY_SCHEMA_VERSION,
-        updatedAt,
-        characters: normalizedSnapshot.characters
-      } satisfies CharactersCatalogFile,
+      `${AUTHORING_HISTORY_PREFIX}/characters/${historyVersionId}.json`,
+      charactersFile,
       {
         cacheControl: "0"
       }
     ),
+    writeJsonFile(`${AUTHORING_HISTORY_PREFIX}/assets/${historyVersionId}.json`, assetsFile, {
+      cacheControl: "0"
+    }),
     writeJsonFile(
-      AUTHORING_ASSETS_PATH,
-      {
-        schemaVersion: STORY_SCHEMA_VERSION,
-        updatedAt,
-        backgroundImages: normalizedSnapshot.backgroundImages,
-        backgroundMusicTracks: normalizedSnapshot.backgroundMusicTracks
-      } satisfies AssetsCatalogFile,
-      {
-        cacheControl: "0"
-      }
-    ),
-    writeJsonFile(
-      AUTHORING_CHAPTERS_PATH,
-      {
-        schemaVersion: STORY_SCHEMA_VERSION,
-        updatedAt,
-        chapters: normalizedSnapshot.chapters
-      } satisfies ChaptersCatalogFile,
+      `${AUTHORING_HISTORY_PREFIX}/chapters/${historyVersionId}.json`,
+      chaptersFile,
       {
         cacheControl: "0"
       }
@@ -963,18 +1024,25 @@ async function persistAuthoringSnapshot(snapshot: StoryAuthoringSnapshot) {
 async function persistChaptersSnapshot(snapshot: StoryAuthoringSnapshot) {
   const normalizedSnapshot = sortSnapshot(snapshot);
   const updatedAt = nowIsoString();
+  const historyVersionId = createAuthoringHistoryVersionId(updatedAt);
+  const chaptersFile = {
+    schemaVersion: STORY_SCHEMA_VERSION,
+    updatedAt,
+    chapters: normalizedSnapshot.chapters
+  } satisfies ChaptersCatalogFile;
 
-  await writeJsonFile(
-    AUTHORING_CHAPTERS_PATH,
-    {
-      schemaVersion: STORY_SCHEMA_VERSION,
-      updatedAt,
-      chapters: normalizedSnapshot.chapters
-    } satisfies ChaptersCatalogFile,
-    {
+  await Promise.all([
+    writeJsonFile(AUTHORING_CHAPTERS_PATH, chaptersFile, {
       cacheControl: "0"
-    }
-  );
+    }),
+    writeJsonFile(
+      `${AUTHORING_HISTORY_PREFIX}/chapters/${historyVersionId}.json`,
+      chaptersFile,
+      {
+        cacheControl: "0"
+      }
+    )
+  ]);
 
   return normalizedSnapshot;
 }
@@ -1604,7 +1672,8 @@ export async function getSceneDraft(sceneId: string) {
   }
 
   await deleteSceneDraftRecords(sceneId, {
-    ignoreMissingTable: true
+    ignoreMissingTable: true,
+    ignoreStorageUnavailable: true
   });
 
   return null;
@@ -1633,7 +1702,10 @@ export async function upsertSceneDraft(input: {
 }
 
 export async function discardSceneDraft(sceneId: string) {
-  await deleteSceneDraftRecords(sceneId);
+  await deleteSceneDraftRecords(sceneId, {
+    ignoreMissingTable: true,
+    ignoreStorageUnavailable: true
+  });
 }
 
 function normalizeOptionalSceneDraftValue(value: string | null) {
@@ -1663,14 +1735,18 @@ function assertValidSceneDraftText(value: string, label: string) {
 export async function saveSceneDraft(input: {
   chapterId: string;
   sceneId: string;
+  payload?: SceneDraftPayload;
 }) {
   const storedDraft = await getSceneDraft(input.sceneId);
+  const fallbackPayload = input.payload
+    ? parseSceneDraftPayload(input.payload)
+    : null;
 
-  if (!storedDraft) {
+  if (!storedDraft && !fallbackPayload) {
     throw new StoryRepositoryError("Scene draft not found.");
   }
 
-  if (storedDraft.chapterId !== input.chapterId) {
+  if (storedDraft && storedDraft.chapterId !== input.chapterId) {
     throw new StoryRepositoryError(
       "Scene draft no longer matches its chapter."
     );
@@ -1679,7 +1755,12 @@ export async function saveSceneDraft(input: {
   const snapshot = await loadAuthoringSnapshot();
   const chapter = findChapterOrThrow(snapshot, input.chapterId);
   const scene = findSceneOrThrow(chapter, input.sceneId);
-  const draft = storedDraft.payload;
+  const draft = storedDraft?.payload ?? fallbackPayload;
+
+  if (!draft) {
+    throw new StoryRepositoryError("Scene draft payload is invalid.");
+  }
+
   const nextCharacterIds = [
     ...new Set(draft.scene.characterIds.map((id) => id.trim()).filter(Boolean))
   ];
@@ -1789,6 +1870,12 @@ export async function saveSceneDraft(input: {
       updatedAt: timestamp
     };
   });
+
+  if (scene.dialogue.length > 0 && nextDialogue.length === 0) {
+    throw new StoryRepositoryError(
+      "Scene save blocked because it would erase all dialogue rows. Add at least one dialogue row or delete the scene intentionally."
+    );
+  }
 
   const orderChanged = nextSceneOrder !== scene.orderIndex;
 

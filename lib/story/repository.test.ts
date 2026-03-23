@@ -482,10 +482,18 @@ function getUploadPaths() {
 }
 
 function expectChapterScopedWrites() {
-  expect(getUploadPaths()).toEqual([
-    "authoring/chapters.json",
-    "runtime/chapters/chapter_1.json"
-  ]);
+  const uploadPaths = getUploadPaths();
+
+  expect(uploadPaths).toContain("authoring/chapters.json");
+  expect(uploadPaths).toContain("runtime/chapters/chapter_1.json");
+  expect(
+    uploadPaths.some(
+      (path) =>
+        path.startsWith("history/authoring/chapters/") &&
+        path.endsWith(".json")
+    )
+  ).toBe(true);
+  expect(uploadPaths).toHaveLength(3);
   expect(compileRuntimeStoryMock).not.toHaveBeenCalled();
   expect(compileRuntimeChapterBundleMock).toHaveBeenCalledWith({
     snapshot: expect.objectContaining({
@@ -986,6 +994,26 @@ describe("scene draft persistence", () => {
 
     expect(adminSceneDraftStore.has("scene_1")).toBe(false);
   });
+
+  it("treats draft storage connectivity issues as unavailable during load", async () => {
+    findUniqueSceneDraftMock.mockRejectedValueOnce({
+      code: "P1001",
+      message:
+        "Can't reach database server at `db.example.supabase.co:5432`"
+    });
+
+    await expect(getSceneDraft("scene_1")).resolves.toBeNull();
+  });
+
+  it("ignores draft discard failures when draft storage is unavailable", async () => {
+    deleteManySceneDraftMock.mockRejectedValueOnce({
+      code: "P1001",
+      message:
+        "Can't reach database server at `db.example.supabase.co:5432`"
+    });
+
+    await expect(discardSceneDraft("scene_1")).resolves.toBeUndefined();
+  });
 });
 
 describe("saveSceneDraft", () => {
@@ -1057,6 +1085,64 @@ describe("saveSceneDraft", () => {
     ).toBe(false);
     expect(adminSceneDraftStore.has("scene_1")).toBe(false);
     expectChapterScopedWrites();
+  });
+
+  it("saves from provided payload when draft storage is unavailable", async () => {
+    findUniqueSceneDraftMock.mockRejectedValueOnce({
+      code: "P1001",
+      message:
+        "Can't reach database server at `db.example.supabase.co:5432`"
+    });
+    deleteManySceneDraftMock.mockRejectedValueOnce({
+      code: "P1001",
+      message:
+        "Can't reach database server at `db.example.supabase.co:5432`"
+    });
+
+    const result = await saveSceneDraft({
+      chapterId: "chapter_1",
+      sceneId: "scene_1",
+      payload: createDraftPayload()
+    });
+
+    const persistedScene = getPersistedScene("scene_1");
+    expect(result.payload.scene).toMatchObject({
+      title: "Scene One Revised",
+      orderIndex: 2,
+      backgroundImageAssetId: "bg_2",
+      backgroundMusicAssetId: "music_1",
+      carryOcnoerDressSelection: true,
+      characterIds: ["character_1"]
+    });
+    expect(persistedScene).toMatchObject({
+      title: "Scene One Revised",
+      orderIndex: 2,
+      backgroundImageAssetId: "bg_2",
+      backgroundMusicAssetId: "music_1",
+      carryOcnoerDressSelection: true,
+      characterIds: ["character_1"]
+    });
+    expectChapterScopedWrites();
+  });
+
+  it("blocks saves that would erase all dialogue rows from an existing scene", async () => {
+    setStoredSceneDraft({
+      sceneId: "scene_1",
+      payload: createDraftPayload({
+        dialogue: []
+      })
+    });
+
+    await expect(
+      saveSceneDraft({
+        chapterId: "chapter_1",
+        sceneId: "scene_1"
+      })
+    ).rejects.toThrow(
+      "Scene save blocked because it would erase all dialogue rows."
+    );
+
+    expect(getPersistedDialogue()).toHaveLength(3);
   });
 
   it("keeps the draft row when validation fails for a missing background image", async () => {

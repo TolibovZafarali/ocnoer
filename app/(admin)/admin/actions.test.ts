@@ -7,6 +7,7 @@ const createDialogueEntryMock = vi.fn();
 const deleteCharacterMock = vi.fn();
 const discardSceneDraftMock = vi.fn();
 const getAdminStoryDataMock = vi.fn();
+const isSceneDraftStorageUnavailableErrorMock = vi.fn();
 const reorderDialogueEntryMock = vi.fn();
 const saveSceneDraftMock = vi.fn();
 const upsertSceneDraftMock = vi.fn();
@@ -47,6 +48,7 @@ vi.mock("@/lib/story/repository", () => ({
   deleteDialogueEntry: vi.fn(),
   deleteScene: vi.fn(),
   getAdminStoryData: getAdminStoryDataMock,
+  isSceneDraftStorageUnavailableError: isSceneDraftStorageUnavailableErrorMock,
   reorderDialogueEntry: reorderDialogueEntryMock,
   saveSceneDraft: saveSceneDraftMock,
   setDefaultCharacterEmotion: vi.fn(),
@@ -321,6 +323,7 @@ describe("scene draft actions", () => {
     upsertSceneDraftMock.mockResolvedValue(undefined);
     saveSceneDraftMock.mockResolvedValue(undefined);
     discardSceneDraftMock.mockResolvedValue(undefined);
+    isSceneDraftStorageUnavailableErrorMock.mockReturnValue(false);
     unstableRethrowMock.mockImplementation(() => {});
   });
 
@@ -368,7 +371,8 @@ describe("scene draft actions", () => {
     });
     expect(saveSceneDraftMock).toHaveBeenCalledWith({
       chapterId: "chapter_123",
-      sceneId: "scene_456"
+      sceneId: "scene_456",
+      payload: sceneDraftPayload
     });
     expect(
       upsertSceneDraftMock.mock.invocationCallOrder[0]
@@ -381,6 +385,32 @@ describe("scene draft actions", () => {
     expect(revalidatePathMock).toHaveBeenCalledWith(
       "/admin/chapters/chapter_123/scenes"
     );
+  });
+
+  it("continues saving when draft storage is unavailable", async () => {
+    upsertSceneDraftMock.mockRejectedValueOnce(new Error("db unavailable"));
+    isSceneDraftStorageUnavailableErrorMock.mockReturnValueOnce(true);
+
+    await expect(
+      saveSceneDraftAction({
+        chapterId: "chapter_123",
+        sceneId: "scene_456",
+        returnTo: "/admin/chapters/chapter_123/scenes/scene_456",
+        sourceSceneUpdatedAt: "2026-03-19T12:00:00.000Z",
+        payload: sceneDraftPayload
+      })
+    ).resolves.toEqual({
+      ok: true,
+      redirectTo:
+        "/admin/chapters/chapter_123/scenes/scene_456?status=success&message=Scene+saved."
+    });
+
+    expect(isSceneDraftStorageUnavailableErrorMock).toHaveBeenCalled();
+    expect(saveSceneDraftMock).toHaveBeenCalledWith({
+      chapterId: "chapter_123",
+      sceneId: "scene_456",
+      payload: sceneDraftPayload
+    });
   });
 
   it("discards the scene draft and returns a success redirect", async () => {

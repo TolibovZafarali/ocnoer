@@ -57,6 +57,9 @@ Ocnoer is a single Next.js app with:
 - `corepack pnpm build`
 - `corepack pnpm test`
 - `corepack pnpm typecheck`
+- `corepack pnpm backup:storage`
+- `corepack pnpm backup:db`
+- `corepack pnpm backup:all`
 
 ## Documentation Map
 
@@ -67,3 +70,4 @@ Ocnoer is a single Next.js app with:
 - [game-flow.md](/Users/zafaralitolibov/Documents/ocnoer/docs/game-flow.md)
 - [development-guide.md](/Users/zafaralitolibov/Documents/ocnoer/docs/development-guide.md)
 - [roadmap.md](/Users/zafaralitolibov/Documents/ocnoer/docs/roadmap.md)
+- [data-protection.md](/Users/zafaralitolibov/Documents/ocnoer/docs/data-protection.md)

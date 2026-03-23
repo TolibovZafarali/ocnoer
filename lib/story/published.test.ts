@@ -178,7 +178,7 @@ describe("compileRuntimeStory", () => {
     const renEntry = scene?.dialogue[1];
     const ocnoerEntry = scene?.dialogue[2];
 
-    expect(scene?.backgroundImage.filePath).toBe("runtime/media/hall.png");
+    expect(scene?.backgroundImage?.filePath).toBe("runtime/media/hall.png");
     expect(scene?.backgroundMusic?.filePath).toBe("runtime/media/theme.mp3");
     expect(scene?.carryOcnoerDressSelection).toBe(true);
     expect(narratorEntry?.stage.left?.characterSlug).toBe("ocnoer");
@@ -193,6 +193,30 @@ describe("compileRuntimeStory", () => {
         "runtime/media/ocnoer-smile.png"
       );
     }
+  });
+
+  it("allows scenes without background images", () => {
+    const compiled = compileRuntimeStory({
+      snapshot: {
+        ...snapshot,
+        chapters: [
+          {
+            ...snapshot.chapters[0],
+            scenes: [
+              {
+                ...snapshot.chapters[0].scenes[0],
+                backgroundImageAssetId: null
+              }
+            ]
+          }
+        ]
+      },
+      bucket: "runtime",
+      runtimePrefix: "runtime",
+      generatedAt: "2026-03-16T01:00:00.000Z"
+    });
+
+    expect(compiled.chapterBundles[0]?.bundle.chapter.scenes[0]?.backgroundImage).toBeNull();
   });
 
   it("falls back to the left stage when Ocnoer is absent from a scene", () => {

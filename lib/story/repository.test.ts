@@ -420,7 +420,7 @@ function getPersistedStory() {
         id: string;
         title: string;
         orderIndex: number;
-        backgroundImageAssetId: string;
+        backgroundImageAssetId: string | null;
         backgroundMusicAssetId: string | null;
         carryOcnoerDressSelection: boolean;
         characterIds: string[];
@@ -1125,6 +1125,26 @@ describe("saveSceneDraft", () => {
     expectChapterScopedWrites();
   });
 
+  it("saves drafts without a background image", async () => {
+    setStoredSceneDraft({
+      sceneId: "scene_1",
+      payload: createDraftPayload({
+        scene: {
+          backgroundImageAssetId: null
+        }
+      })
+    });
+
+    const result = await saveSceneDraft({
+      chapterId: "chapter_1",
+      sceneId: "scene_1"
+    });
+
+    expect(result.payload.scene.backgroundImageAssetId).toBeNull();
+    expect(getPersistedScene("scene_1")?.backgroundImageAssetId).toBeNull();
+    expectChapterScopedWrites();
+  });
+
   it("blocks saves that would erase all dialogue rows from an existing scene", async () => {
     setStoredSceneDraft({
       sceneId: "scene_1",
@@ -1145,7 +1165,7 @@ describe("saveSceneDraft", () => {
     expect(getPersistedDialogue()).toHaveLength(3);
   });
 
-  it("keeps the draft row when validation fails for a missing background image", async () => {
+  it("keeps the draft row when validation fails for an unknown background image", async () => {
     setStoredSceneDraft({
       sceneId: "scene_1",
       payload: createDraftPayload({

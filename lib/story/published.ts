@@ -147,13 +147,14 @@ function compileScene(input: {
   backgroundImagesById: Map<string, RuntimeBackgroundImage>;
   backgroundMusicById: Map<string, RuntimeBackgroundMusic>;
 }): RuntimeScene {
-  const backgroundImage = input.backgroundImagesById.get(
-    input.scene.backgroundImageAssetId
-  );
+  const backgroundImage = input.scene.backgroundImageAssetId
+    ? (input.backgroundImagesById.get(input.scene.backgroundImageAssetId) ??
+      null)
+    : null;
 
-  if (!backgroundImage) {
+  if (input.scene.backgroundImageAssetId && !backgroundImage) {
     throw new Error(
-      `Scene "${input.scene.title}" is missing its background image.`
+      `Scene "${input.scene.title}" references an unknown background image.`
     );
   }
 

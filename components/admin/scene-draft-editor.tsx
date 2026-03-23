@@ -828,9 +828,9 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
           description:
             "This scene is minimally playable in the current linear reader."
         };
-  const currentBackgroundImage = backgroundImagesById.get(
-    draft.scene.backgroundImageAssetId
-  );
+  const currentBackgroundImage = draft.scene.backgroundImageAssetId
+    ? backgroundImagesById.get(draft.scene.backgroundImageAssetId)
+    : null;
   const currentBackgroundImageUrl = toPublicStorageUrl(
     props.supabaseUrl,
     currentBackgroundImage?.filePath ?? null
@@ -1252,14 +1252,22 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
               </Field>
             </div>
 
-            <Field label="Background Image" htmlFor="scene-draft-background-image">
+            <Field
+              label="Background Image"
+              htmlFor="scene-draft-background-image"
+              hint="Optional. Leave empty to render black."
+            >
               <SelectInput
                 id="scene-draft-background-image"
-                value={draft.scene.backgroundImageAssetId}
+                value={draft.scene.backgroundImageAssetId ?? ""}
                 onChange={(event) =>
-                  updateSceneField("backgroundImageAssetId", event.target.value)
+                  updateSceneField(
+                    "backgroundImageAssetId",
+                    event.target.value || null
+                  )
                 }
               >
+                <option value="">No background (black)</option>
                 {props.backgroundImages.map((asset) => (
                   <option key={asset.id} value={asset.id}>
                     {asset.label}

@@ -1025,10 +1025,9 @@ export async function createSceneAction(formData: FormData) {
         chapterId,
         title: getRequiredString(formData, "title", "Scene title"),
         orderIndex: await resolveSceneOrderIndex(formData, chapterId),
-        backgroundImageAssetId: getRequiredString(
+        backgroundImageAssetId: getOptionalString(
           formData,
-          "backgroundImageAssetId",
-          "Background image"
+          "backgroundImageAssetId"
         ),
         backgroundMusicAssetId: getOptionalString(
           formData,
@@ -1065,10 +1064,9 @@ export async function updateSceneAction(formData: FormData) {
           getOptionalInteger(formData, "orderIndex", "Scene order", {
             min: 1
           }) ?? (await resolveExistingSceneOrderIndex(chapterId, sceneId)),
-        backgroundImageAssetId: getRequiredString(
+        backgroundImageAssetId: getOptionalString(
           formData,
-          "backgroundImageAssetId",
-          "Background image"
+          "backgroundImageAssetId"
         ),
         backgroundMusicAssetId: getOptionalString(
           formData,

@@ -106,7 +106,7 @@ export type SceneDefinition = {
   id: string;
   title: string;
   orderIndex: number;
-  backgroundImageAssetId: string;
+  backgroundImageAssetId: string | null;
   backgroundMusicAssetId: string | null;
   carryOcnoerDressSelection: boolean;
   characterIds: string[];
@@ -145,7 +145,7 @@ export type SceneDraftPayload = {
   scene: {
     title: string;
     orderIndex: number;
-    backgroundImageAssetId: string;
+    backgroundImageAssetId: string | null;
     backgroundMusicAssetId: string | null;
     carryOcnoerDressSelection: boolean;
     characterIds: string[];
@@ -266,7 +266,7 @@ export type RuntimeScene = {
   id: string;
   title: string;
   orderIndex: number;
-  backgroundImage: RuntimeBackgroundImage;
+  backgroundImage: RuntimeBackgroundImage | null;
   backgroundMusic: RuntimeBackgroundMusic | null;
   carryOcnoerDressSelection: boolean;
   characterPool: RuntimeCharacter[];

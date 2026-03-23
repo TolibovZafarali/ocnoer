@@ -20,7 +20,7 @@ function createScene(input: {
   title: string;
   orderIndex: number;
   dialogueIds: string[];
-  backgroundImagePath?: string;
+  backgroundImagePath?: string | null;
   leftImagePath?: string | null;
   rightImagePath?: string | null;
 }): RuntimeScene {
@@ -28,14 +28,18 @@ function createScene(input: {
     id: input.id,
     title: input.title,
     orderIndex: input.orderIndex,
-    backgroundImage: {
-      id: `bg_${input.id}`,
-      label: `Background ${input.title}`,
-      slug: `background-${input.id}`,
-      altText: null,
-      filePath:
-        input.backgroundImagePath ?? `runtime/media/background-${input.id}.png`
-    },
+    backgroundImage:
+      input.backgroundImagePath === null
+        ? null
+        : {
+            id: `bg_${input.id}`,
+            label: `Background ${input.title}`,
+            slug: `background-${input.id}`,
+            altText: null,
+            filePath:
+              input.backgroundImagePath ??
+              `runtime/media/background-${input.id}.png`
+          },
     backgroundMusic: null,
     carryOcnoerDressSelection: true,
     characterPool: [],
@@ -392,6 +396,36 @@ describe("getPlayerRuntimeAssetUrls", () => {
       leftCharacterImageUrl: null,
       rightCharacterImageUrl:
         "https://example.supabase.co/storage/v1/object/public/runtime/media/opening-right.png"
+    });
+  });
+
+  it("returns no background URL when a scene has no background image", () => {
+    const playableBundle = createBundle({
+      chapterId: "chapter_two",
+      title: "Chapter Two",
+      orderIndex: 2,
+      nextChapterId: null,
+      scenes: [
+        createScene({
+          id: "scene_two",
+          title: "Scene Two",
+          orderIndex: 1,
+          dialogueIds: ["line_two"],
+          backgroundImagePath: null
+        })
+      ]
+    });
+
+    expect(
+      getPlayerRuntimeAssetUrls({
+        supabaseUrl,
+        bundle: playableBundle,
+        readerState: initialReaderState
+      })
+    ).toEqual({
+      backgroundImageUrl: null,
+      leftCharacterImageUrl: null,
+      rightCharacterImageUrl: null
     });
   });
 });

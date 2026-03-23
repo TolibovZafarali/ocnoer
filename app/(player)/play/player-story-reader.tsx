@@ -1526,8 +1526,9 @@ export function PlayerStoryReader({
           <img
             src={backgroundImageUrl}
             alt={
-              resolvedScene.backgroundImage.altText ??
-              resolvedScene.backgroundImage.label
+              resolvedScene.backgroundImage?.altText ??
+              resolvedScene.backgroundImage?.label ??
+              resolvedScene.title
             }
             className="absolute inset-0 h-full w-full object-cover"
           />

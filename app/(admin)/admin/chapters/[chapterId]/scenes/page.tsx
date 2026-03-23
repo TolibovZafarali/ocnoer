@@ -72,7 +72,6 @@ export default async function ChapterScenesPage({
   const status = getParam(query.status);
   const message = getParam(query.message);
   const returnTo = `/admin/chapters/${chapter.id}/scenes`;
-  const sceneCreateBlocked = story.backgroundImages.length === 0;
 
   return (
     <AdminPageShell>
@@ -103,15 +102,8 @@ export default async function ChapterScenesPage({
 
         <SectionCard
           title="Create Scene"
-          description="Add a scene to this chapter. Background image is required; music and character pool are optional."
+          description="Add a scene to this chapter. Background image, music, and character pool are optional."
         >
-          {sceneCreateBlocked ? (
-            <Notice kind="error">
-              Scene creation is blocked until at least one background image
-              asset exists.
-            </Notice>
-          ) : null}
-
           <form action={createSceneAction} className="space-y-4">
             <input type="hidden" name="chapterId" value={chapter.id} />
             <input type="hidden" name="returnTo" value={returnTo} />
@@ -129,18 +121,14 @@ export default async function ChapterScenesPage({
               <Field
                 label="Background Image"
                 htmlFor="background-image-asset"
-                hint="Required for every scene."
+                hint="Optional. Leave empty to render black."
               >
                 <SelectInput
                   id="background-image-asset"
                   name="backgroundImageAssetId"
                   defaultValue=""
-                  required
-                  disabled={sceneCreateBlocked}
                 >
-                  <option value="" disabled>
-                    Select a background image
-                  </option>
+                  <option value="">No background (black)</option>
                   {story.backgroundImages.map((asset) => (
                     <option key={asset.id} value={asset.id}>
                       {asset.label}
@@ -160,7 +148,6 @@ export default async function ChapterScenesPage({
                   id="background-music-asset"
                   name="backgroundMusicAssetId"
                   defaultValue=""
-                  disabled={sceneCreateBlocked}
                 >
                   <option value="">No music</option>
                   {story.backgroundMusicTracks.map((asset) => (
@@ -232,9 +219,7 @@ export default async function ChapterScenesPage({
             </div>
 
             <div className="flex justify-end">
-              <Button type="submit" disabled={sceneCreateBlocked}>
-                Create Scene
-              </Button>
+              <Button type="submit">Create Scene</Button>
             </div>
           </form>
         </SectionCard>
@@ -287,8 +272,7 @@ export default async function ChapterScenesPage({
                   description={
                     <div className="space-y-1">
                       <p>
-                        {backgroundImage?.label ??
-                          "Missing background reference"}
+                        {backgroundImage?.label ?? "No background (black)"}
                       </p>
                       <p className="text-sm text-slate-500">
                         {scene.characterIds.length} cast

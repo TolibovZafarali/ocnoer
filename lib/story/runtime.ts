@@ -256,7 +256,7 @@ export function getPlayerRuntimeAssetUrls(input: {
   return {
     backgroundImageUrl: toPublicStorageUrl(
       input.supabaseUrl,
-      scene.backgroundImage.filePath
+      scene.backgroundImage?.filePath ?? null
     ),
     leftCharacterImageUrl: toPublicStorageUrl(
       input.supabaseUrl,

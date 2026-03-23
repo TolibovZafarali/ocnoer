@@ -109,7 +109,9 @@ export function parseSceneDraftPayload(
 
   const title = asString(value.scene.title);
   const orderIndex = asInteger(value.scene.orderIndex);
-  const backgroundImageAssetId = asString(value.scene.backgroundImageAssetId);
+  const backgroundImageAssetId = asNullableString(
+    value.scene.backgroundImageAssetId
+  );
   const backgroundMusicAssetId = asNullableString(
     value.scene.backgroundMusicAssetId
   );
@@ -128,7 +130,6 @@ export function parseSceneDraftPayload(
   if (
     title == null ||
     orderIndex == null ||
-    backgroundImageAssetId == null ||
     carryOcnoerDressSelection == null ||
     characterIds == null ||
     dialogue.length !== value.dialogue.length

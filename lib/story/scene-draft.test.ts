@@ -197,6 +197,29 @@ describe("scene draft helpers", () => {
     expect(
       parseSceneDraftPayload({
         scene: {
+          title: "Scene Without Background",
+          orderIndex: 3,
+          backgroundImageAssetId: null,
+          backgroundMusicAssetId: null,
+          characterIds: []
+        },
+        dialogue: []
+      })
+    ).toEqual({
+      scene: {
+        title: "Scene Without Background",
+        orderIndex: 3,
+        backgroundImageAssetId: null,
+        backgroundMusicAssetId: null,
+        carryOcnoerDressSelection: true,
+        characterIds: []
+      },
+      dialogue: []
+    });
+
+    expect(
+      parseSceneDraftPayload({
+        scene: {
           title: "Scene One",
           orderIndex: 1,
           backgroundImageAssetId: "bg_1",

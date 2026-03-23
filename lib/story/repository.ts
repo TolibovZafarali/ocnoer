@@ -1773,15 +1773,13 @@ export async function saveSceneDraft(input: {
     draft.scene.backgroundImageAssetId
   );
 
-  if (!backgroundImageAssetId) {
-    throw new StoryRepositoryError("Background image is required.");
-  }
-
   const backgroundMusicAssetId = normalizeOptionalSceneDraftValue(
     draft.scene.backgroundMusicAssetId
   );
 
-  findBackgroundImageOrThrow(snapshot, backgroundImageAssetId);
+  if (backgroundImageAssetId) {
+    findBackgroundImageOrThrow(snapshot, backgroundImageAssetId);
+  }
 
   if (backgroundMusicAssetId) {
     findBackgroundMusicOrThrow(snapshot, backgroundMusicAssetId);
@@ -2671,7 +2669,7 @@ export async function createScene(input: {
   chapterId: string;
   title: string;
   orderIndex: number;
-  backgroundImageAssetId: string;
+  backgroundImageAssetId: string | null;
   backgroundMusicAssetId: string | null;
   carryOcnoerDressSelection: boolean;
   characterIds: string[];
@@ -2682,7 +2680,9 @@ export async function createScene(input: {
   const characterIds = [...new Set(input.characterIds)];
 
   ensureUniqueSceneOrder(chapter, input.orderIndex);
-  findBackgroundImageOrThrow(snapshot, input.backgroundImageAssetId);
+  if (input.backgroundImageAssetId) {
+    findBackgroundImageOrThrow(snapshot, input.backgroundImageAssetId);
+  }
 
   if (input.backgroundMusicAssetId) {
     findBackgroundMusicOrThrow(snapshot, input.backgroundMusicAssetId);
@@ -2715,7 +2715,7 @@ export async function updateScene(input: {
   sceneId: string;
   title: string;
   orderIndex: number;
-  backgroundImageAssetId: string;
+  backgroundImageAssetId: string | null;
   backgroundMusicAssetId: string | null;
   carryOcnoerDressSelection: boolean;
   characterIds: string[];
@@ -2729,7 +2729,9 @@ export async function updateScene(input: {
   if (!orderChanged) {
     ensureUniqueSceneOrder(chapter, input.orderIndex, scene.id);
   }
-  findBackgroundImageOrThrow(snapshot, input.backgroundImageAssetId);
+  if (input.backgroundImageAssetId) {
+    findBackgroundImageOrThrow(snapshot, input.backgroundImageAssetId);
+  }
 
   if (input.backgroundMusicAssetId) {
     findBackgroundMusicOrThrow(snapshot, input.backgroundMusicAssetId);

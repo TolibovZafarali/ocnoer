@@ -1802,7 +1802,7 @@ export function PlayerStoryReader({
 
           {showDialogueCard ? (
             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20">
-              <AnimatePresence initial={false} mode="wait">
+              <AnimatePresence mode="wait">
                 <motion.div
                   key={resolvedEntry.id}
                   initial="hidden"

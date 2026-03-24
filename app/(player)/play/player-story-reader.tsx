@@ -216,6 +216,18 @@ function getDialogueCardPositionClassName(
   return "left-[clamp(0.75rem,2vw,1.25rem)] right-[clamp(0.75rem,2vw,1.25rem)]";
 }
 
+function getDialogueNavSpeakerLabel(entry: RuntimeDialogueEntry) {
+  if (entry.speaker.type === "character") {
+    return entry.speaker.characterName;
+  }
+
+  if (entry.speaker.type === "dress_prompt") {
+    return "Dress Prompt";
+  }
+
+  return "Narrator";
+}
+
 export function PlayerStoryReader({
   manifestPath,
   progressStorageKey,
@@ -824,6 +836,8 @@ export function PlayerStoryReader({
     manifest?.chapters.findIndex(
       (chapter) => chapter.id === bundle?.chapter.id
     ) ?? -1;
+  const activeDialogueIndex = readerState?.dialogueIndex ?? -1;
+  const activeSceneDialogues = activeScene?.dialogue ?? [];
   const desktopSceneNavPanelWidth = Math.max(
     0,
     desktopNavGutterWidth - DESKTOP_SCENE_NAV_HORIZONTAL_PADDING_PX * 2
@@ -1181,6 +1195,34 @@ export function PlayerStoryReader({
     [bundle, commitJumpToScene, isLoadingChapter, loadBundle, manifest]
   );
 
+  const handleJumpToDialogue = useCallback(
+    (dialogueIndex: number) => {
+      if (isLoadingChapter || !bundle || !readerState) {
+        return;
+      }
+
+      const targetScene = bundle.chapter.scenes[readerState.sceneIndex];
+      const targetDialogue = targetScene?.dialogue[dialogueIndex];
+
+      if (!targetDialogue) {
+        return;
+      }
+
+      setIsTapHeaderVisible(false);
+
+      startTransition(() => {
+        setPendingSceneState(null);
+        setBoundaryState(null);
+        setReaderState({
+          ...readerState,
+          dialogueIndex,
+          isChapterComplete: false
+        });
+      });
+    },
+    [bundle, isLoadingChapter, readerState]
+  );
+
   const handleJumpToChapter = useCallback(
     async (chapterId: string) => {
       if (isLoadingChapter || !manifest) {
@@ -1513,6 +1555,68 @@ export function PlayerStoryReader({
                   );
                 })}
               </div>
+            </div>
+          </div>
+        </aside>
+      ) : null}
+      {showDesktopSceneNavigation ? (
+        <aside
+          className="absolute right-0 top-0 z-30 hidden h-full items-start px-3 py-3 lg:flex"
+          style={{
+            width: desktopSceneNavPanelWidth
+          }}
+        >
+          <div className="pointer-events-auto flex h-full w-full flex-col rounded-2xl border border-white/10 bg-black/35 p-3 text-slate-100 backdrop-blur">
+            <div className="border-b border-white/10 pb-2">
+              <p className="text-[11px] uppercase tracking-[0.2em] text-slate-400">
+                Temporary Nav
+              </p>
+              <p className="mt-1 text-sm font-medium text-slate-100">
+                Dialogues
+              </p>
+            </div>
+
+            <div className="mt-3 border-b border-white/10 pb-3">
+              <p className="text-[11px] uppercase tracking-[0.14em] text-slate-400">
+                {activeChapterIndex >= 0
+                  ? `Scene ${readerState ? readerState.sceneIndex + 1 : 1}`
+                  : "Active Scene"}
+              </p>
+              <p className="mt-1 truncate text-sm text-slate-200">
+                {activeScene?.title ?? "Untitled scene"}
+              </p>
+            </div>
+
+            <div className="mt-3 space-y-2 overflow-y-auto">
+              {activeSceneDialogues.map((dialogueItem, dialogueIndex) => {
+                const isDialogueActive = dialogueIndex === activeDialogueIndex;
+
+                return (
+                  <button
+                    key={dialogueItem.id}
+                    onClick={() => handleJumpToDialogue(dialogueIndex)}
+                    type="button"
+                    disabled={isLoadingChapter}
+                    className={`block w-full rounded-xl px-3 py-2 text-left text-sm transition ${
+                      isDialogueActive
+                        ? "bg-white/20 text-white"
+                        : "bg-white/5 text-slate-300 hover:bg-white/10 hover:text-slate-100"
+                    } disabled:cursor-default disabled:opacity-45`}
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] uppercase tracking-[0.14em] text-slate-400">
+                        D {dialogueIndex + 1}
+                      </span>
+                      <span className="truncate text-[10px] uppercase tracking-[0.14em] text-slate-400">
+                        {getDialogueNavSpeakerLabel(dialogueItem)}
+                      </span>
+                    </div>
+                    <p className="mt-1 truncate text-xs text-slate-100/90">
+                      {dialogueItem.text}
+                    </p>
+                  </button>
+                );
+              })}
             </div>
           </div>
         </aside>

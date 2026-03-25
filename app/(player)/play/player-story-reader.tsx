@@ -70,6 +70,8 @@ type PlayerStoryReaderProps = {
   manifestPath: string;
   progressStorageKey: string;
   supabaseUrl: string;
+  initialCatName: string | null;
+  initialCatNameLocked: boolean;
   initialManifest?: RuntimeManifest | null;
   initialBundle?: RuntimeChapterBundle | null;
   initialReaderState?: ReaderState | null;
@@ -133,6 +135,24 @@ const OPENING_SCENE_FADE_DURATION_MS = 1200;
 const MAP_OVERLAY_DURATION_MS = 340;
 const DESKTOP_SCENE_NAV_MIN_GUTTER_WIDTH_PX = 220;
 const DESKTOP_SCENE_NAV_HORIZONTAL_PADDING_PX = 12;
+const CAT_NAME_BRANCH_FLAG_KEY = "cat_name";
+const CAT_NAME_LOCKED_BRANCH_FLAG_KEY = "cat_name_locked";
+const CAT_NAME_TEMPLATE_PATTERN = /\{\{\s*cat_name\s*\}\}/gi;
+const MIN_CAT_NAME_LENGTH = 1;
+const MAX_CAT_NAME_LENGTH = 80;
+const CAT_NAME_PATTERN = /^[a-zA-Z0-9 .,'_-]+$/;
+
+function normalizeCatNameInput(value: string) {
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function resolveDialogueTextTemplate(text: string, catName: string | null) {
+  if (!catName) {
+    return text;
+  }
+
+  return text.replace(CAT_NAME_TEMPLATE_PATTERN, catName);
+}
 
 function readStoredProgress(storageKey: string) {
   if (typeof window === "undefined") {
@@ -225,6 +245,10 @@ function getDialogueNavSpeakerLabel(entry: RuntimeDialogueEntry) {
     return "Dress Prompt";
   }
 
+  if (entry.speaker.type === "cat_name_prompt") {
+    return "Cat Name Prompt";
+  }
+
   return "Narrator";
 }
 
@@ -232,6 +256,8 @@ export function PlayerStoryReader({
   manifestPath,
   progressStorageKey,
   supabaseUrl,
+  initialCatName,
+  initialCatNameLocked,
   initialManifest = null,
   initialBundle = null,
   initialReaderState = null
@@ -288,6 +314,14 @@ export function PlayerStoryReader({
   const [dressPromptMotionDirection, setDressPromptMotionDirection] = useState<
     -1 | 1
   >(1);
+  const [catName, setCatName] = useState<string | null>(initialCatName);
+  const [isCatNameLocked, setIsCatNameLocked] = useState(initialCatNameLocked);
+  const [catNameInputValue, setCatNameInputValue] = useState(initialCatName ?? "");
+  const [catNameInputError, setCatNameInputError] = useState<string | null>(null);
+  const [pendingCatNameSync, setPendingCatNameSync] = useState<string | null>(
+    null
+  );
+  const [isSavingCatName, setIsSavingCatName] = useState(false);
 
   const lineEnterDurationMs = prefersReducedMotion
     ? REDUCED_MOTION_DURATION_MS
@@ -484,6 +518,29 @@ export function PlayerStoryReader({
       });
     });
   }, [scene?.id, scene?.carryOcnoerDressSelection, scene?.characterPool]);
+
+  useEffect(() => {
+    const storedCatName =
+      typeof branchFlags[CAT_NAME_BRANCH_FLAG_KEY] === "string"
+        ? normalizeCatNameInput(String(branchFlags[CAT_NAME_BRANCH_FLAG_KEY]))
+        : null;
+    const storedCatNameLocked = branchFlags[CAT_NAME_LOCKED_BRANCH_FLAG_KEY] === true;
+
+    if (!storedCatName || storedCatName.length === 0) {
+      return;
+    }
+
+    setCatName((currentValue) =>
+      currentValue && currentValue.length > 0 ? currentValue : storedCatName
+    );
+    setCatNameInputValue((currentValue) =>
+      currentValue && currentValue.length > 0 ? currentValue : storedCatName
+    );
+
+    if (storedCatNameLocked) {
+      setIsCatNameLocked(true);
+    }
+  }, [branchFlags]);
 
   useEffect(() => {
     if (
@@ -700,9 +757,13 @@ export function PlayerStoryReader({
 
   const activeScene = scene;
   const activeEntry = entry;
+  const resolvedDialogueText = useMemo(
+    () => resolveDialogueTextTemplate(activeEntry?.text ?? "", catName),
+    [activeEntry?.text, catName]
+  );
   const textCharacters = useMemo(
-    () => Array.from(activeEntry?.text ?? ""),
-    [activeEntry?.text]
+    () => Array.from(resolvedDialogueText),
+    [resolvedDialogueText]
   );
   const dressPromptOptions = useMemo(() => {
     if (activeEntry?.speaker.type !== "dress_prompt") {
@@ -793,7 +854,7 @@ export function PlayerStoryReader({
     }
 
     if (prefersReducedMotion) {
-      return activeEntry.text;
+      return resolvedDialogueText;
     }
 
     const resolvedVisibleTextLength =
@@ -817,6 +878,7 @@ export function PlayerStoryReader({
     activeEntry,
     prefersReducedMotion,
     presentationPhase,
+    resolvedDialogueText,
     textCharacters,
     visibleTextLength
   ]);
@@ -826,8 +888,19 @@ export function PlayerStoryReader({
     showDialogueCard &&
     presentationPhase === "ready" &&
     activeEntry?.speaker.type === "dress_prompt";
+  const showCatNamePromptInput =
+    showDialogueCard &&
+    presentationPhase === "ready" &&
+    activeEntry?.speaker.type === "cat_name_prompt" &&
+    !isCatNameLocked;
+  const showCatNamePromptLockedState =
+    showDialogueCard &&
+    activeEntry?.speaker.type === "cat_name_prompt" &&
+    isCatNameLocked;
   const showContinueButtonSlot =
-    showDialogueCard && activeEntry?.speaker.type !== "dress_prompt";
+    showDialogueCard &&
+    activeEntry?.speaker.type !== "dress_prompt" &&
+    !(activeEntry?.speaker.type === "cat_name_prompt" && !isCatNameLocked);
   const showContinueButton =
     showContinueButtonSlot &&
     presentationPhase === "ready" &&
@@ -863,6 +936,62 @@ export function PlayerStoryReader({
     setDressPromptIndex(0);
     setDressPromptMotionDirection(1);
   }, [activeEntry?.id]);
+
+  useEffect(() => {
+    if (activeEntry?.speaker.type !== "cat_name_prompt") {
+      setCatNameInputError(null);
+      return;
+    }
+
+    setCatNameInputValue(catName ?? "");
+    setCatNameInputError(null);
+  }, [activeEntry?.id, activeEntry?.speaker.type, catName]);
+
+  useEffect(() => {
+    if (!boundaryState || !pendingCatNameSync || isSavingCatName) {
+      return;
+    }
+
+    let cancelled = false;
+
+    setIsSavingCatName(true);
+
+    void fetch("/api/player/cat-name", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        catName: pendingCatNameSync
+      })
+    })
+      .then(async (response) => {
+        if (!response.ok) {
+          throw new Error("Failed to persist cat name.");
+        }
+      })
+      .then(() => {
+        if (cancelled) {
+          return;
+        }
+
+        setPendingCatNameSync(null);
+      })
+      .catch(() => {
+        // Keep pending sync queued for the next transition.
+      })
+      .finally(() => {
+        if (cancelled) {
+          return;
+        }
+
+        setIsSavingCatName(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [boundaryState, isSavingCatName, pendingCatNameSync]);
 
   useEffect(() => {
     if (!isSceneTransition || !pendingSceneState) {
@@ -1367,6 +1496,56 @@ export function PlayerStoryReader({
     [entry, handleAdvance, isLoadingChapter, presentationPhase]
   );
 
+  const handleCatNameSubmit = useCallback(async () => {
+    if (
+      isLoadingChapter ||
+      presentationPhase !== "ready" ||
+      !entry ||
+      entry.speaker.type !== "cat_name_prompt" ||
+      isCatNameLocked
+    ) {
+      return;
+    }
+
+    const normalizedCatName = normalizeCatNameInput(catNameInputValue);
+
+    if (
+      normalizedCatName.length < MIN_CAT_NAME_LENGTH ||
+      normalizedCatName.length > MAX_CAT_NAME_LENGTH
+    ) {
+      setCatNameInputError(
+        `Cat name must be ${MIN_CAT_NAME_LENGTH}-${MAX_CAT_NAME_LENGTH} characters.`
+      );
+      return;
+    }
+
+    if (!CAT_NAME_PATTERN.test(normalizedCatName)) {
+      setCatNameInputError(
+        "Cat name may contain only letters, numbers, spaces, and . , ' _ - characters."
+      );
+      return;
+    }
+
+    setCatNameInputError(null);
+    setCatName(normalizedCatName);
+    setIsCatNameLocked(true);
+    setPendingCatNameSync(normalizedCatName);
+    setBranchFlags((currentValue) => ({
+      ...currentValue,
+      [CAT_NAME_BRANCH_FLAG_KEY]: normalizedCatName,
+      [CAT_NAME_LOCKED_BRANCH_FLAG_KEY]: true
+    }));
+
+    await handleAdvance();
+  }, [
+    catNameInputValue,
+    entry,
+    handleAdvance,
+    isCatNameLocked,
+    isLoadingChapter,
+    presentationPhase
+  ]);
+
   const handlePreviousDressPromptOption = useCallback(() => {
     if (dressPromptOptions.length <= 1) {
       return;
@@ -1826,17 +2005,68 @@ export function PlayerStoryReader({
                         {resolvedEntry.speaker.characterName}
                       </p>
                     </div>
+                  ) : resolvedEntry.speaker.type === "cat_name_prompt" ? (
+                    <div className="mb-4">
+                      <p className="text-sm uppercase tracking-[0.2em] text-slate-300">
+                        Enter your cat&apos;s name
+                      </p>
+                    </div>
                   ) : null}
 
-                  <p
-                    className={`min-h-[3.5rem] text-slate-100 ${
-                      resolvedEntry.speaker.type === "dress_prompt"
-                        ? "font-dress-prompt text-center text-[2.4rem] leading-[1.15] md:text-[2.8rem]"
-                        : "font-dialogue text-base leading-7 md:text-lg md:leading-8"
-                    }`}
-                  >
-                    {dialogueTextNodes}
-                  </p>
+                  {resolvedEntry.speaker.type === "cat_name_prompt" &&
+                  !showCatNamePromptLockedState ? null : (
+                    <p
+                      className={`min-h-[3.5rem] text-slate-100 ${
+                        resolvedEntry.speaker.type === "dress_prompt"
+                          ? "font-dress-prompt text-center text-[2.4rem] leading-[1.15] md:text-[2.8rem]"
+                          : "font-dialogue text-base leading-7 md:text-lg md:leading-8"
+                      }`}
+                    >
+                      {dialogueTextNodes}
+                    </p>
+                  )}
+
+                  {showCatNamePromptInput ? (
+                    <div className="space-y-3">
+                      <label
+                        htmlFor={`cat-name-input-${resolvedEntry.id}`}
+                        className="block text-sm font-medium text-slate-200"
+                      >
+                        Cat Name
+                      </label>
+                      <input
+                        id={`cat-name-input-${resolvedEntry.id}`}
+                        value={catNameInputValue}
+                        onChange={(event) => {
+                          setCatNameInputValue(event.target.value);
+                          setCatNameInputError(null);
+                        }}
+                        placeholder="Type your cat's name"
+                        maxLength={MAX_CAT_NAME_LENGTH}
+                        className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2.5 text-slate-100 outline-none transition focus:border-white/35 focus:ring-2 focus:ring-white/20"
+                      />
+
+                      {catNameInputError ? (
+                        <p className="text-sm text-rose-300">{catNameInputError}</p>
+                      ) : null}
+
+                      <div className="flex justify-end">
+                        <Button
+                          type="button"
+                          onClick={() => void handleCatNameSubmit()}
+                          disabled={isLoadingChapter}
+                        >
+                          Set Cat Name
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+
+                  {showCatNamePromptLockedState ? (
+                    <p className="mt-4 text-sm text-emerald-300">
+                      Cat name locked: {catName ?? "Already set"}
+                    </p>
+                  ) : null}
 
                   {showDressPromptOptions && selectedDressPromptOption ? (
                     <div className="mt-6">

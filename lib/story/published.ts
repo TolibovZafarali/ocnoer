@@ -233,6 +233,32 @@ function compileScene(input: {
         };
       }
 
+      if (entry.speaker.type === "cat_name_prompt") {
+        const promptCharacter = input.charactersById.get(entry.speaker.characterId);
+
+        if (!promptCharacter) {
+          throw new Error(
+            `Dialogue entry "${entry.id}" references an unknown cat name prompt character.`
+          );
+        }
+
+        return {
+          id: entry.id,
+          orderIndex: entry.orderIndex,
+          text: entry.text,
+          speaker: {
+            type: "cat_name_prompt",
+            characterId: promptCharacter.id,
+            characterName: promptCharacter.name,
+            characterSlug: promptCharacter.slug
+          },
+          stage: {
+            left: cloneStageCharacter(leftStage),
+            right: cloneStageCharacter(rightStage)
+          }
+        };
+      }
+
       const speakingCharacter = input.charactersById.get(
         entry.speaker.characterId
       );

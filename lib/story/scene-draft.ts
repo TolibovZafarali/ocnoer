@@ -54,7 +54,8 @@ function parseSceneDraftDialogueEntry(
     text == null ||
     (speakerType !== "narrator" &&
       speakerType !== "character" &&
-      speakerType !== "dress_prompt")
+      speakerType !== "dress_prompt" &&
+      speakerType !== "cat_name_prompt")
   ) {
     return null;
   }
@@ -86,7 +87,8 @@ export function createSceneDraftPayload(
       speakerType: entry.speaker.type,
       characterId:
         entry.speaker.type === "character" ||
-        entry.speaker.type === "dress_prompt"
+        entry.speaker.type === "dress_prompt" ||
+        entry.speaker.type === "cat_name_prompt"
           ? entry.speaker.characterId
           : null,
       emotionKey:

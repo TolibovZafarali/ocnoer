@@ -100,7 +100,11 @@ type SaveDraftActionResult =
     };
 
 type DialogueFormValues = {
-  speakerType: "narrator" | "character" | "dress_prompt";
+  speakerType:
+    | "narrator"
+    | "character"
+    | "dress_prompt"
+    | "cat_name_prompt";
   characterId: string | null;
   emotionKey: string | null;
   dressOptionKeys: string[];
@@ -278,6 +282,10 @@ function getDialogueIssue(
     return null;
   }
 
+  if (entry.speakerType === "cat_name_prompt") {
+    return null;
+  }
+
   if (!entry.emotionKey) {
     return "Select an emotion for this row.";
   }
@@ -313,7 +321,7 @@ function DialogueDraftForm(props: {
     [props.allCharacters, props.sceneCharacterIds]
   );
   const [speakerType, setSpeakerType] = useState<
-    "narrator" | "character" | "dress_prompt"
+    "narrator" | "character" | "dress_prompt" | "cat_name_prompt"
   >(props.initial?.speakerType ?? "narrator");
   const [characterId, setCharacterId] = useState<string | null>(
     initialCharacterId
@@ -430,6 +438,21 @@ function DialogueDraftForm(props: {
       return;
     }
 
+    if (speakerType === "cat_name_prompt") {
+      if (!characterId && availableCharacters[0]) {
+        setCharacterId(availableCharacters[0].id);
+      } else if (
+        characterId &&
+        !availableCharacters.some((character) => character.id === characterId)
+      ) {
+        setCharacterId(availableCharacters[0]?.id ?? null);
+      }
+
+      setEmotionKey(null);
+      setDressOptionKeys([]);
+      return;
+    }
+
     if (!characterId && availableCharacters[0]) {
       setCharacterId(availableCharacters[0].id);
       setEmotionKey(availableCharacters[0].emotions[0]?.key ?? null);
@@ -467,7 +490,9 @@ function DialogueDraftForm(props: {
     props.onSubmit({
       speakerType,
       characterId:
-        speakerType === "character" || speakerType === "dress_prompt"
+        speakerType === "character" ||
+        speakerType === "dress_prompt" ||
+        speakerType === "cat_name_prompt"
           ? characterId
           : null,
       emotionKey: speakerType === "character" ? emotionKey : null,
@@ -485,7 +510,7 @@ function DialogueDraftForm(props: {
     >
       <div
         className={`grid gap-4 ${
-          speakerType === "character"
+          speakerType === "character" || speakerType === "cat_name_prompt"
             ? "md:grid-cols-[140px_1fr]"
             : "md:grid-cols-[180px_1fr]"
         }`}
@@ -500,6 +525,7 @@ function DialogueDraftForm(props: {
                   | "narrator"
                   | "character"
                   | "dress_prompt"
+                  | "cat_name_prompt"
               )
             }
           >
@@ -507,13 +533,16 @@ function DialogueDraftForm(props: {
             {availableCharacters.length > 0 || speakerType === "character" ? (
               <option value="character">Character</option>
             ) : null}
+            {availableCharacters.length > 0 || speakerType === "cat_name_prompt" ? (
+              <option value="cat_name_prompt">Cat Name Prompt</option>
+            ) : null}
             {dressPromptCharacter ? (
               <option value="dress_prompt">Dress Prompt</option>
             ) : null}
           </SelectInput>
         </Field>
 
-        {speakerType === "character" ? (
+        {speakerType === "character" || speakerType === "cat_name_prompt" ? (
           <Field label="Scene Character" htmlFor={`dialogue-character-${props.resetVersion ?? "0"}`}>
             <SelectInput
               id={`dialogue-character-${props.resetVersion ?? "0"}`}
@@ -658,6 +687,11 @@ function SortableDialogueDraftCard(props: {
   const characterName =
     props.item.speakerType === "dress_prompt"
       ? "Dress Prompt"
+      : props.item.speakerType === "cat_name_prompt" && props.item.characterId
+        ? `Cat Name Prompt · ${
+            allCharactersById.get(props.item.characterId)?.name ??
+            `${props.item.characterId} (missing)`
+          }`
       : props.item.speakerType === "character" && props.item.characterId
       ? (allCharactersById.get(props.item.characterId)?.name ??
         `${props.item.characterId} (missing)`)
@@ -1022,7 +1056,8 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
           speakerType: values.speakerType,
           characterId:
             values.speakerType === "character" ||
-            values.speakerType === "dress_prompt"
+            values.speakerType === "dress_prompt" ||
+            values.speakerType === "cat_name_prompt"
               ? values.characterId
               : null,
           emotionKey: values.speakerType === "character" ? values.emotionKey : null,
@@ -1047,7 +1082,8 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
               speakerType: values.speakerType,
               characterId:
                 values.speakerType === "character" ||
-                values.speakerType === "dress_prompt"
+                values.speakerType === "dress_prompt" ||
+                values.speakerType === "cat_name_prompt"
                   ? values.characterId
                   : null,
               emotionKey:

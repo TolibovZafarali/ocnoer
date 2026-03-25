@@ -1,9 +1,16 @@
 "use server";
 
+import { PlayerStatus } from "@prisma/client";
 import { revalidatePath } from "next/cache";
 import { redirect, unstable_rethrow } from "next/navigation";
 
 import { requireAdminSession } from "@/lib/auth/admin";
+import {
+  PlayerProfileError,
+  createPlayerProfile,
+  updatePlayerProfile,
+  updatePlayerProfileStatus
+} from "@/lib/player-profiles";
 import {
   StoryRepositoryError,
   addCharacterEmotion,
@@ -183,6 +190,10 @@ function getErrorMessage(error: unknown) {
     return error.message;
   }
 
+  if (error instanceof PlayerProfileError) {
+    return error.message;
+  }
+
   return "Unable to save content right now.";
 }
 
@@ -190,6 +201,31 @@ function getNextOrderIndex(items: Array<{ orderIndex: number }>) {
   return (
     items.reduce((highest, item) => Math.max(highest, item.orderIndex), 0) + 1
   );
+}
+
+function getDialogueSpeakerType(formData: FormData) {
+  const speakerType = getRequiredString(formData, "speakerType", "Speaker type");
+
+  if (
+    speakerType !== "narrator" &&
+    speakerType !== "character" &&
+    speakerType !== "dress_prompt" &&
+    speakerType !== "cat_name_prompt"
+  ) {
+    throw new StoryRepositoryError("Speaker type is invalid.");
+  }
+
+  return speakerType;
+}
+
+function getPlayerStatus(formData: FormData) {
+  const statusValue = getRequiredString(formData, "status", "Player status");
+
+  if (statusValue !== PlayerStatus.ACTIVE && statusValue !== PlayerStatus.INACTIVE) {
+    throw new PlayerProfileError("Player status is invalid.");
+  }
+
+  return statusValue;
 }
 
 export type AdminRedirectActionState = {
@@ -1116,18 +1152,12 @@ export async function createDialogueEntryAction(formData: FormData) {
     action: async () => {
       const chapterId = getRequiredString(formData, "chapterId", "Chapter id");
       const sceneId = getRequiredString(formData, "sceneId", "Scene id");
+      const speakerType = getDialogueSpeakerType(formData);
 
       await createDialogueEntry({
         chapterId,
         sceneId,
-        speakerType:
-          getRequiredString(formData, "speakerType", "Speaker type") ===
-          "character"
-            ? "character"
-            : getRequiredString(formData, "speakerType", "Speaker type") ===
-                "dress_prompt"
-              ? "dress_prompt"
-              : "narrator",
+        speakerType,
         characterId: getOptionalString(formData, "characterId"),
         emotionKey: getOptionalString(formData, "emotionKey"),
         dressOptionKeys: getDressOptionKeys(formData),
@@ -1151,6 +1181,7 @@ export async function updateDialogueEntryAction(formData: FormData) {
     action: async () => {
       const chapterId = getRequiredString(formData, "chapterId", "Chapter id");
       const sceneId = getRequiredString(formData, "sceneId", "Scene id");
+      const speakerType = getDialogueSpeakerType(formData);
       const dialogueEntryId = getRequiredString(
         formData,
         "dialogueEntryId",
@@ -1170,14 +1201,7 @@ export async function updateDialogueEntryAction(formData: FormData) {
             sceneId,
             dialogueEntryId
           )),
-        speakerType:
-          getRequiredString(formData, "speakerType", "Speaker type") ===
-          "character"
-            ? "character"
-            : getRequiredString(formData, "speakerType", "Speaker type") ===
-                "dress_prompt"
-              ? "dress_prompt"
-              : "narrator",
+        speakerType,
         characterId: getOptionalString(formData, "characterId"),
         emotionKey: getOptionalString(formData, "emotionKey"),
         dressOptionKeys: getDressOptionKeys(formData),
@@ -1270,6 +1294,55 @@ export async function deleteDialogueEntryAction(formData: FormData) {
         "success",
         "Dialogue entry deleted."
       );
+    }
+  });
+}
+
+export async function createPlayerProfileAction(formData: FormData) {
+  await runAdminAction({
+    formData,
+    fallbackPath: "/admin/players",
+    successMessage: "Player created.",
+    action: async () => {
+      await createPlayerProfile({
+        firstName: getRequiredString(formData, "firstName", "First name"),
+        username: getRequiredString(formData, "username", "Username"),
+        catName: getOptionalString(formData, "catName"),
+        status: getPlayerStatus(formData)
+      });
+    }
+  });
+}
+
+export async function updatePlayerProfileAction(formData: FormData) {
+  await runAdminAction({
+    formData,
+    fallbackPath: "/admin/players",
+    successMessage: "Player updated.",
+    action: async () => {
+      const playerId = getRequiredString(formData, "playerId", "Player id");
+
+      await updatePlayerProfile({
+        playerId,
+        firstName: getRequiredString(formData, "firstName", "First name"),
+        username: getRequiredString(formData, "username", "Username"),
+        catName: getOptionalString(formData, "catName"),
+        status: getPlayerStatus(formData)
+      });
+    }
+  });
+}
+
+export async function updatePlayerProfileStatusAction(formData: FormData) {
+  await runAdminAction({
+    formData,
+    fallbackPath: "/admin/players",
+    successMessage: "Player status updated.",
+    action: async () => {
+      await updatePlayerProfileStatus({
+        playerId: getRequiredString(formData, "playerId", "Player id"),
+        status: getPlayerStatus(formData)
+      });
     }
   });
 }

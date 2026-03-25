@@ -50,6 +50,17 @@ describe("scene draft helpers", () => {
           },
           createdAt: "2026-03-19T12:00:00.000Z",
           updatedAt: "2026-03-19T12:00:00.000Z"
+        },
+        {
+          id: "dialogue_4",
+          orderIndex: 4,
+          text: "Name the cat",
+          speaker: {
+            type: "cat_name_prompt",
+            characterId: "character_1"
+          },
+          createdAt: "2026-03-19T12:00:00.000Z",
+          updatedAt: "2026-03-19T12:00:00.000Z"
         }
       ],
       createdAt: "2026-03-19T12:00:00.000Z",
@@ -89,6 +100,14 @@ describe("scene draft helpers", () => {
           emotionKey: null,
           dressOptionKeys: ["base", "winter"],
           text: "Dress choice line"
+        },
+        {
+          id: "dialogue_4",
+          speakerType: "cat_name_prompt",
+          characterId: "character_1",
+          emotionKey: null,
+          dressOptionKeys: [],
+          text: "Name the cat"
         }
       ]
     });
@@ -121,6 +140,14 @@ describe("scene draft helpers", () => {
             emotionKey: null,
             dressOptionKeys: ["base"],
             text: "Dress prompt"
+          },
+          {
+            id: "dialogue_3",
+            speakerType: "cat_name_prompt",
+            characterId: "character_1",
+            emotionKey: null,
+            dressOptionKeys: [],
+            text: "Name prompt"
           }
         ]
       })
@@ -149,6 +176,14 @@ describe("scene draft helpers", () => {
           emotionKey: null,
           dressOptionKeys: ["base"],
           text: "Dress prompt"
+        },
+        {
+          id: "dialogue_3",
+          speakerType: "cat_name_prompt",
+          characterId: "character_1",
+          emotionKey: null,
+          dressOptionKeys: [],
+          text: "Name prompt"
         }
       ]
     });

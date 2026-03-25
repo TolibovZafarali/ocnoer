@@ -1342,7 +1342,7 @@ function ensureSceneCharactersExist(
 function assertDialogueSelection(input: {
   snapshot: StoryAuthoringSnapshot;
   scene: SceneDefinition;
-  speakerType: "narrator" | "character" | "dress_prompt";
+  speakerType: "narrator" | "character" | "dress_prompt" | "cat_name_prompt";
   characterId: string | null;
   emotionKey: string | null;
   dressOptionKeys?: string[];
@@ -1420,6 +1420,21 @@ function assertDialogueSelection(input: {
     return;
   }
 
+  if (input.speakerType === "cat_name_prompt") {
+    if (!input.characterId) {
+      throw new StoryRepositoryError("Cat name prompt requires a character.");
+    }
+
+    if (!input.scene.characterIds.includes(input.characterId)) {
+      throw new StoryRepositoryError(
+        "Cat name prompt character must be selected in the scene character pool."
+      );
+    }
+
+    findCharacterOrThrow(input.snapshot, input.characterId);
+    return;
+  }
+
   if (!input.characterId) {
     throw new StoryRepositoryError("Character dialogue requires a character.");
   }
@@ -1453,7 +1468,8 @@ function assertSceneDialogueStillValid(
 ) {
   for (const entry of scene.dialogue) {
     if (
-      entry.speaker.type === "character" &&
+      (entry.speaker.type === "character" ||
+        entry.speaker.type === "cat_name_prompt") &&
       !nextCharacterIds.includes(entry.speaker.characterId)
     ) {
       throw new StoryRepositoryError(
@@ -1625,7 +1641,8 @@ function isCharacterReferenced(
         scene.characterIds.includes(characterId) ||
         scene.dialogue.some(
           (entry) =>
-            entry.speaker.type === "character" &&
+            (entry.speaker.type === "character" ||
+              entry.speaker.type === "cat_name_prompt") &&
             entry.speaker.characterId === characterId
         )
     )
@@ -1849,6 +1866,20 @@ export async function saveSceneDraft(input: {
           type: "dress_prompt",
           characterId: characterId as string,
           dressOptionKeys
+        },
+        createdAt: existingEntry?.createdAt ?? timestamp,
+        updatedAt: timestamp
+      };
+    }
+
+    if (entry.speakerType === "cat_name_prompt") {
+      return {
+        id: isSceneDraftTempId(rawId) ? createEntityId("dialogue") : rawId,
+        orderIndex: index + 1,
+        text,
+        speaker: {
+          type: "cat_name_prompt",
+          characterId: characterId as string
         },
         createdAt: existingEntry?.createdAt ?? timestamp,
         updatedAt: timestamp
@@ -2779,7 +2810,7 @@ export async function createDialogueEntry(input: {
   chapterId: string;
   sceneId: string;
   orderIndex?: number;
-  speakerType: "narrator" | "character" | "dress_prompt";
+  speakerType: "narrator" | "character" | "dress_prompt" | "cat_name_prompt";
   characterId: string | null;
   emotionKey: string | null;
   dressOptionKeys?: string[];
@@ -2815,6 +2846,11 @@ export async function createDialogueEntry(input: {
               characterId: input.characterId as string,
               dressOptionKeys: [...new Set(input.dressOptionKeys ?? [])]
             }
+          : input.speakerType === "cat_name_prompt"
+            ? {
+                type: "cat_name_prompt",
+                characterId: input.characterId as string
+              }
           : {
               type: "character",
               characterId: input.characterId as string,
@@ -2837,7 +2873,7 @@ export async function updateDialogueEntry(input: {
   sceneId: string;
   dialogueEntryId: string;
   orderIndex: number;
-  speakerType: "narrator" | "character" | "dress_prompt";
+  speakerType: "narrator" | "character" | "dress_prompt" | "cat_name_prompt";
   characterId: string | null;
   emotionKey: string | null;
   dressOptionKeys?: string[];
@@ -2873,6 +2909,11 @@ export async function updateDialogueEntry(input: {
             characterId: input.characterId as string,
             dressOptionKeys: [...new Set(input.dressOptionKeys ?? [])]
           }
+        : input.speakerType === "cat_name_prompt"
+          ? {
+              type: "cat_name_prompt",
+              characterId: input.characterId as string
+            }
         : {
             type: "character",
             characterId: input.characterId as string,

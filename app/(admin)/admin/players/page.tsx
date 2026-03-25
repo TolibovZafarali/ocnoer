@@ -1,0 +1,209 @@
+import { PlayerStatus } from "@prisma/client";
+
+import {
+  createPlayerProfileAction,
+  updatePlayerProfileAction,
+  updatePlayerProfileStatusAction
+} from "@/app/(admin)/admin/actions";
+import { AdminCard, AdminCardGrid, AdminEmptyState } from "@/components/admin/cards";
+import {
+  AdminPageShell,
+  Field,
+  Notice,
+  PageHeader,
+  Pill,
+  SectionCard,
+  SelectInput,
+  TextInput
+} from "@/components/admin/forms";
+import { Button } from "@/components/ui/button";
+import { listPlayerProfiles } from "@/lib/player-profiles";
+
+type PlayersPageProps = {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>;
+};
+
+function getParam(value: string | string[] | undefined) {
+  return Array.isArray(value) ? (value[0] ?? null) : (value ?? null);
+}
+
+export default async function PlayersPage({ searchParams }: PlayersPageProps) {
+  const players = await listPlayerProfiles();
+  const params: Record<string, string | string[] | undefined> = searchParams
+    ? await searchParams
+    : {};
+  const status = getParam(params.status);
+  const message = getParam(params.message);
+
+  return (
+    <AdminPageShell>
+      <div className="space-y-6">
+        <PageHeader
+          title="Players"
+          description="Create and manage player profiles. Username acts as the player password secret, and cat name is stored on the profile (not in story JSON)."
+        />
+
+        {status === "success" && message ? <Notice kind="success">{message}</Notice> : null}
+        {status === "error" && message ? <Notice kind="error">{message}</Notice> : null}
+
+        <SectionCard
+          title="Create Player"
+          description="Admin sets each player's first name and password secret (username)."
+        >
+          <form action={createPlayerProfileAction} className="space-y-4">
+            <div className="grid gap-4 md:grid-cols-2">
+              <Field label="First Name" htmlFor="player-create-first-name">
+                <TextInput
+                  id="player-create-first-name"
+                  name="firstName"
+                  placeholder="Luna"
+                  required
+                />
+              </Field>
+
+              <Field
+                label="Username"
+                htmlFor="player-create-username"
+                hint="Used as the player's password secret."
+              >
+                <TextInput
+                  id="player-create-username"
+                  name="username"
+                  placeholder="luna.secret"
+                  required
+                />
+              </Field>
+
+              <Field
+                label="Cat Name"
+                htmlFor="player-create-cat-name"
+                hint="Optional. If provided, player cat-name prompt starts locked."
+              >
+                <TextInput
+                  id="player-create-cat-name"
+                  name="catName"
+                  placeholder="Nox"
+                />
+              </Field>
+
+              <Field label="Status" htmlFor="player-create-status">
+                <SelectInput id="player-create-status" name="status" defaultValue={PlayerStatus.ACTIVE}>
+                  <option value={PlayerStatus.ACTIVE}>ACTIVE</option>
+                  <option value={PlayerStatus.INACTIVE}>INACTIVE</option>
+                </SelectInput>
+              </Field>
+            </div>
+
+            <div className="flex justify-end">
+              <Button type="submit">Create Player</Button>
+            </div>
+          </form>
+        </SectionCard>
+
+        {players.length === 0 ? (
+          <AdminEmptyState
+            title="No Players Yet"
+            description="Create the first player profile above."
+          />
+        ) : (
+          <AdminCardGrid>
+            {players.map((player) => {
+              const isActive = player.status === PlayerStatus.ACTIVE;
+
+              return (
+                <AdminCard
+                  key={player.id}
+                  title={player.firstName}
+                  eyebrow="Player Profile"
+                  description={
+                    <div className="space-y-3">
+                      <p>Username secret: {player.username}</p>
+                      <p>Cat name: {player.catName ?? "Not set"}</p>
+
+                      <details className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                        <summary className="cursor-pointer text-sm font-medium text-slate-800">
+                          Edit player details
+                        </summary>
+
+                        <form action={updatePlayerProfileAction} className="mt-3 space-y-3">
+                          <input type="hidden" name="playerId" value={player.id} />
+
+                          <Field label="First Name" htmlFor={`player-first-name-${player.id}`}>
+                            <TextInput
+                              id={`player-first-name-${player.id}`}
+                              name="firstName"
+                              defaultValue={player.firstName}
+                              required
+                            />
+                          </Field>
+
+                          <Field
+                            label="Username"
+                            htmlFor={`player-username-${player.id}`}
+                            hint="Used as the player's password secret."
+                          >
+                            <TextInput
+                              id={`player-username-${player.id}`}
+                              name="username"
+                              defaultValue={player.username}
+                              required
+                            />
+                          </Field>
+
+                          <Field
+                            label="Cat Name"
+                            htmlFor={`player-cat-name-${player.id}`}
+                            hint="Admin can update this any time."
+                          >
+                            <TextInput
+                              id={`player-cat-name-${player.id}`}
+                              name="catName"
+                              defaultValue={player.catName ?? ""}
+                              placeholder="Nox"
+                            />
+                          </Field>
+
+                          <Field label="Status" htmlFor={`player-status-${player.id}`}>
+                            <SelectInput
+                              id={`player-status-${player.id}`}
+                              name="status"
+                              defaultValue={player.status}
+                            >
+                              <option value={PlayerStatus.ACTIVE}>ACTIVE</option>
+                              <option value={PlayerStatus.INACTIVE}>INACTIVE</option>
+                            </SelectInput>
+                          </Field>
+
+                          <div className="flex justify-end">
+                            <Button type="submit">Save Player</Button>
+                          </div>
+                        </form>
+                      </details>
+                    </div>
+                  }
+                  footer={
+                    <>
+                      <Pill tone={isActive ? "success" : "warning"}>{player.status}</Pill>
+                      <Pill>{player.catNameLocked ? "Cat name locked" : "Cat name unlocked"}</Pill>
+                      <form action={updatePlayerProfileStatusAction}>
+                        <input type="hidden" name="playerId" value={player.id} />
+                        <input
+                          type="hidden"
+                          name="status"
+                          value={isActive ? PlayerStatus.INACTIVE : PlayerStatus.ACTIVE}
+                        />
+                        <Button type="submit" size="sm" variant="outline">
+                          {isActive ? "Deactivate" : "Activate"}
+                        </Button>
+                      </form>
+                    </>
+                  }
+                />
+              );
+            })}
+          </AdminCardGrid>
+        )}
+      </div>
+    </AdminPageShell>
+  );
+}

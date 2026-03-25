@@ -12,6 +12,11 @@ enum Role {
   player
 }
 
+enum PlayerStatus {
+  ACTIVE
+  INACTIVE
+}
+
 enum DialogueKind {
   narrator
   speech
@@ -32,6 +37,20 @@ model User {
   updatedAt       DateTime         @updatedAt
   responses       PlayerResponse[]
   readingProgress ReadingProgress?
+}
+
+model PlayerProfile {
+  id                 String       @id @default(cuid())
+  firstName          String
+  username           String
+  usernameNormalized String       @unique
+  catName            String?
+  catNameLocked      Boolean      @default(false)
+  status             PlayerStatus @default(ACTIVE)
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  @@index([status])
 }
 
 model House {

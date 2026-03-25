@@ -35,7 +35,12 @@ export function AdminNav() {
       >
         Assets
       </Link>
+      <Link
+        href="/admin/players"
+        className={navClassName(pathname.startsWith("/admin/players"))}
+      >
+        Players
+      </Link>
     </nav>
   );
 }
-

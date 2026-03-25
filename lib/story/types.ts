@@ -8,7 +8,8 @@ export const MEDIA_ASSET_TYPES = [
 export const DIALOGUE_SPEAKER_TYPES = [
   "narrator",
   "character",
-  "dress_prompt"
+  "dress_prompt",
+  "cat_name_prompt"
 ] as const;
 
 export type MediaAssetType = (typeof MEDIA_ASSET_TYPES)[number];
@@ -88,6 +89,10 @@ export type DialogueSpeaker =
       type: "dress_prompt";
       characterId: string;
       dressOptionKeys: string[];
+    }
+  | {
+      type: "cat_name_prompt";
+      characterId: string;
     };
 
 export type DialogueEntryBase = {
@@ -249,6 +254,12 @@ export type RuntimeDialogueSpeaker =
       characterName: string;
       characterSlug: string;
       dressOptions: RuntimeDressPromptOption[];
+    }
+  | {
+      type: "cat_name_prompt";
+      characterId: string;
+      characterName: string;
+      characterSlug: string;
     };
 
 export type RuntimeDialogueEntry = {

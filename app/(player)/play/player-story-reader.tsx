@@ -298,6 +298,29 @@ function getDialogueNavSpeakerLabel(
   return "Narrator";
 }
 
+function getCatNamePromptRightStageCharacter(entry: RuntimeDialogueEntry) {
+  if (entry.speaker.type !== "cat_name_prompt") {
+    return entry.stage.right;
+  }
+
+  if (entry.stage.right?.characterId === entry.speaker.characterId) {
+    return entry.stage.right;
+  }
+
+  if (entry.stage.left?.characterId === entry.speaker.characterId) {
+    return entry.stage.left;
+  }
+
+  return {
+    characterId: entry.speaker.characterId,
+    characterName: entry.speaker.characterName,
+    characterSlug: entry.speaker.characterSlug,
+    emotionKey: "default",
+    emotionLabel: "Default",
+    imagePath: ""
+  };
+}
+
 export function PlayerStoryReader({
   manifestPath,
   progressStorageKey,
@@ -909,7 +932,9 @@ export function PlayerStoryReader({
     : null;
   const hideStagePortraits = isSceneTransition;
   const leftStagePortrait =
-    activeEntry && !hideStagePortraits
+    activeEntry &&
+    !hideStagePortraits &&
+    activeEntry.speaker.type !== "cat_name_prompt"
       ? createVisibleStagePortrait({
           stageCharacter: activeEntry.stage.left,
           imageUrl: leftCharacterImageUrl,
@@ -919,7 +944,10 @@ export function PlayerStoryReader({
   const rightStagePortrait =
     activeEntry && !hideStagePortraits
       ? createVisibleStagePortrait({
-          stageCharacter: activeEntry.stage.right,
+          stageCharacter:
+            activeEntry.speaker.type === "cat_name_prompt"
+              ? getCatNamePromptRightStageCharacter(activeEntry)
+              : activeEntry.stage.right,
           imageUrl: rightCharacterImageUrl,
           direction: "from-right"
         })
@@ -969,10 +997,6 @@ export function PlayerStoryReader({
     presentationPhase === "ready" &&
     activeEntry?.speaker.type === "cat_name_prompt" &&
     !isCatNameLocked;
-  const showCatNamePromptLockedState =
-    showDialogueCard &&
-    activeEntry?.speaker.type === "cat_name_prompt" &&
-    isCatNameLocked;
   const showContinueButtonSlot =
     showDialogueCard &&
     activeEntry?.speaker.type !== "dress_prompt";
@@ -2091,7 +2115,7 @@ export function PlayerStoryReader({
                   ) : null}
 
                   {resolvedEntry.speaker.type === "cat_name_prompt" &&
-                  !showCatNamePromptLockedState ? null : (
+                  (showCatNamePromptInput || isLoadingChapter) ? null : (
                     <p
                       className={`min-h-[3.5rem] text-slate-100 ${
                         resolvedEntry.speaker.type === "dress_prompt"
@@ -2121,12 +2145,6 @@ export function PlayerStoryReader({
                         <p className="text-sm text-rose-300">{catNameInputError}</p>
                       ) : null}
                     </div>
-                  ) : null}
-
-                  {showCatNamePromptLockedState ? (
-                    <p className="mt-4 text-sm text-emerald-300">
-                      Cat name locked: {catName ?? "Already set"}
-                    </p>
                   ) : null}
 
                   {showDressPromptOptions && selectedDressPromptOption ? (

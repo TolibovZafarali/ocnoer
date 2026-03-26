@@ -102,6 +102,29 @@ function resolveStageCharacterImagePath(input: {
   );
 }
 
+function resolveSceneCharacterImagePath(input: {
+  scene: RuntimeScene;
+  characterId: string;
+  branchFlags: PlayerProgress["branchFlags"];
+}) {
+  const character =
+    input.scene.characterPool.find(
+      (candidate) => candidate.id === input.characterId
+    ) ?? null;
+
+  if (!character) {
+    return null;
+  }
+
+  return (
+    resolveDressImagePath({
+      character,
+      emotionKey: character.defaultEmotionKey,
+      dressKey: getSelectedDressKey(input.branchFlags, character.id)
+    }) ?? character.defaultEmotionImagePath
+  );
+}
+
 function getVisiblePlayerStageImagePaths(input: {
   scene: RuntimeScene;
   entry: RuntimeDialogueEntry;
@@ -109,11 +132,42 @@ function getVisiblePlayerStageImagePaths(input: {
 }) {
   const { entry } = input;
 
+  if (entry.speaker.type === "cat_name_prompt") {
+    const speakerCharacterId = entry.speaker.characterId;
+    const stageSpeakerRight =
+      entry.stage.right?.characterId === speakerCharacterId
+        ? entry.stage.right
+        : null;
+    const stageSpeakerLeft =
+      entry.stage.left?.characterId === speakerCharacterId
+        ? entry.stage.left
+        : null;
+    const rightImagePath = stageSpeakerRight
+      ? resolveStageCharacterImagePath({
+          scene: input.scene,
+          stageCharacter: stageSpeakerRight,
+          branchFlags: input.branchFlags
+        })
+      : stageSpeakerLeft
+        ? resolveStageCharacterImagePath({
+            scene: input.scene,
+            stageCharacter: stageSpeakerLeft,
+            branchFlags: input.branchFlags
+          })
+        : resolveSceneCharacterImagePath({
+            scene: input.scene,
+            characterId: speakerCharacterId,
+            branchFlags: input.branchFlags
+          });
+
+    return {
+      leftImagePath: null,
+      rightImagePath
+    };
+  }
+
   const speakerCharacterId =
-    entry.speaker.type === "character" ||
-    entry.speaker.type === "cat_name_prompt"
-      ? entry.speaker.characterId
-      : null;
+    entry.speaker.type === "character" ? entry.speaker.characterId : null;
 
   if (!speakerCharacterId) {
     return {

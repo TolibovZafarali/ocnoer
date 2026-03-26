@@ -236,9 +236,12 @@ function getDialogueCardPositionClassName(
   return "left-[clamp(0.75rem,2vw,1.25rem)] right-[clamp(0.75rem,2vw,1.25rem)]";
 }
 
-function getDialogueNavSpeakerLabel(entry: RuntimeDialogueEntry) {
+function getDialogueNavSpeakerLabel(
+  entry: RuntimeDialogueEntry,
+  catName: string | null
+) {
   if (entry.speaker.type === "character") {
-    return entry.speaker.characterName;
+    return resolveDialogueTextTemplate(entry.speaker.characterName, catName);
   }
 
   if (entry.speaker.type === "dress_prompt") {
@@ -1653,6 +1656,10 @@ export function PlayerStoryReader({
   const resolvedScene = activeScene!;
   const resolvedEntry = activeEntry!;
   const resolvedDialogueCardVariants = dialogueCardVariants!;
+  const resolvedSpeakerName =
+    resolvedEntry.speaker.type === "character"
+      ? resolveDialogueTextTemplate(resolvedEntry.speaker.characterName, catName)
+      : null;
 
   return (
     <div className="relative flex min-h-screen w-full items-center justify-center overflow-hidden bg-black">
@@ -1787,7 +1794,7 @@ export function PlayerStoryReader({
                         D {dialogueIndex + 1}
                       </span>
                       <span className="truncate text-[10px] uppercase tracking-[0.14em] text-slate-400">
-                        {getDialogueNavSpeakerLabel(dialogueItem)}
+                        {getDialogueNavSpeakerLabel(dialogueItem, catName)}
                       </span>
                     </div>
                     <p className="mt-1 truncate text-xs text-slate-100/90">
@@ -1995,14 +2002,12 @@ export function PlayerStoryReader({
                     <div className="mb-4">
                       <p
                         className={
-                          resolvedEntry.speaker.characterName
-                            .trim()
-                            .toLowerCase() === "ocnoer"
+                          resolvedSpeakerName?.trim().toLowerCase() === "ocnoer"
                             ? "font-character-name text-4xl leading-none text-slate-300"
                             : "text-sm uppercase tracking-[0.2em] text-slate-400"
                         }
                       >
-                        {resolvedEntry.speaker.characterName}
+                        {resolvedSpeakerName}
                       </p>
                     </div>
                   ) : resolvedEntry.speaker.type === "cat_name_prompt" ? (

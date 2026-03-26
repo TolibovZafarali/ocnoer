@@ -109,7 +109,13 @@ function getVisiblePlayerStageImagePaths(input: {
 }) {
   const { entry } = input;
 
-  if (entry.speaker.type !== "character") {
+  const speakerCharacterId =
+    entry.speaker.type === "character" ||
+    entry.speaker.type === "cat_name_prompt"
+      ? entry.speaker.characterId
+      : null;
+
+  if (!speakerCharacterId) {
     return {
       leftImagePath: null,
       rightImagePath: null
@@ -118,7 +124,7 @@ function getVisiblePlayerStageImagePaths(input: {
 
   return {
     leftImagePath:
-      entry.stage.left?.characterId === entry.speaker.characterId
+      entry.stage.left?.characterId === speakerCharacterId
         ? resolveStageCharacterImagePath({
             scene: input.scene,
             stageCharacter: entry.stage.left,
@@ -126,7 +132,7 @@ function getVisiblePlayerStageImagePaths(input: {
           })
         : null,
     rightImagePath:
-      entry.stage.right?.characterId === entry.speaker.characterId
+      entry.stage.right?.characterId === speakerCharacterId
         ? resolveStageCharacterImagePath({
             scene: input.scene,
             stageCharacter: entry.stage.right,

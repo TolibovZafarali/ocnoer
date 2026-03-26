@@ -399,6 +399,73 @@ describe("getPlayerRuntimeAssetUrls", () => {
     });
   });
 
+  it("returns the speaking character portrait for cat-name prompts", () => {
+    const playableBundle = createBundle({
+      chapterId: "chapter_two",
+      title: "Chapter Two",
+      orderIndex: 2,
+      nextChapterId: null,
+      scenes: [
+        {
+          id: "scene_two",
+          title: "Scene Two",
+          orderIndex: 1,
+          backgroundImage: {
+            id: "bg_scene_two",
+            label: "Background Scene Two",
+            slug: "background-scene-two",
+            altText: null,
+            filePath: "runtime/media/opening-background.png"
+          },
+          backgroundMusic: null,
+          carryOcnoerDressSelection: true,
+          characterPool: [],
+          dialogue: [
+            {
+              id: "line_two",
+              orderIndex: 1,
+              text: "Name your cat.",
+              speaker: {
+                type: "cat_name_prompt",
+                characterId: "character_right",
+                characterName: "Right",
+                characterSlug: "right"
+              },
+              stage: {
+                left: createStageCharacter({
+                  characterId: "character_left",
+                  characterName: "Left",
+                  characterSlug: "left",
+                  imagePath: "runtime/media/opening-left.png"
+                }),
+                right: createStageCharacter({
+                  characterId: "character_right",
+                  characterName: "Right",
+                  characterSlug: "right",
+                  imagePath: "runtime/media/opening-right.png"
+                })
+              }
+            }
+          ]
+        }
+      ]
+    });
+
+    expect(
+      getPlayerRuntimeAssetUrls({
+        supabaseUrl,
+        bundle: playableBundle,
+        readerState: initialReaderState
+      })
+    ).toEqual({
+      backgroundImageUrl:
+        "https://example.supabase.co/storage/v1/object/public/runtime/media/opening-background.png",
+      leftCharacterImageUrl: null,
+      rightCharacterImageUrl:
+        "https://example.supabase.co/storage/v1/object/public/runtime/media/opening-right.png"
+    });
+  });
+
   it("returns no background URL when a scene has no background image", () => {
     const playableBundle = createBundle({
       chapterId: "chapter_two",

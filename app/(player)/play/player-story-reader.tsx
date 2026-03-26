@@ -902,8 +902,7 @@ export function PlayerStoryReader({
     isCatNameLocked;
   const showContinueButtonSlot =
     showDialogueCard &&
-    activeEntry?.speaker.type !== "dress_prompt" &&
-    !(activeEntry?.speaker.type === "cat_name_prompt" && !isCatNameLocked);
+    activeEntry?.speaker.type !== "dress_prompt";
   const showContinueButton =
     showContinueButtonSlot &&
     presentationPhase === "ready" &&
@@ -2033,20 +2032,14 @@ export function PlayerStoryReader({
 
                   {showCatNamePromptInput ? (
                     <div className="space-y-3">
-                      <label
-                        htmlFor={`cat-name-input-${resolvedEntry.id}`}
-                        className="block text-sm font-medium text-slate-200"
-                      >
-                        Cat Name
-                      </label>
                       <input
                         id={`cat-name-input-${resolvedEntry.id}`}
+                        aria-label="Cat name"
                         value={catNameInputValue}
                         onChange={(event) => {
                           setCatNameInputValue(event.target.value);
                           setCatNameInputError(null);
                         }}
-                        placeholder="Type your cat's name"
                         maxLength={MAX_CAT_NAME_LENGTH}
                         className="w-full rounded-xl border border-white/15 bg-black/30 px-3 py-2.5 text-slate-100 outline-none transition focus:border-white/35 focus:ring-2 focus:ring-white/20"
                       />
@@ -2054,16 +2047,6 @@ export function PlayerStoryReader({
                       {catNameInputError ? (
                         <p className="text-sm text-rose-300">{catNameInputError}</p>
                       ) : null}
-
-                      <div className="flex justify-end">
-                        <Button
-                          type="button"
-                          onClick={() => void handleCatNameSubmit()}
-                          disabled={isLoadingChapter}
-                        >
-                          Set Cat Name
-                        </Button>
-                      </div>
                     </div>
                   ) : null}
 
@@ -2178,12 +2161,27 @@ export function PlayerStoryReader({
                         className={showContinueButton ? undefined : "pointer-events-none"}
                       >
                         <button
-                          onClick={() => void handleAdvance()}
+                          onClick={() => {
+                            if (
+                              activeEntry?.speaker.type === "cat_name_prompt" &&
+                              !isCatNameLocked
+                            ) {
+                              void handleCatNameSubmit();
+                              return;
+                            }
+
+                            void handleAdvance();
+                          }}
                           disabled={isLoadingChapter || !showContinueButton}
                           tabIndex={showContinueButton ? 0 : -1}
                           type="button"
                           aria-label={
-                            isLoadingChapter ? "Loading next line" : "Continue"
+                            isLoadingChapter
+                              ? "Loading next line"
+                              : activeEntry?.speaker.type === "cat_name_prompt" &&
+                                  !isCatNameLocked
+                                ? "Set cat name"
+                                : "Continue"
                           }
                           className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-transparent text-slate-100 transition-opacity hover:text-white disabled:cursor-default disabled:opacity-45"
                         >

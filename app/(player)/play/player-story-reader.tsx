@@ -154,6 +154,49 @@ function resolveDialogueTextTemplate(text: string, catName: string | null) {
   return text.replace(CAT_NAME_TEMPLATE_PATTERN, catName);
 }
 
+function resolveInitialCatNameState(input: {
+  catName: string | null;
+  catNameLocked: boolean;
+}) {
+  const normalizedCatName = normalizeCatNameInput(input.catName ?? "");
+
+  if (normalizedCatName.length === 0) {
+    return {
+      catName: null,
+      catNameLocked: false
+    };
+  }
+
+  return {
+    catName: normalizedCatName,
+    catNameLocked: input.catNameLocked
+  };
+}
+
+function reconcileCatNameBranchFlags(input: {
+  branchFlags: Record<string, boolean | number | string>;
+  catName: string | null;
+  catNameLocked: boolean;
+}) {
+  const nextBranchFlags = { ...input.branchFlags };
+
+  if (!input.catName) {
+    delete nextBranchFlags[CAT_NAME_BRANCH_FLAG_KEY];
+    delete nextBranchFlags[CAT_NAME_LOCKED_BRANCH_FLAG_KEY];
+    return nextBranchFlags;
+  }
+
+  nextBranchFlags[CAT_NAME_BRANCH_FLAG_KEY] = input.catName;
+
+  if (input.catNameLocked) {
+    nextBranchFlags[CAT_NAME_LOCKED_BRANCH_FLAG_KEY] = true;
+    return nextBranchFlags;
+  }
+
+  delete nextBranchFlags[CAT_NAME_LOCKED_BRANCH_FLAG_KEY];
+  return nextBranchFlags;
+}
+
 function readStoredProgress(storageKey: string) {
   if (typeof window === "undefined") {
     return null;
@@ -276,6 +319,14 @@ export function PlayerStoryReader({
   const previousShowDialogueCardRef = useRef(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const prefersReducedMotion = useReducedMotion() ?? false;
+  const initialCatNameState = useMemo(
+    () =>
+      resolveInitialCatNameState({
+        catName: initialCatName,
+        catNameLocked: initialCatNameLocked
+      }),
+    [initialCatName, initialCatNameLocked]
+  );
   const [manifest, setManifest] = useState<RuntimeManifest | null>(
     initialManifest
   );
@@ -317,9 +368,15 @@ export function PlayerStoryReader({
   const [dressPromptMotionDirection, setDressPromptMotionDirection] = useState<
     -1 | 1
   >(1);
-  const [catName, setCatName] = useState<string | null>(initialCatName);
-  const [isCatNameLocked, setIsCatNameLocked] = useState(initialCatNameLocked);
-  const [catNameInputValue, setCatNameInputValue] = useState(initialCatName ?? "");
+  const [catName, setCatName] = useState<string | null>(
+    initialCatNameState.catName
+  );
+  const [isCatNameLocked, setIsCatNameLocked] = useState(
+    initialCatNameState.catNameLocked
+  );
+  const [catNameInputValue, setCatNameInputValue] = useState(
+    initialCatNameState.catName ?? ""
+  );
   const [catNameInputError, setCatNameInputError] = useState<string | null>(null);
   const [pendingCatNameSync, setPendingCatNameSync] = useState<string | null>(
     null
@@ -381,7 +438,13 @@ export function PlayerStoryReader({
         setReaderState(loadedRuntime.readerState);
         setPendingSceneState(null);
         setBoundaryState(null);
-        setBranchFlags(storedProgress?.branchFlags ?? {});
+        setBranchFlags(
+          reconcileCatNameBranchFlags({
+            branchFlags: storedProgress?.branchFlags ?? {},
+            catName: initialCatNameState.catName,
+            catNameLocked: initialCatNameState.catNameLocked
+          })
+        );
         setIsLoading(false);
         setIsPersistenceReady(true);
       } catch (caughtError) {
@@ -404,6 +467,8 @@ export function PlayerStoryReader({
       cancelled = true;
     };
   }, [
+    initialCatNameState.catName,
+    initialCatNameState.catNameLocked,
     initialManifest,
     loadBundle,
     manifestPath,
@@ -429,7 +494,13 @@ export function PlayerStoryReader({
       storedProgress
     });
 
-    setBranchFlags(resumeAction.branchFlags);
+    setBranchFlags(
+      reconcileCatNameBranchFlags({
+        branchFlags: resumeAction.branchFlags,
+        catName: initialCatNameState.catName,
+        catNameLocked: initialCatNameState.catNameLocked
+      })
+    );
 
     if (resumeAction.type === "use-initial-state") {
       setIsPersistenceReady(true);
@@ -493,6 +564,8 @@ export function PlayerStoryReader({
       cancelled = true;
     };
   }, [
+    initialCatNameState.catName,
+    initialCatNameState.catNameLocked,
     initialBundle,
     initialManifest,
     loadBundle,

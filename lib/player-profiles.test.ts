@@ -86,7 +86,7 @@ describe("player profile helpers", () => {
     ).rejects.toBeInstanceOf(PlayerProfileError);
   });
 
-  it("keeps cat-name lock enabled after it has been locked once", async () => {
+  it("unlocks cat-name prompt when admin clears cat name", async () => {
     findUniqueMock.mockResolvedValueOnce({
       catNameLocked: true
     });
@@ -109,7 +109,7 @@ describe("player profile helpers", () => {
         username: "luna.secret",
         usernameNormalized: "luna.secret",
         catName: null,
-        catNameLocked: true,
+        catNameLocked: false,
         status: PlayerStatus.INACTIVE
       }
     });
@@ -161,7 +161,14 @@ describe("player profile helpers", () => {
     expect(updateManyMock).toHaveBeenCalledWith({
       where: {
         id: "player_1",
-        catNameLocked: false,
+        OR: [
+          {
+            catNameLocked: false
+          },
+          {
+            catName: null
+          }
+        ],
         status: PlayerStatus.ACTIVE
       },
       data: {

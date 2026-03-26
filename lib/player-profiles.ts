@@ -163,7 +163,7 @@ export async function updatePlayerProfile(input: {
       id: input.playerId
     },
     select: {
-      catNameLocked: true
+      id: true
     }
   });
 
@@ -171,7 +171,7 @@ export async function updatePlayerProfile(input: {
     throw new PlayerProfileError("Player profile not found.");
   }
 
-  const catNameLocked = existingProfile.catNameLocked || catName != null;
+  const catNameLocked = catName != null;
 
   try {
     return await prisma.playerProfile.update({
@@ -263,7 +263,14 @@ export async function setPlayerProfileCatNameOnce(input: {
   const updated = await prisma.playerProfile.updateMany({
     where: {
       id: input.playerId,
-      catNameLocked: false,
+      OR: [
+        {
+          catNameLocked: false
+        },
+        {
+          catName: null
+        }
+      ],
       status: PlayerStatus.ACTIVE
     },
     data: {

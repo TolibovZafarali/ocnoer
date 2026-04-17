@@ -20,7 +20,16 @@ export async function signInPlayerAction(formData: FormData) {
     redirect(withStatus("error", "Enter your password."));
   }
 
-  const result = await signInAsPlayerSecret(passwordValue.trim());
+  let result: Awaited<ReturnType<typeof signInAsPlayerSecret>>;
+
+  try {
+    result = await signInAsPlayerSecret(passwordValue.trim());
+  } catch (error) {
+    console.error("Player sign-in failed.", error);
+    redirect(
+      withStatus("error", "Unable to sign in right now. Please try again.")
+    );
+  }
 
   if (!result.ok) {
     redirect(withStatus("error", "Password is invalid or access is inactive."));

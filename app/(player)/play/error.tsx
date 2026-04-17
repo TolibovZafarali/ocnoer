@@ -1,0 +1,78 @@
+"use client";
+
+import { useEffect } from "react";
+
+import { Button } from "@/components/ui/button";
+
+type PlayerErrorPageProps = {
+  error: Error & {
+    digest?: string;
+  };
+  reset: () => void;
+};
+
+function getPlayerErrorMessage(error: Error) {
+  if (/fetch failed/i.test(error.message)) {
+    return "The player could not reach its published story data.";
+  }
+
+  return "The player hit a server rendering error.";
+}
+
+export default function PlayerErrorPage({
+  error,
+  reset
+}: PlayerErrorPageProps) {
+  useEffect(() => {
+    console.error("Player route error", {
+      message: error.message,
+      digest: error.digest,
+      error
+    });
+  }, [error]);
+
+  return (
+    <main
+      className="relative flex min-h-screen items-center justify-center overflow-hidden px-6 py-8 text-slate-100"
+      style={{
+        background:
+          "radial-gradient(circle at 20% 0%, #12192d 0%, #05070f 55%, #03050c 100%)"
+      }}
+    >
+      <section className="w-full max-w-md rounded-3xl border border-white/10 bg-black/35 p-6 shadow-2xl backdrop-blur">
+        <div className="space-y-2">
+          <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+            Ocnoer
+          </p>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-50">
+            Story Unavailable
+          </h1>
+          <p className="text-sm text-slate-300">
+            {getPlayerErrorMessage(error)}
+          </p>
+          <p className="text-sm text-slate-400">
+            If this persists, check the deployment logs and match them against the
+            digest below.
+          </p>
+        </div>
+
+        {error.digest ? (
+          <div className="mt-4 rounded-xl border border-white/10 bg-black/30 px-3 py-2">
+            <p className="text-xs uppercase tracking-[0.2em] text-slate-400">
+              Error Digest
+            </p>
+            <p className="mt-1 break-all font-mono text-sm text-slate-100">
+              {error.digest}
+            </p>
+          </div>
+        ) : null}
+
+        <div className="mt-5 flex justify-end">
+          <Button type="button" onClick={reset}>
+            Retry
+          </Button>
+        </div>
+      </section>
+    </main>
+  );
+}

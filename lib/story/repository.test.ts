@@ -1145,6 +1145,46 @@ describe("saveSceneDraft", () => {
     expectChapterScopedWrites();
   });
 
+  it("allows empty dialogue text for cat-name prompts", async () => {
+    setStoredSceneDraft({
+      sceneId: "scene_1",
+      payload: createDraftPayload({
+        dialogue: [
+          {
+            id: "dialogue_1",
+            speakerType: "narrator",
+            characterId: null,
+            emotionKey: null,
+            text: "Still here"
+          },
+          {
+            id: "dialogue_2",
+            speakerType: "cat_name_prompt",
+            characterId: "character_1",
+            emotionKey: null,
+            text: "   "
+          }
+        ]
+      })
+    });
+
+    const result = await saveSceneDraft({
+      chapterId: "chapter_1",
+      sceneId: "scene_1"
+    });
+
+    expect(result.payload.dialogue.find((entry) => entry.id === "dialogue_2"))
+      .toMatchObject({
+        speakerType: "cat_name_prompt",
+        text: ""
+      });
+    expect(getPersistedDialogue().find((entry) => entry.id === "dialogue_2"))
+      .toMatchObject({
+        text: ""
+      });
+    expectChapterScopedWrites();
+  });
+
   it("blocks saves that would erase all dialogue rows from an existing scene", async () => {
     setStoredSceneDraft({
       sceneId: "scene_1",

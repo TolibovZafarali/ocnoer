@@ -265,14 +265,19 @@ function getRuntimeAvailability(input: {
   return null;
 }
 
-function getDialogueCardPositionClassName(
-  placement: ReturnType<typeof getDialogueCardPlacement>
-) {
-  if (placement === "speaker-left") {
+function getDialogueCardPositionClassName(input: {
+  placement: ReturnType<typeof getDialogueCardPlacement>;
+  isCatNamePrompt: boolean;
+}) {
+  if (input.isCatNamePrompt) {
+    return "left-[clamp(0.75rem,2vw,1.25rem)] right-auto w-[min(22rem,calc(100%-1.5rem))] md:w-[min(24rem,46%)]";
+  }
+
+  if (input.placement === "speaker-left") {
     return "left-[calc(min(52%,22rem)-clamp(0.85rem,2vw,1.5rem))] right-[clamp(0.75rem,2vw,1.25rem)] md:left-[calc(46%-clamp(1rem,2vw,1.75rem))]";
   }
 
-  if (placement === "speaker-right") {
+  if (input.placement === "speaker-right") {
     return "left-[clamp(0.75rem,2vw,1.25rem)] right-[calc(min(52%,22rem)-clamp(0.85rem,2vw,1.5rem))] md:right-[calc(46%-clamp(1rem,2vw,1.75rem))]";
   }
 
@@ -918,9 +923,10 @@ export function PlayerStoryReader({
   const dialogueCardPlacement = activeEntry
     ? getDialogueCardPlacement(activeEntry)
     : "center";
-  const dialogueCardPositionClassName = getDialogueCardPositionClassName(
-    dialogueCardPlacement
-  );
+  const dialogueCardPositionClassName = getDialogueCardPositionClassName({
+    placement: dialogueCardPlacement,
+    isCatNamePrompt: activeEntry?.speaker.type === "cat_name_prompt"
+  });
   const dialogueCardVariants = lineMotionConfig
     ? createDirectionalVariants({
         direction: lineMotionConfig.cardDirection,
@@ -2109,7 +2115,7 @@ export function PlayerStoryReader({
                   ) : resolvedEntry.speaker.type === "cat_name_prompt" ? (
                     <div className="mb-4">
                       <p className="text-sm uppercase tracking-[0.2em] text-slate-300">
-                        Enter your cat&apos;s name
+                        Name your cat
                       </p>
                     </div>
                   ) : null}

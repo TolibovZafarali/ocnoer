@@ -1739,10 +1739,16 @@ function assertValidSceneDraftOrder(value: number, label: string) {
   return value;
 }
 
-function assertValidSceneDraftText(value: string, label: string) {
+function assertValidSceneDraftText(
+  value: string,
+  label: string,
+  options?: {
+    allowEmpty?: boolean;
+  }
+) {
   const normalized = value.trim();
 
-  if (normalized.length === 0) {
+  if (!options?.allowEmpty && normalized.length === 0) {
     throw new StoryRepositoryError(`${label} is required.`);
   }
 
@@ -1822,7 +1828,9 @@ export async function saveSceneDraft(input: {
 
     dialogueIds.add(rawId);
 
-    const text = assertValidSceneDraftText(entry.text, "Dialogue text");
+    const text = assertValidSceneDraftText(entry.text, "Dialogue text", {
+      allowEmpty: entry.speakerType === "cat_name_prompt"
+    });
     const characterId = normalizeOptionalSceneDraftValue(entry.characterId);
     const emotionKey = normalizeOptionalSceneDraftValue(entry.emotionKey);
     const dressOptionKeys = [...new Set(entry.dressOptionKeys ?? [])];

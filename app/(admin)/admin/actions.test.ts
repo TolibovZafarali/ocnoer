@@ -314,6 +314,31 @@ describe("createDialogueEntryAction", () => {
     });
     expect(getAdminStoryDataMock).not.toHaveBeenCalled();
   });
+
+  it("allows empty dialogue text for cat-name prompts", async () => {
+    const formData = new FormData();
+    formData.set("chapterId", "chapter_123");
+    formData.set("sceneId", "scene_456");
+    formData.set("returnTo", "/admin/chapters/chapter_123/scenes/scene_456");
+    formData.set("speakerType", "cat_name_prompt");
+    formData.set("characterId", "character_1");
+    formData.set("emotionKey", "");
+    formData.set("text", "   ");
+
+    await expect(createDialogueEntryAction(formData)).rejects.toThrow(
+      "REDIRECT:/admin/chapters/chapter_123/scenes/scene_456?status=success&message=Dialogue+entry+created."
+    );
+
+    expect(createDialogueEntryMock).toHaveBeenCalledWith({
+      chapterId: "chapter_123",
+      sceneId: "scene_456",
+      speakerType: "cat_name_prompt",
+      characterId: "character_1",
+      emotionKey: null,
+      dressOptionKeys: [],
+      text: ""
+    });
+  });
 });
 
 describe("scene draft actions", () => {

@@ -218,6 +218,17 @@ function getDialogueSpeakerType(formData: FormData) {
   return speakerType;
 }
 
+function getDialogueText(
+  formData: FormData,
+  speakerType: ReturnType<typeof getDialogueSpeakerType>
+) {
+  if (speakerType === "cat_name_prompt") {
+    return getOptionalString(formData, "text") ?? "";
+  }
+
+  return getRequiredString(formData, "text", "Dialogue text");
+}
+
 function getPlayerStatus(formData: FormData) {
   const statusValue = getRequiredString(formData, "status", "Player status");
 
@@ -1161,7 +1172,7 @@ export async function createDialogueEntryAction(formData: FormData) {
         characterId: getOptionalString(formData, "characterId"),
         emotionKey: getOptionalString(formData, "emotionKey"),
         dressOptionKeys: getDressOptionKeys(formData),
-        text: getRequiredString(formData, "text", "Dialogue text")
+        text: getDialogueText(formData, speakerType)
       });
 
       return withStatus(
@@ -1205,7 +1216,7 @@ export async function updateDialogueEntryAction(formData: FormData) {
         characterId: getOptionalString(formData, "characterId"),
         emotionKey: getOptionalString(formData, "emotionKey"),
         dressOptionKeys: getDressOptionKeys(formData),
-        text: getRequiredString(formData, "text", "Dialogue text")
+        text: getDialogueText(formData, speakerType)
       });
 
       return withStatus(

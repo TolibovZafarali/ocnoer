@@ -15,6 +15,7 @@ import {
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import worldMapImage from "@/lore/world-map.jpg";
 
+import { signOutPlayerAction } from "@/app/(player)/play/actions";
 import { Button } from "@/components/ui/button";
 import { ChapterCardHandwriting } from "@/app/(player)/play/chapter-card-handwriting";
 import {
@@ -66,6 +67,7 @@ import {
   createRuntimeChapterLoader,
   decidePlayerResumeAction,
   getPlayerRuntimeAssetUrls,
+  getPlayerRuntimeSceneAssetUrls,
   loadPlayerRuntimeSession,
   toPublicStorageUrl
 } from "@/lib/story/runtime";
@@ -93,6 +95,8 @@ type VisibleStagePortrait = {
   direction: MotionDirection;
 };
 
+type SceneTransitionOverlayPhase = "hidden" | "covering" | "revealing";
+
 type ResolvedAdvanceAction =
   | {
       type: "line";
@@ -117,12 +121,11 @@ type ResolvedAdvanceAction =
 const DEFAULT_STAGE_ASPECT_RATIO = 9 / 16;
 const MOTION_EASE_OUT = [0.22, 1, 0.36, 1] as const;
 const MOTION_EASE_IN = [0.4, 0, 1, 1] as const;
-const MOTION_EASE_LINEAR = [0, 0, 1, 1] as const;
-const SCENE_TRANSITION_DURATION_MS = 3000;
-const SCENE_TRANSITION_HOLD_START = 0.42;
-const SCENE_TRANSITION_HOLD_END = 0.58;
-const SCENE_TRANSITION_SWAP_PROGRESS = 0.5;
-const SCENE_TRANSITION_MAX_OPACITY = 1;
+const SCENE_TRANSITION_COVER_DURATION_MS = 900;
+const SCENE_TRANSITION_MIN_BLACKOUT_MS = 1400;
+const SCENE_TRANSITION_POST_SWAP_HOLD_MS = 380;
+const SCENE_TRANSITION_REVEAL_DURATION_MS = 880;
+const SCENE_TRANSITION_ASSET_TIMEOUT_MS = 6000;
 const OPENING_SCENE_FADE_DURATION_MS = 1200;
 const MAP_OVERLAY_DURATION_MS = 340;
 const DESKTOP_SCENE_NAV_MIN_GUTTER_WIDTH_PX = 220;
@@ -384,6 +387,8 @@ export function PlayerStoryReader({
   const [isMapImageReady, setIsMapImageReady] = useState(false);
   const [isOpeningSceneFadeVisible, setIsOpeningSceneFadeVisible] =
     useState(false);
+  const [sceneTransitionOverlayPhase, setSceneTransitionOverlayPhase] =
+    useState<SceneTransitionOverlayPhase>("hidden");
   const [desktopNavGutterWidth, setDesktopNavGutterWidth] = useState(0);
   const [dressPromptIndex, setDressPromptIndex] = useState(0);
   const [dressPromptMotionDirection, setDressPromptMotionDirection] = useState<
@@ -421,6 +426,18 @@ export function PlayerStoryReader({
   const openingSceneFadeDurationMs = prefersReducedMotion
     ? REDUCED_MOTION_DURATION_MS
     : OPENING_SCENE_FADE_DURATION_MS;
+  const sceneTransitionCoverDurationMs = prefersReducedMotion
+    ? 0
+    : SCENE_TRANSITION_COVER_DURATION_MS;
+  const sceneTransitionMinimumBlackoutMs = prefersReducedMotion
+    ? 0
+    : SCENE_TRANSITION_MIN_BLACKOUT_MS;
+  const sceneTransitionPostSwapHoldMs = prefersReducedMotion
+    ? 0
+    : SCENE_TRANSITION_POST_SWAP_HOLD_MS;
+  const sceneTransitionRevealDurationMs = prefersReducedMotion
+    ? REDUCED_MOTION_DURATION_MS
+    : SCENE_TRANSITION_REVEAL_DURATION_MS;
 
   const loadBundle = useMemo(
     () =>
@@ -698,15 +715,58 @@ export function PlayerStoryReader({
     scene,
     entry
   });
+  const effectiveActiveSceneBranchFlags = useMemo(
+    () =>
+      applySceneDressCarrySelection({
+        scene,
+        branchFlags
+      }),
+    [branchFlags, scene]
+  );
+  const pendingScene = useMemo(
+    () =>
+      bundle && pendingSceneState
+        ? getCurrentScene(bundle.chapter, pendingSceneState)
+        : null,
+    [bundle, pendingSceneState]
+  );
+  const effectivePendingSceneBranchFlags = useMemo(
+    () =>
+      applySceneDressCarrySelection({
+        scene: pendingScene,
+        branchFlags
+      }),
+    [branchFlags, pendingScene]
+  );
   const activeAssetUrls = useMemo(
     () =>
       getPlayerRuntimeAssetUrls({
         supabaseUrl,
         bundle,
         readerState,
-        branchFlags
+        branchFlags: effectiveActiveSceneBranchFlags
       }),
-    [branchFlags, bundle, readerState, supabaseUrl]
+    [bundle, effectiveActiveSceneBranchFlags, readerState, supabaseUrl]
+  );
+  const activeSceneAssetUrls = useMemo(
+    () =>
+      getPlayerRuntimeSceneAssetUrls({
+        supabaseUrl,
+        bundle,
+        readerState,
+        branchFlags: effectiveActiveSceneBranchFlags
+      }),
+    [bundle, effectiveActiveSceneBranchFlags, readerState, supabaseUrl]
+  );
+  const pendingSceneAssetUrls = useMemo(
+    () =>
+      getPlayerRuntimeSceneAssetUrls({
+        supabaseUrl,
+        bundle,
+        readerState: pendingSceneState,
+        branchFlags: effectivePendingSceneBranchFlags
+      }),
+    [bundle, effectivePendingSceneBranchFlags, pendingSceneState, supabaseUrl]
   );
   const backgroundImageUrl = activeAssetUrls.backgroundImageUrl;
   const backgroundMusicUrl = useMemo(
@@ -747,6 +807,14 @@ export function PlayerStoryReader({
 
     void loadBundle(manifest, bundle.nextChapterId).catch(() => undefined);
   }, [bundle?.nextChapterId, loadBundle, manifest]);
+
+  useEffect(() => {
+    if (typeof window === "undefined" || activeSceneAssetUrls.length === 0) {
+      return;
+    }
+
+    void preloadSceneImageUrls(activeSceneAssetUrls);
+  }, [activeSceneAssetUrls]);
 
   useEffect(() => {
     if (!backgroundImageUrl || typeof window === "undefined") {
@@ -924,23 +992,20 @@ export function PlayerStoryReader({
   const isChapterCard = Boolean(activeChapterCard);
   const isChapterBreakCard = Boolean(chapterBreakState);
   const isStoryFinishedCard = Boolean(storyFinishedState);
-  const sceneTransitionDurationMs = prefersReducedMotion
-    ? REDUCED_MOTION_DURATION_MS
-    : SCENE_TRANSITION_DURATION_MS;
   const sceneTransitionLeadOutMs = prefersReducedMotion
     ? 0
     : lineExitDurationMs;
-  const sceneTransitionTotalDurationMs =
-    sceneTransitionLeadOutMs + sceneTransitionDurationMs;
-  const sceneTransitionOpacityKeyframes = prefersReducedMotion
-    ? [0, 0.75, 0]
-    : [0, SCENE_TRANSITION_MAX_OPACITY, SCENE_TRANSITION_MAX_OPACITY, 0];
-  const sceneTransitionTimeKeyframes = prefersReducedMotion
-    ? [0, 0.5, 1]
-    : [0, SCENE_TRANSITION_HOLD_START, SCENE_TRANSITION_HOLD_END, 1];
-  const sceneTransitionEase = prefersReducedMotion
-    ? "easeInOut"
-    : [MOTION_EASE_OUT, MOTION_EASE_LINEAR, MOTION_EASE_IN];
+  const showSceneTransitionOverlay = sceneTransitionOverlayPhase !== "hidden";
+  const sceneTransitionOverlayOpacity =
+    sceneTransitionOverlayPhase === "revealing" ? 0 : 1;
+  const sceneTransitionOverlayDurationMs =
+    sceneTransitionOverlayPhase === "revealing"
+      ? sceneTransitionRevealDurationMs
+      : sceneTransitionCoverDurationMs;
+  const sceneTransitionOverlayEase =
+    sceneTransitionOverlayPhase === "revealing"
+      ? MOTION_EASE_IN
+      : MOTION_EASE_OUT;
   const showDialogueCard =
     Boolean(activeEntry) &&
     !isTransitionCard &&
@@ -1139,31 +1204,76 @@ export function PlayerStoryReader({
       return;
     }
 
-    const swapDelayMs = prefersReducedMotion
-      ? 0
-      : sceneTransitionLeadOutMs +
-        Math.round(sceneTransitionDurationMs * SCENE_TRANSITION_SWAP_PROGRESS);
-    const swapTimer = window.setTimeout(() => {
-      setReaderState(pendingSceneState);
-    }, swapDelayMs);
-    const finishTimer = window.setTimeout(() => {
+    let cancelled = false;
+
+    const preloadPromise = Promise.race([
+      preloadSceneImageUrls(pendingSceneAssetUrls),
+      waitForDuration(SCENE_TRANSITION_ASSET_TIMEOUT_MS)
+    ]);
+
+    const runTransition = async () => {
+      await waitForDuration(sceneTransitionLeadOutMs);
+
+      if (cancelled) {
+        return;
+      }
+
+      setSceneTransitionOverlayPhase("covering");
+
+      await waitForDuration(sceneTransitionCoverDurationMs);
+
+      if (cancelled) {
+        return;
+      }
+
+      await Promise.all([
+        preloadPromise,
+        waitForDuration(sceneTransitionMinimumBlackoutMs)
+      ]);
+
+      if (cancelled) {
+        return;
+      }
+
+      startTransition(() => {
+        setReaderState(pendingSceneState);
+      });
+
+      await waitForDuration(sceneTransitionPostSwapHoldMs);
+
+      if (cancelled) {
+        return;
+      }
+
+      setSceneTransitionOverlayPhase("revealing");
+
+      await waitForDuration(sceneTransitionRevealDurationMs);
+
+      if (cancelled) {
+        return;
+      }
+
+      setSceneTransitionOverlayPhase("hidden");
       setPendingSceneState(null);
       setBoundaryState((current) =>
         current?.type === "scene-transition" ? null : current
       );
-    }, sceneTransitionTotalDurationMs);
+    };
+
+    void runTransition();
 
     return () => {
-      window.clearTimeout(swapTimer);
-      window.clearTimeout(finishTimer);
+      cancelled = true;
     };
   }, [
     isSceneTransition,
     pendingSceneState,
-    prefersReducedMotion,
-    sceneTransitionDurationMs,
     sceneTransitionLeadOutMs,
-    sceneTransitionTotalDurationMs
+    pendingSceneAssetUrls,
+    sceneTransitionCoverDurationMs,
+    sceneTransitionMinimumBlackoutMs,
+    sceneTransitionPostSwapHoldMs,
+    sceneTransitionRevealDurationMs
   ]);
 
   useLayoutEffect(() => {
@@ -2139,17 +2249,15 @@ export function PlayerStoryReader({
                 className="pointer-events-none absolute inset-0 z-30 bg-black will-change-opacity"
               />
             ) : null}
-            {isTransitionCard ? (
+            {showSceneTransitionOverlay ? (
               <motion.div
                 key={`scene-transition-${pendingSceneState?.sceneIndex ?? "none"}-${pendingSceneState?.dialogueIndex ?? "none"}`}
                 initial={{ opacity: 0 }}
-                animate={{ opacity: sceneTransitionOpacityKeyframes }}
+                animate={{ opacity: sceneTransitionOverlayOpacity }}
                 exit={{ opacity: 0 }}
                 transition={{
-                  delay: sceneTransitionLeadOutMs / 1000,
-                  duration: sceneTransitionDurationMs / 1000,
-                  times: sceneTransitionTimeKeyframes,
-                  ease: sceneTransitionEase
+                  duration: sceneTransitionOverlayDurationMs / 1000,
+                  ease: sceneTransitionOverlayEase
                 }}
                 className="pointer-events-none absolute inset-0 z-30 bg-black will-change-opacity"
               />
@@ -2194,16 +2302,29 @@ export function PlayerStoryReader({
                     arrow_back
                   </span>
                 </button>
-                <button
-                  onClick={handleOpenMap}
-                  type="button"
-                  aria-label="Open world map"
-                  className="pointer-events-auto inline-flex h-11 w-11 items-center justify-center bg-transparent text-slate-100 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
-                >
-                  <span aria-hidden className="material-symbols-outlined">
-                    map
-                  </span>
-                </button>
+                <div className="pointer-events-auto flex items-center gap-1.5">
+                  <button
+                    onClick={handleOpenMap}
+                    type="button"
+                    aria-label="Open world map"
+                    className="inline-flex h-11 w-11 items-center justify-center bg-transparent text-slate-100 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                  >
+                    <span aria-hidden className="material-symbols-outlined">
+                      map
+                    </span>
+                  </button>
+                  <form action={signOutPlayerAction}>
+                    <button
+                      type="submit"
+                      aria-label="Sign out"
+                      className="inline-flex h-11 w-11 items-center justify-center bg-transparent text-slate-100 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
+                    >
+                      <span aria-hidden className="material-symbols-outlined">
+                        logout
+                      </span>
+                    </button>
+                  </form>
+                </div>
               </motion.div>
             ) : null}
           </AnimatePresence>
@@ -2738,6 +2859,59 @@ function waitForDuration(durationMs: number) {
 
   return new Promise<void>((resolve) => {
     window.setTimeout(resolve, durationMs);
+  });
+}
+
+function preloadSceneImageUrls(imageUrls: string[]) {
+  return Promise.all(
+    imageUrls.map((imageUrl) => preloadImageUrl(imageUrl))
+  ).then(() => undefined);
+}
+
+function preloadImageUrl(imageUrl: string) {
+  if (typeof window === "undefined" || imageUrl.length === 0) {
+    return Promise.resolve();
+  }
+
+  return new Promise<void>((resolve) => {
+    const preloadedImage = new window.Image();
+    let settled = false;
+
+    const settle = () => {
+      if (settled) {
+        return;
+      }
+
+      settled = true;
+      resolve();
+    };
+    const handleLoad = () => {
+      if (typeof preloadedImage.decode === "function") {
+        void preloadedImage.decode().then(settle).catch(settle);
+        return;
+      }
+
+      settle();
+    };
+
+    preloadedImage.loading = "eager";
+    preloadedImage.decoding = "async";
+
+    if ("fetchPriority" in preloadedImage) {
+      preloadedImage.fetchPriority = "high";
+    }
+
+    preloadedImage.addEventListener("load", handleLoad, { once: true });
+    preloadedImage.addEventListener("error", settle, { once: true });
+    preloadedImage.src = imageUrl;
+
+    if (preloadedImage.complete) {
+      if (preloadedImage.naturalWidth > 0) {
+        handleLoad();
+      } else {
+        settle();
+      }
+    }
   });
 }
 

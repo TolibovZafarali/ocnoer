@@ -7,7 +7,11 @@ import { PlayerStoryReader } from "@/app/(player)/play/player-story-reader";
 import { Button } from "@/components/ui/button";
 import { getPlayerSession } from "@/lib/auth/player";
 import worldMapImage from "@/lore/world-map.jpg";
-import { getRuntimeBootstrapConfig, loadPlayerRuntimeBootstrap } from "@/lib/story/runtime";
+import {
+  getPlayerRuntimeSceneAssetUrls,
+  getRuntimeBootstrapConfig,
+  loadPlayerRuntimeBootstrap
+} from "@/lib/story/runtime";
 
 function getPlayerGateBackgroundStyle(): CSSProperties {
   return {
@@ -64,13 +68,22 @@ export default async function PlayerPlayPage() {
       manifestPath: runtime.manifestPath,
       supabaseUrl: runtime.supabaseUrl
     });
+    const initialSceneAssetUrls = getPlayerRuntimeSceneAssetUrls({
+      supabaseUrl: runtime.supabaseUrl,
+      bundle: bootstrap.initialBundle,
+      readerState: bootstrap.initialReaderState
+    });
+    const initialPreloadUrls = new Set(
+      [
+        ...initialSceneAssetUrls,
+        ...Object.values(bootstrap.initialAssetUrls)
+      ].filter((assetUrl): assetUrl is string => Boolean(assetUrl))
+    );
 
-    Object.values(bootstrap.initialAssetUrls).forEach((assetUrl) => {
-      if (assetUrl) {
-        preload(assetUrl, {
-          as: "image"
-        });
-      }
+    initialPreloadUrls.forEach((assetUrl) => {
+      preload(assetUrl, {
+        as: "image"
+      });
     });
 
     preload(worldMapImage.src, {
@@ -80,13 +93,6 @@ export default async function PlayerPlayPage() {
 
     return (
       <main className="relative min-h-screen overflow-hidden bg-black text-slate-50">
-        <div className="absolute right-3 top-3 z-40">
-          <form action={signOutPlayerAction}>
-            <Button type="submit" size="sm" variant="outline">
-              Sign out
-            </Button>
-          </form>
-        </div>
         <PlayerStoryReader
           manifestPath={runtime.manifestPath}
           progressStorageKey={`ocnoer:player-progress:${session.player.id}`}

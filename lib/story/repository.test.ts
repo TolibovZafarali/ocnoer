@@ -60,12 +60,13 @@ const uploadMock = vi.fn(
   async (
     objectPath: string,
     value: Buffer,
-    _options?: {
+    options?: {
       cacheControl?: string;
       contentType?: string;
       upsert?: boolean;
     }
   ) => {
+    void options;
     storageData.set(objectPath, value.toString("utf8"));
 
     return {
@@ -74,10 +75,42 @@ const uploadMock = vi.fn(
   }
 );
 
-const listMock = vi.fn(async () => ({
-  data: [],
-  error: null
-}));
+const listMock = vi.fn(
+  async (
+    prefix?: string,
+    options?: {
+      limit?: number;
+      offset?: number;
+    }
+  ) => {
+    void options;
+    const normalizedPrefix = `${prefix ?? ""}`.replace(/\/+$/, "");
+    const prefixWithSlash =
+      normalizedPrefix.length > 0 ? `${normalizedPrefix}/` : "";
+    const names = [...storageData.keys()]
+      .filter((objectPath) => {
+        if (normalizedPrefix.length === 0) {
+          return true;
+        }
+
+        return objectPath.startsWith(prefixWithSlash);
+      })
+      .map((objectPath) =>
+        normalizedPrefix.length === 0
+          ? objectPath
+          : objectPath.slice(prefixWithSlash.length)
+      )
+      .filter((name) => name.length > 0 && !name.includes("/"))
+      .map((name) => ({
+        name
+      }));
+
+    return {
+      data: names,
+      error: null
+    };
+  }
+);
 
 const removeMock = vi.fn(async () => ({
   error: null
@@ -146,7 +179,13 @@ function createCompiledChapterBundle(chapterId: string) {
       schemaVersion: 1,
       generatedAt: "2026-03-17T00:00:00.000Z",
       chapter: {
-        id: chapterId
+        id: chapterId,
+        title: chapterId,
+        slug: chapterId,
+        orderIndex: 1,
+        openingCardText: null,
+        endingCardText: null,
+        scenes: []
       },
       nextChapterId: null
     }
@@ -224,7 +263,6 @@ vi.mock("@/lib/supabase/env", () => ({
 }));
 
 const {
-  StoryRepositoryError,
   createCharacter,
   createDialogueEntry,
   deleteDialogueEntry,
@@ -233,6 +271,7 @@ const {
   getSceneDraft,
   reorderDialogueEntry,
   saveSceneDraft,
+  updateChapter,
   updateBackgroundImageAsset,
   updateCharacterEmotion,
   updateDialogueEntry,
@@ -416,6 +455,8 @@ function getPersistedStory() {
   return JSON.parse(storageData.get("authoring/chapters.json") ?? "null") as {
     chapters: Array<{
       updatedAt: string;
+      openingCardText?: string | null;
+      endingCardText?: string | null;
       scenes: Array<{
         id: string;
         title: string;
@@ -481,6 +522,12 @@ function getUploadPaths() {
   return uploadMock.mock.calls.map(([objectPath]) => objectPath);
 }
 
+function getPreBlackCardsBackupPaths() {
+  return getUploadPaths().filter((path) =>
+    path.startsWith("history/authoring/chapters/pre-black-cards-")
+  );
+}
+
 function expectChapterScopedWrites() {
   const uploadPaths = getUploadPaths();
 
@@ -489,11 +536,19 @@ function expectChapterScopedWrites() {
   expect(
     uploadPaths.some(
       (path) =>
-        path.startsWith("history/authoring/chapters/") &&
+        path.startsWith("history/authoring/chapters/pre-black-cards-") &&
         path.endsWith(".json")
     )
   ).toBe(true);
-  expect(uploadPaths).toHaveLength(3);
+  expect(
+    uploadPaths.some(
+      (path) =>
+        path.startsWith("history/authoring/chapters/") &&
+        !path.includes("/pre-black-cards-") &&
+        path.endsWith(".json")
+    )
+  ).toBe(true);
+  expect(uploadPaths).toHaveLength(4);
   expect(compileRuntimeStoryMock).not.toHaveBeenCalled();
   expect(compileRuntimeChapterBundleMock).toHaveBeenCalledWith({
     snapshot: expect.objectContaining({
@@ -505,7 +560,10 @@ function expectChapterScopedWrites() {
     bucket: "runtime",
     runtimePrefix: "runtime"
   });
-  expect(listMock).not.toHaveBeenCalled();
+  expect(listMock).toHaveBeenCalledWith("history/authoring/chapters", {
+    limit: 500,
+    offset: 0
+  });
   expect(removeMock).not.toHaveBeenCalled();
 }
 
@@ -608,6 +666,13 @@ describe("authoring snapshot loading", () => {
     expect(attemptsByPath.get("authoring/chapters.json")).toBe(3);
   });
 
+  it("normalizes legacy chapter records without black-card fields", async () => {
+    const story = await getAdminStoryData();
+
+    expect(story.chapters[0]?.openingCardText).toBeNull();
+    expect(story.chapters[0]?.endingCardText).toBeNull();
+  });
+
   it("throws a repository error after repeated storage fetch failures", async () => {
     downloadMock.mockImplementation(async () => ({
       data: null,
@@ -703,6 +768,8 @@ describe("authoring snapshot loading", () => {
               title: "Local Chapter",
               slug: "local-chapter",
               orderIndex: 1,
+              openingCardText: null,
+              endingCardText: null,
               scenes: [
                 {
                   id: "scene_local_1",
@@ -859,7 +926,7 @@ describe("dialogue mutations", () => {
       downloadMock.mock.calls.filter(
         ([objectPath]) => objectPath === "authoring/chapters.json"
       )
-    ).toHaveLength(1);
+    ).toHaveLength(2);
     expectChapterScopedWrites();
   });
 
@@ -998,8 +1065,7 @@ describe("scene draft persistence", () => {
   it("treats draft storage connectivity issues as unavailable during load", async () => {
     findUniqueSceneDraftMock.mockRejectedValueOnce({
       code: "P1001",
-      message:
-        "Can't reach database server at `db.example.supabase.co:5432`"
+      message: "Can't reach database server at `db.example.supabase.co:5432`"
     });
 
     await expect(getSceneDraft("scene_1")).resolves.toBeNull();
@@ -1008,8 +1074,7 @@ describe("scene draft persistence", () => {
   it("ignores draft discard failures when draft storage is unavailable", async () => {
     deleteManySceneDraftMock.mockRejectedValueOnce({
       code: "P1001",
-      message:
-        "Can't reach database server at `db.example.supabase.co:5432`"
+      message: "Can't reach database server at `db.example.supabase.co:5432`"
     });
 
     await expect(discardSceneDraft("scene_1")).resolves.toBeUndefined();
@@ -1090,13 +1155,11 @@ describe("saveSceneDraft", () => {
   it("saves from provided payload when draft storage is unavailable", async () => {
     findUniqueSceneDraftMock.mockRejectedValueOnce({
       code: "P1001",
-      message:
-        "Can't reach database server at `db.example.supabase.co:5432`"
+      message: "Can't reach database server at `db.example.supabase.co:5432`"
     });
     deleteManySceneDraftMock.mockRejectedValueOnce({
       code: "P1001",
-      message:
-        "Can't reach database server at `db.example.supabase.co:5432`"
+      message: "Can't reach database server at `db.example.supabase.co:5432`"
     });
 
     const result = await saveSceneDraft({
@@ -1173,15 +1236,17 @@ describe("saveSceneDraft", () => {
       sceneId: "scene_1"
     });
 
-    expect(result.payload.dialogue.find((entry) => entry.id === "dialogue_2"))
-      .toMatchObject({
-        speakerType: "cat_name_prompt",
-        text: ""
-      });
-    expect(getPersistedDialogue().find((entry) => entry.id === "dialogue_2"))
-      .toMatchObject({
-        text: ""
-      });
+    expect(
+      result.payload.dialogue.find((entry) => entry.id === "dialogue_2")
+    ).toMatchObject({
+      speakerType: "cat_name_prompt",
+      text: ""
+    });
+    expect(
+      getPersistedDialogue().find((entry) => entry.id === "dialogue_2")
+    ).toMatchObject({
+      text: ""
+    });
     expectChapterScopedWrites();
   });
 
@@ -1360,6 +1425,61 @@ describe("non-dialogue commits", () => {
       upsert: true
     });
     expect(compileRuntimeStoryMock).toHaveBeenCalled();
+  });
+
+  it("persists chapter black-card text without altering existing scenes", async () => {
+    await updateChapter({
+      chapterId: "chapter_1",
+      title: "Chapter One",
+      slug: "chapter-one",
+      orderIndex: 1,
+      openingCardText: "The first line.",
+      endingCardText: "The last line."
+    });
+
+    const persistedChapter = getPersistedStory().chapters[0];
+
+    expect(persistedChapter?.openingCardText).toBe("The first line.");
+    expect(persistedChapter?.endingCardText).toBe("The last line.");
+    expect(persistedChapter?.scenes).toHaveLength(2);
+    expect(persistedChapter?.scenes[0]?.dialogue).toHaveLength(3);
+  });
+
+  it("stores blank chapter black-card text as null", async () => {
+    await updateChapter({
+      chapterId: "chapter_1",
+      title: "Chapter One",
+      slug: "chapter-one",
+      orderIndex: 1,
+      openingCardText: "   ",
+      endingCardText: "\n\n"
+    });
+
+    const persistedChapter = getPersistedStory().chapters[0];
+
+    expect(persistedChapter?.openingCardText).toBeNull();
+    expect(persistedChapter?.endingCardText).toBeNull();
+  });
+
+  it("creates the pre-black-cards backup only once before chapter writes", async () => {
+    await updateChapter({
+      chapterId: "chapter_1",
+      title: "Chapter One",
+      slug: "chapter-one",
+      orderIndex: 1,
+      openingCardText: "Opening",
+      endingCardText: null
+    });
+    await updateChapter({
+      chapterId: "chapter_1",
+      title: "Chapter One",
+      slug: "chapter-one",
+      orderIndex: 1,
+      openingCardText: "Opening revised",
+      endingCardText: "Ending"
+    });
+
+    expect(getPreBlackCardsBackupPaths()).toHaveLength(1);
   });
 
   it("stores replacement emotion images on a new path to avoid stale cache", async () => {

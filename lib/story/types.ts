@@ -125,6 +125,8 @@ export type ChapterDefinition = {
   title: string;
   slug: string;
   orderIndex: number;
+  openingCardText: string | null;
+  endingCardText: string | null;
   scenes: SceneDefinition[];
   createdAt: string;
   updatedAt: string;
@@ -292,6 +294,8 @@ export type RuntimeChapterBundle = {
     title: string;
     slug: string;
     orderIndex: number;
+    openingCardText: string | null;
+    endingCardText: string | null;
     scenes: RuntimeScene[];
   };
   nextChapterId: string | null;

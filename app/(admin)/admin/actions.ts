@@ -204,7 +204,11 @@ function getNextOrderIndex(items: Array<{ orderIndex: number }>) {
 }
 
 function getDialogueSpeakerType(formData: FormData) {
-  const speakerType = getRequiredString(formData, "speakerType", "Speaker type");
+  const speakerType = getRequiredString(
+    formData,
+    "speakerType",
+    "Speaker type"
+  );
 
   if (
     speakerType !== "narrator" &&
@@ -232,7 +236,10 @@ function getDialogueText(
 function getPlayerStatus(formData: FormData) {
   const statusValue = getRequiredString(formData, "status", "Player status");
 
-  if (statusValue !== PlayerStatus.ACTIVE && statusValue !== PlayerStatus.INACTIVE) {
+  if (
+    statusValue !== PlayerStatus.ACTIVE &&
+    statusValue !== PlayerStatus.INACTIVE
+  ) {
     throw new PlayerProfileError("Player status is invalid.");
   }
 
@@ -559,7 +566,9 @@ export async function createChapterNavigationAction(
       const chapter = await createChapter({
         title,
         slug: getOptionalString(formData, "slug") ?? title,
-        orderIndex: await resolveChapterOrderIndex(formData)
+        orderIndex: await resolveChapterOrderIndex(formData),
+        openingCardText: null,
+        endingCardText: null
       });
 
       return withStatus(
@@ -1005,7 +1014,9 @@ export async function createChapterAction(formData: FormData) {
       const chapter = await createChapter({
         title,
         slug: getOptionalString(formData, "slug") ?? title,
-        orderIndex: await resolveChapterOrderIndex(formData)
+        orderIndex: await resolveChapterOrderIndex(formData),
+        openingCardText: null,
+        endingCardText: null
       });
 
       return withStatus(
@@ -1033,7 +1044,9 @@ export async function updateChapterAction(formData: FormData) {
         orderIndex:
           getOptionalInteger(formData, "orderIndex", "Chapter order", {
             min: 1
-          }) ?? (await resolveExistingChapterOrderIndex(chapterId))
+          }) ?? (await resolveExistingChapterOrderIndex(chapterId)),
+        openingCardText: getOptionalString(formData, "openingCardText"),
+        endingCardText: getOptionalString(formData, "endingCardText")
       });
 
       return withStatus(

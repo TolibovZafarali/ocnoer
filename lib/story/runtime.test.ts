@@ -110,6 +110,8 @@ function createBundle(input: {
       title: input.title,
       slug: input.chapterId.replace(/_/g, "-"),
       orderIndex: input.orderIndex,
+      openingCardText: null,
+      endingCardText: null,
       scenes: input.scenes
     }
   };

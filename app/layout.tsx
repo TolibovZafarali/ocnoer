@@ -1,6 +1,11 @@
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
-import { Imperial_Script, Literata, Tangerine } from "next/font/google";
+import {
+  Bad_Script,
+  Imperial_Script,
+  Literata,
+  Tangerine
+} from "next/font/google";
 
 import "./globals.css";
 
@@ -24,6 +29,13 @@ const dressPromptFont = Imperial_Script({
   variable: "--font-dress-prompt"
 });
 
+const chapterCardFont = Bad_Script({
+  subsets: ["latin", "cyrillic", "cyrillic-ext"],
+  weight: ["400"],
+  display: "swap",
+  variable: "--font-chapter-card"
+});
+
 export const metadata: Metadata = {
   title: "Ocnoer",
   description: "Private interactive story platform"
@@ -43,7 +55,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
         />
       </head>
       <body
-        className={`${dialogueFont.variable} ${characterNameFont.variable} ${dressPromptFont.variable}`}
+        className={`${dialogueFont.variable} ${characterNameFont.variable} ${dressPromptFont.variable} ${chapterCardFont.variable}`}
       >
         {children}
       </body>

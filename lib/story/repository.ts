@@ -45,6 +45,7 @@ const AUTHORING_ASSETS_PATH = "authoring/assets.json";
 const AUTHORING_CHAPTERS_PATH = "authoring/chapters.json";
 const AUTHORING_HISTORY_PREFIX = "history/authoring";
 const RUNTIME_PREFIX = "runtime";
+const PRE_BLACK_CARDS_BACKUP_FILE_PREFIX = "pre-black-cards-";
 const STORAGE_FETCH_FAILURE_MESSAGE =
   "Unable to reach Supabase storage while loading authoring data. Check your Supabase URL, network connection, and Supabase project availability.";
 const STORAGE_FETCH_MAX_ATTEMPTS = 4;
@@ -188,6 +189,12 @@ function normalizeDialogueEntry(entry: DialogueEntry): DialogueEntry {
   };
 }
 
+function normalizeChapterCardText(value: string | null | undefined) {
+  const normalized = typeof value === "string" ? value.trim() : "";
+
+  return normalized.length > 0 ? normalized : null;
+}
+
 function sortSnapshot(
   snapshot: StoryAuthoringSnapshot
 ): StoryAuthoringSnapshot {
@@ -216,6 +223,8 @@ function sortSnapshot(
     ),
     chapters: sortByOrderIndex(snapshot.chapters).map((chapter) => ({
       ...chapter,
+      openingCardText: normalizeChapterCardText(chapter.openingCardText),
+      endingCardText: normalizeChapterCardText(chapter.endingCardText),
       scenes: sortByOrderIndex(chapter.scenes).map((scene) => ({
         ...scene,
         carryOcnoerDressSelection: scene.carryOcnoerDressSelection ?? true,
@@ -290,8 +299,7 @@ function isSceneDraftStorageConnectionError(error: unknown) {
   const record = error as Record<string, unknown>;
   const message =
     typeof record.message === "string" ? record.message : String(error);
-  const code =
-    typeof record.code === "string" ? record.code.toUpperCase() : "";
+  const code = typeof record.code === "string" ? record.code.toUpperCase() : "";
 
   return (
     code === "P1001" ||
@@ -628,12 +636,12 @@ async function removeStorageObjects(storagePaths: string[]) {
   }
 }
 
-async function listRuntimeChapterBundlePaths() {
+async function listStorageObjectNames(prefix: string) {
   const { runtimeBucket } = getSupabaseServerEnv();
   const supabase = getAdminSupabaseClient();
   const { data, error } = await supabase.storage
     .from(runtimeBucket)
-    .list(`${RUNTIME_PREFIX}/chapters`, {
+    .list(prefix, {
       limit: 500,
       offset: 0
     });
@@ -642,9 +650,15 @@ async function listRuntimeChapterBundlePaths() {
     throw new StoryRepositoryError(error.message);
   }
 
-  return (data ?? [])
-    .filter((item) => item.name.endsWith(".json"))
-    .map((item) => `${runtimeBucket}/${RUNTIME_PREFIX}/chapters/${item.name}`);
+  return (data ?? []).map((item) => item.name);
+}
+
+async function listRuntimeChapterBundlePaths() {
+  const { runtimeBucket } = getSupabaseServerEnv();
+
+  return (await listStorageObjectNames(`${RUNTIME_PREFIX}/chapters`))
+    .filter((name) => name.endsWith(".json"))
+    .map((name) => `${runtimeBucket}/${RUNTIME_PREFIX}/chapters/${name}`);
 }
 
 function assertRequiredFile(
@@ -725,7 +739,11 @@ function createFallbackEntityId(
   ...parts: Array<string | number | null | undefined>
 ) {
   const normalized = parts
-    .map((part) => String(part ?? "").trim().toLowerCase())
+    .map((part) =>
+      String(part ?? "")
+        .trim()
+        .toLowerCase()
+    )
     .map((part) => part.replace(/[^a-z0-9_-]+/g, "_"))
     .filter(Boolean)
     .join("_");
@@ -907,7 +925,10 @@ async function loadLocalAuthoringSnapshotFallback(): Promise<StoryAuthoringSnaps
   }
 
   const charactersById = new Map(
-    (charactersFile?.characters ?? []).map((character) => [character.id, character])
+    (charactersFile?.characters ?? []).map((character) => [
+      character.id,
+      character
+    ])
   );
   const backgroundImagesById = new Map(
     (assetsFile?.backgroundImages ?? []).map((asset) => [asset.id, asset])
@@ -989,6 +1010,8 @@ async function persistAuthoringSnapshot(snapshot: StoryAuthoringSnapshot) {
     chapters: normalizedSnapshot.chapters
   } satisfies ChaptersCatalogFile;
 
+  await ensurePreBlackCardsChapterBackup();
+
   await Promise.all([
     writeJsonFile(AUTHORING_CHARACTERS_PATH, charactersFile, {
       cacheControl: "0"
@@ -1006,9 +1029,13 @@ async function persistAuthoringSnapshot(snapshot: StoryAuthoringSnapshot) {
         cacheControl: "0"
       }
     ),
-    writeJsonFile(`${AUTHORING_HISTORY_PREFIX}/assets/${historyVersionId}.json`, assetsFile, {
-      cacheControl: "0"
-    }),
+    writeJsonFile(
+      `${AUTHORING_HISTORY_PREFIX}/assets/${historyVersionId}.json`,
+      assetsFile,
+      {
+        cacheControl: "0"
+      }
+    ),
     writeJsonFile(
       `${AUTHORING_HISTORY_PREFIX}/chapters/${historyVersionId}.json`,
       chaptersFile,
@@ -1021,6 +1048,58 @@ async function persistAuthoringSnapshot(snapshot: StoryAuthoringSnapshot) {
   return normalizedSnapshot;
 }
 
+async function ensurePreBlackCardsChapterBackup() {
+  const existingBackupNames = await listStorageObjectNames(
+    `${AUTHORING_HISTORY_PREFIX}/chapters`
+  );
+
+  if (
+    existingBackupNames.some((name) =>
+      name.startsWith(PRE_BLACK_CARDS_BACKUP_FILE_PREFIX)
+    )
+  ) {
+    return;
+  }
+
+  const { data, error } = await downloadStorageJson(AUTHORING_CHAPTERS_PATH);
+
+  if (error) {
+    if (isStorageMissingError(error)) {
+      return;
+    }
+
+    if (isStorageFetchFailureError(error)) {
+      throw new StoryRepositoryError(STORAGE_FETCH_FAILURE_MESSAGE);
+    }
+
+    throw new StoryRepositoryError(error.message);
+  }
+
+  if (!data) {
+    throw new StoryRepositoryError(
+      `Storage download for ${AUTHORING_CHAPTERS_PATH} returned no data.`
+    );
+  }
+
+  let currentChaptersFile: unknown;
+
+  try {
+    currentChaptersFile = JSON.parse(await data.text());
+  } catch {
+    throw new StoryRepositoryError(
+      `Invalid JSON stored at ${AUTHORING_CHAPTERS_PATH}.`
+    );
+  }
+
+  await writeJsonFile(
+    `${AUTHORING_HISTORY_PREFIX}/chapters/${PRE_BLACK_CARDS_BACKUP_FILE_PREFIX}${createAuthoringHistoryVersionId(nowIsoString())}.json`,
+    currentChaptersFile,
+    {
+      cacheControl: "0"
+    }
+  );
+}
+
 async function persistChaptersSnapshot(snapshot: StoryAuthoringSnapshot) {
   const normalizedSnapshot = sortSnapshot(snapshot);
   const updatedAt = nowIsoString();
@@ -1030,6 +1109,8 @@ async function persistChaptersSnapshot(snapshot: StoryAuthoringSnapshot) {
     updatedAt,
     chapters: normalizedSnapshot.chapters
   } satisfies ChaptersCatalogFile;
+
+  await ensurePreBlackCardsChapterBackup();
 
   await Promise.all([
     writeJsonFile(AUTHORING_CHAPTERS_PATH, chaptersFile, {
@@ -2635,6 +2716,8 @@ export async function createChapter(input: {
   title: string;
   slug: string;
   orderIndex: number;
+  openingCardText?: string | null;
+  endingCardText?: string | null;
 }) {
   const snapshot = await loadAuthoringSnapshot();
   const chapterId = createEntityId("chapter");
@@ -2648,6 +2731,8 @@ export async function createChapter(input: {
     title: input.title.trim(),
     slug: normalizedSlug,
     orderIndex: input.orderIndex,
+    openingCardText: normalizeChapterCardText(input.openingCardText),
+    endingCardText: normalizeChapterCardText(input.endingCardText),
     scenes: [],
     createdAt: nowIsoString(),
     updatedAt: nowIsoString()
@@ -2664,6 +2749,8 @@ export async function updateChapter(input: {
   title: string;
   slug: string;
   orderIndex: number;
+  openingCardText?: string | null;
+  endingCardText?: string | null;
 }) {
   const snapshot = await loadAuthoringSnapshot();
   const chapter = findChapterOrThrow(snapshot, input.chapterId);
@@ -2678,6 +2765,8 @@ export async function updateChapter(input: {
 
   chapter.title = input.title.trim();
   chapter.slug = normalizedSlug;
+  chapter.openingCardText = normalizeChapterCardText(input.openingCardText);
+  chapter.endingCardText = normalizeChapterCardText(input.endingCardText);
   chapter.updatedAt = nowIsoString();
 
   if (orderChanged) {
@@ -2859,11 +2948,11 @@ export async function createDialogueEntry(input: {
                 type: "cat_name_prompt",
                 characterId: input.characterId as string
               }
-          : {
-              type: "character",
-              characterId: input.characterId as string,
-              emotionKey: input.emotionKey as string
-            },
+            : {
+                type: "character",
+                characterId: input.characterId as string,
+                emotionKey: input.emotionKey as string
+              },
     createdAt: nowIsoString(),
     updatedAt: nowIsoString()
   };
@@ -2922,11 +3011,11 @@ export async function updateDialogueEntry(input: {
               type: "cat_name_prompt",
               characterId: input.characterId as string
             }
-        : {
-            type: "character",
-            characterId: input.characterId as string,
-            emotionKey: input.emotionKey as string
-          };
+          : {
+              type: "character",
+              characterId: input.characterId as string,
+              emotionKey: input.emotionKey as string
+            };
   entry.updatedAt = nowIsoString();
   scene.updatedAt = nowIsoString();
   chapter.updatedAt = nowIsoString();

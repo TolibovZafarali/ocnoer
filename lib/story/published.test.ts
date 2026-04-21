@@ -86,6 +86,8 @@ const snapshot: StoryAuthoringSnapshot = {
       title: "Chapter One",
       slug: "chapter-one",
       orderIndex: 1,
+      openingCardText: null,
+      endingCardText: null,
       createdAt: "2026-03-16T00:00:00.000Z",
       updatedAt: "2026-03-16T00:00:00.000Z",
       scenes: [
@@ -173,6 +175,8 @@ describe("compileRuntimeStory", () => {
     );
 
     const bundle = compiled.chapterBundles[0]?.bundle;
+    expect(bundle?.chapter.openingCardText).toBeNull();
+    expect(bundle?.chapter.endingCardText).toBeNull();
     const scene = bundle?.chapter.scenes[0];
     const narratorEntry = scene?.dialogue[0];
     const renEntry = scene?.dialogue[1];
@@ -216,7 +220,34 @@ describe("compileRuntimeStory", () => {
       generatedAt: "2026-03-16T01:00:00.000Z"
     });
 
-    expect(compiled.chapterBundles[0]?.bundle.chapter.scenes[0]?.backgroundImage).toBeNull();
+    expect(
+      compiled.chapterBundles[0]?.bundle.chapter.scenes[0]?.backgroundImage
+    ).toBeNull();
+  });
+
+  it("includes chapter black-card text in the runtime bundle", () => {
+    const compiled = compileRuntimeStory({
+      snapshot: {
+        ...snapshot,
+        chapters: [
+          {
+            ...snapshot.chapters[0],
+            openingCardText: "Open with silence.",
+            endingCardText: "Close in darkness."
+          }
+        ]
+      },
+      bucket: "runtime",
+      runtimePrefix: "runtime",
+      generatedAt: "2026-03-16T01:00:00.000Z"
+    });
+
+    expect(compiled.chapterBundles[0]?.bundle.chapter.openingCardText).toBe(
+      "Open with silence."
+    );
+    expect(compiled.chapterBundles[0]?.bundle.chapter.endingCardText).toBe(
+      "Close in darkness."
+    );
   });
 
   it("falls back to the left stage when Ocnoer is absent from a scene", () => {
@@ -229,6 +260,8 @@ describe("compileRuntimeStory", () => {
             title: "Chapter Two",
             slug: "chapter-two",
             orderIndex: 1,
+            openingCardText: null,
+            endingCardText: null,
             createdAt: "2026-03-16T00:00:00.000Z",
             updatedAt: "2026-03-16T00:00:00.000Z",
             scenes: [
@@ -314,8 +347,8 @@ describe("compileRuntimeStory", () => {
       generatedAt: "2026-03-20T01:00:00.000Z"
     });
 
-    const ocnoerEntry = compiled.chapterBundles[0]?.bundle.chapter.scenes[0]
-      ?.dialogue[2];
+    const ocnoerEntry =
+      compiled.chapterBundles[0]?.bundle.chapter.scenes[0]?.dialogue[2];
     const expectedPath =
       "runtime/media/characters/character_ocnoer/emotion_smile/file_v2.png";
 

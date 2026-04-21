@@ -12,6 +12,7 @@ import {
   PageHeader,
   Pill,
   SectionCard,
+  TextArea,
   TextInput
 } from "@/components/admin/forms";
 import { Button } from "@/components/ui/button";
@@ -120,6 +121,32 @@ export default async function ChapterSettingsPage({
                 />
               </Field>
             </div>
+
+            <Field
+              label="Opening Black Screen Text"
+              htmlFor="chapter-opening-card-text"
+              hint="Optional. Renders centered on a black screen before the chapter begins."
+            >
+              <TextArea
+                id="chapter-opening-card-text"
+                name="openingCardText"
+                defaultValue={chapter.openingCardText ?? ""}
+                rows={5}
+              />
+            </Field>
+
+            <Field
+              label="Ending Black Screen Text"
+              htmlFor="chapter-ending-card-text"
+              hint="Optional. Renders centered on a black screen after the chapter ends."
+            >
+              <TextArea
+                id="chapter-ending-card-text"
+                name="endingCardText"
+                defaultValue={chapter.endingCardText ?? ""}
+                rows={5}
+              />
+            </Field>
 
             <div className="flex justify-end">
               <Button type="submit">Save Chapter</Button>

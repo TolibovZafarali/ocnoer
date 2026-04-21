@@ -4,20 +4,20 @@ import { redirect } from "next/navigation";
 
 import { clearPlayerSession, signInAsPlayerSecret } from "@/lib/auth/player";
 
-function withStatus(kind: "success" | "error", message: string) {
-  const url = new URL("/play", "https://ocnoer.local");
+export type PlayerHomeGateState = {
+  errorCount: number;
+};
 
-  url.searchParams.set("status", kind);
-  url.searchParams.set("message", message);
-
-  return `${url.pathname}${url.search}`;
-}
-
-export async function signInPlayerAction(formData: FormData) {
+export async function signInHomePlayerAction(
+  previousState: PlayerHomeGateState,
+  formData: FormData
+): Promise<PlayerHomeGateState> {
   const passwordValue = formData.get("password");
 
   if (typeof passwordValue !== "string" || passwordValue.trim().length === 0) {
-    redirect(withStatus("error", "Enter your password."));
+    return {
+      errorCount: previousState.errorCount + 1
+    };
   }
 
   let result: Awaited<ReturnType<typeof signInAsPlayerSecret>>;
@@ -25,14 +25,17 @@ export async function signInPlayerAction(formData: FormData) {
   try {
     result = await signInAsPlayerSecret(passwordValue.trim());
   } catch (error) {
-    console.error("Player sign-in failed.", error);
-    redirect(
-      withStatus("error", "Unable to sign in right now. Please try again.")
-    );
+    console.error("Home player sign-in failed.", error);
+
+    return {
+      errorCount: previousState.errorCount + 1
+    };
   }
 
   if (!result.ok) {
-    redirect(withStatus("error", "Password is invalid or access is inactive."));
+    return {
+      errorCount: previousState.errorCount + 1
+    };
   }
 
   redirect("/play");
@@ -40,5 +43,5 @@ export async function signInPlayerAction(formData: FormData) {
 
 export async function signOutPlayerAction() {
   await clearPlayerSession();
-  redirect(withStatus("success", "Signed out."));
+  redirect("/");
 }

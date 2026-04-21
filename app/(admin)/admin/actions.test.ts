@@ -120,7 +120,9 @@ describe("createChapterAction", () => {
     expect(createChapterMock).toHaveBeenCalledWith({
       title: "Chapter One",
       slug: "Chapter One",
-      orderIndex: 6
+      orderIndex: 6,
+      openingCardText: null,
+      endingCardText: null
     });
     expect(revalidatePathMock).toHaveBeenCalledWith("/admin/chapters");
     expect(revalidatePathMock).toHaveBeenCalledWith(
@@ -237,7 +239,9 @@ describe("createChapterNavigationAction", () => {
     expect(createChapterMock).toHaveBeenCalledWith({
       title: "Chapter One",
       slug: "Chapter One",
-      orderIndex: 6
+      orderIndex: 6,
+      openingCardText: null,
+      endingCardText: null
     });
     expect(revalidatePathMock).toHaveBeenCalledWith("/admin/chapters");
     expect(revalidatePathMock).toHaveBeenCalledWith(

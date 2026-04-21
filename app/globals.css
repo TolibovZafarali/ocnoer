@@ -12,6 +12,142 @@ body {
   color: rgb(15 23 42);
 }
 
+.home-player-gate {
+  position: relative;
+  isolation: isolate;
+  color-scheme: dark;
+  background: radial-gradient(
+    circle at top,
+    rgb(14 19 34) 0%,
+    rgb(5 8 14) 48%,
+    rgb(2 3 8) 100%
+  );
+}
+
+.home-player-gate-glow {
+  position: absolute;
+  border-radius: 9999px;
+  filter: blur(88px);
+  opacity: 0.55;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
+.home-player-gate-glow-one {
+  top: -12rem;
+  left: -8rem;
+  height: 32rem;
+  width: 32rem;
+  background: radial-gradient(
+    circle,
+    rgb(34 211 238 / 36%) 0%,
+    rgb(56 189 248 / 14%) 42%,
+    transparent 72%
+  );
+  animation: home-player-gate-drift-one 18s ease-in-out infinite alternate;
+}
+
+.home-player-gate-glow-two {
+  right: -10rem;
+  top: 12%;
+  height: 28rem;
+  width: 28rem;
+  background: radial-gradient(
+    circle,
+    rgb(59 130 246 / 26%) 0%,
+    rgb(14 165 233 / 12%) 48%,
+    transparent 72%
+  );
+  animation: home-player-gate-drift-two 20s ease-in-out infinite alternate;
+}
+
+.home-player-gate-glow-three {
+  bottom: -14rem;
+  left: 50%;
+  height: 30rem;
+  width: 34rem;
+  transform: translateX(-50%);
+  background: radial-gradient(
+    circle,
+    rgb(99 102 241 / 18%) 0%,
+    rgb(14 165 233 / 10%) 44%,
+    transparent 76%
+  );
+  animation: home-player-gate-drift-three 22s ease-in-out infinite alternate;
+}
+
+.home-player-gate-grid {
+  position: absolute;
+  inset: 0;
+  opacity: 0.14;
+  background-image:
+    linear-gradient(rgb(255 255 255 / 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(255 255 255 / 0.06) 1px, transparent 1px);
+  background-size: 120px 120px;
+  mask-image: radial-gradient(circle at center, black 10%, transparent 80%);
+  animation: home-player-gate-grid-shift 24s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes home-player-gate-drift-one {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.48;
+  }
+
+  100% {
+    transform: translate3d(5rem, 3.5rem, 0) scale(1.14);
+    opacity: 0.72;
+  }
+}
+
+@keyframes home-player-gate-drift-two {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.35;
+  }
+
+  100% {
+    transform: translate3d(-4.5rem, -3rem, 0) scale(1.12);
+    opacity: 0.62;
+  }
+}
+
+@keyframes home-player-gate-drift-three {
+  0% {
+    transform: translateX(-50%) translateY(0) scale(1);
+    opacity: 0.24;
+  }
+
+  100% {
+    transform: translateX(-50%) translateY(-4rem) scale(1.08);
+    opacity: 0.48;
+  }
+}
+
+@keyframes home-player-gate-grid-shift {
+  0% {
+    transform: translate3d(0, 0, 0);
+  }
+
+  100% {
+    transform: translate3d(-60px, -60px, 0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-player-gate-glow-one,
+  .home-player-gate-glow-two,
+  .home-player-gate-glow-three,
+  .home-player-gate-grid {
+    animation: none;
+  }
+
+  .home-player-gate-glow {
+    opacity: 0.45;
+  }
+}
+
 .admin-area-theme {
   transition:
     background-color 180ms ease,
@@ -178,6 +314,11 @@ body {
 
 .font-dress-prompt {
   font-family: var(--font-dress-prompt), "Brush Script MT", cursive;
+}
+
+.font-chapter-card {
+  font-family:
+    var(--font-chapter-card), "Segoe Script", "Brush Script MT", cursive;
 }
 
 .material-symbols-outlined {

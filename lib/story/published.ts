@@ -204,7 +204,9 @@ function compileScene(input: {
       }
 
       if (entry.speaker.type === "dress_prompt") {
-        const promptCharacter = input.charactersById.get(entry.speaker.characterId);
+        const promptCharacter = input.charactersById.get(
+          entry.speaker.characterId
+        );
 
         if (!promptCharacter) {
           throw new Error(
@@ -234,7 +236,9 @@ function compileScene(input: {
       }
 
       if (entry.speaker.type === "cat_name_prompt") {
-        const promptCharacter = input.charactersById.get(entry.speaker.characterId);
+        const promptCharacter = input.charactersById.get(
+          entry.speaker.characterId
+        );
 
         if (!promptCharacter) {
           throw new Error(
@@ -398,6 +402,8 @@ function createRuntimeChapterBundle(input: {
         title: input.chapter.title,
         slug: input.chapter.slug,
         orderIndex: input.chapter.orderIndex,
+        openingCardText: input.chapter.openingCardText ?? null,
+        endingCardText: input.chapter.endingCardText ?? null,
         scenes
       },
       nextChapterId: input.nextChapterId

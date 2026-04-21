@@ -16,6 +16,7 @@ import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 import worldMapImage from "@/lore/world-map.jpg";
 
 import { Button } from "@/components/ui/button";
+import { ChapterCardHandwriting } from "@/app/(player)/play/chapter-card-handwriting";
 import {
   CONTINUE_BUTTON_ENTER_DURATION_MS,
   DEFAULT_LINE_ENTER_DURATION_MS,
@@ -28,8 +29,15 @@ import {
   getLineEnterDelayMs,
   getLineMotionConfig,
   getMotionOffset,
-  getTypingCharacterDelayMs
+  getTypingCharacterDelayMs,
+  getTypingDurationMs
 } from "@/app/(player)/play/player-story-reader-motion";
+import {
+  createBoundaryStateForAdvance,
+  getChapterOpeningBoundaryState,
+  resolveBoundaryAdvance,
+  type PlayerBoundaryState
+} from "@/app/(player)/play/player-story-reader-boundary";
 import {
   analyzeSceneLightingFromImageData,
   buildSceneOverlayBackground,
@@ -40,12 +48,13 @@ import {
 } from "@/app/(player)/play/player-scene-lighting";
 import {
   advanceRuntimePosition,
-  retreatRuntimePosition,
+  createStoredProgress,
+  findFirstPlayableReaderState,
   getCurrentDialogue,
   getCurrentScene,
-  createStoredProgress,
   type PlayerProgress,
-  type ReaderState
+  type ReaderState,
+  retreatRuntimePosition
 } from "@/lib/story/reader";
 import type {
   RuntimeChapterBundle,
@@ -76,23 +85,6 @@ type PlayerStoryReaderProps = {
   initialBundle?: RuntimeChapterBundle | null;
   initialReaderState?: ReaderState | null;
 };
-
-type PlayerBoundaryState =
-  | {
-      type: "scene-transition";
-    }
-  | {
-      type: "chapter-break";
-      chapterTitle: string;
-      chapterIndex: number;
-      chapterCount: number;
-    }
-  | {
-      type: "story-finished";
-      chapterTitle: string;
-      chapterIndex: number;
-      chapterCount: number;
-    };
 
 type VisibleStagePortrait = {
   key: string;
@@ -385,6 +377,7 @@ export function PlayerStoryReader({
   const [presentationPhase, setPresentationPhase] =
     useState<PresentationPhase>("entering");
   const [visibleTextLength, setVisibleTextLength] = useState(0);
+  const [chapterCardRevealProgress, setChapterCardRevealProgress] = useState(0);
   const [lineEnterDelayMs, setLineEnterDelayMs] = useState(0);
   const [isTapHeaderVisible, setIsTapHeaderVisible] = useState(false);
   const [isMapOpen, setIsMapOpen] = useState(false);
@@ -405,7 +398,9 @@ export function PlayerStoryReader({
   const [catNameInputValue, setCatNameInputValue] = useState(
     initialCatNameState.catName ?? ""
   );
-  const [catNameInputError, setCatNameInputError] = useState<string | null>(null);
+  const [catNameInputError, setCatNameInputError] = useState<string | null>(
+    null
+  );
   const [pendingCatNameSync, setPendingCatNameSync] = useState<string | null>(
     null
   );
@@ -461,11 +456,17 @@ export function PlayerStoryReader({
         }
 
         previousNormalEntryRef.current = null;
+        const initialBoundaryState = loadedRuntime.bundle
+          ? getChapterOpeningBoundaryState({
+              chapter: loadedRuntime.bundle.chapter,
+              reason: storedProgress ? "resume" : "initial-entry"
+            })
+          : null;
         setManifest(loadedRuntime.manifest);
         setBundle(loadedRuntime.bundle);
         setReaderState(loadedRuntime.readerState);
         setPendingSceneState(null);
-        setBoundaryState(null);
+        setBoundaryState(initialBoundaryState);
         setBranchFlags(
           reconcileCatNameBranchFlags({
             branchFlags: storedProgress?.branchFlags ?? {},
@@ -531,6 +532,14 @@ export function PlayerStoryReader({
     );
 
     if (resumeAction.type === "use-initial-state") {
+      setBoundaryState(
+        initialBundle
+          ? getChapterOpeningBoundaryState({
+              chapter: initialBundle.chapter,
+              reason: "initial-entry"
+            })
+          : null
+      );
       setIsPersistenceReady(true);
       return;
     }
@@ -562,11 +571,17 @@ export function PlayerStoryReader({
         }
 
         previousNormalEntryRef.current = null;
+        const resumedBoundaryState = loadedRuntime.bundle
+          ? getChapterOpeningBoundaryState({
+              chapter: loadedRuntime.bundle.chapter,
+              reason: "resume"
+            })
+          : null;
         setManifest(loadedRuntime.manifest);
         setBundle(loadedRuntime.bundle);
         setReaderState(loadedRuntime.readerState);
         setPendingSceneState(null);
-        setBoundaryState(null);
+        setBoundaryState(resumedBoundaryState);
         setIsPersistenceReady(true);
       })
       .catch((caughtError) => {
@@ -621,14 +636,15 @@ export function PlayerStoryReader({
         branchFlags: currentValue
       });
     });
-  }, [scene?.id, scene?.carryOcnoerDressSelection, scene?.characterPool]);
+  }, [scene]);
 
   useEffect(() => {
     const storedCatName =
       typeof branchFlags[CAT_NAME_BRANCH_FLAG_KEY] === "string"
         ? normalizeCatNameInput(String(branchFlags[CAT_NAME_BRANCH_FLAG_KEY]))
         : null;
-    const storedCatNameLocked = branchFlags[CAT_NAME_LOCKED_BRANCH_FLAG_KEY] === true;
+    const storedCatNameLocked =
+      branchFlags[CAT_NAME_LOCKED_BRANCH_FLAG_KEY] === true;
 
     if (!storedCatName || storedCatName.length === 0) {
       return;
@@ -659,12 +675,7 @@ export function PlayerStoryReader({
 
     hasPlayedOpeningSceneFadeRef.current = true;
     setIsOpeningSceneFadeVisible(true);
-  }, [
-    boundaryState,
-    hasPlayableSceneReady,
-    isLoading,
-    isResolvingResume
-  ]);
+  }, [boundaryState, hasPlayableSceneReady, isLoading, isResolvingResume]);
 
   useEffect(() => {
     if (!isOpeningSceneFadeVisible) {
@@ -861,6 +872,23 @@ export function PlayerStoryReader({
 
   const activeScene = scene;
   const activeEntry = entry;
+  const chapterOpeningCardState =
+    boundaryState?.type === "chapter-opening-card" ? boundaryState : null;
+  const chapterEndingCardState =
+    boundaryState?.type === "chapter-ending-card" ? boundaryState : null;
+  const activeChapterCard = chapterOpeningCardState ?? chapterEndingCardState;
+  const chapterCardText = activeChapterCard?.text ?? "";
+  const chapterCardTypingDurationMs = useMemo(
+    () =>
+      Math.max(
+        520,
+        getTypingDurationMs({
+          text: chapterCardText,
+          reducedMotion: prefersReducedMotion
+        })
+      ),
+    [chapterCardText, prefersReducedMotion]
+  );
   const resolvedDialogueText = useMemo(
     () => resolveDialogueTextTemplate(activeEntry?.text ?? "", catName),
     [activeEntry?.text, catName]
@@ -881,9 +909,9 @@ export function PlayerStoryReader({
   }, [activeEntry, supabaseUrl]);
   const selectedDressPromptOption =
     dressPromptOptions.length > 0
-      ? dressPromptOptions[
+      ? (dressPromptOptions[
           Math.min(dressPromptIndex, dressPromptOptions.length - 1)
-        ] ?? null
+        ] ?? null)
       : null;
   const leftCharacterImageUrl = activeAssetUrls.leftCharacterImageUrl;
   const rightCharacterImageUrl = activeAssetUrls.rightCharacterImageUrl;
@@ -893,6 +921,7 @@ export function PlayerStoryReader({
   const storyFinishedState =
     boundaryState?.type === "story-finished" ? boundaryState : null;
   const isTransitionCard = Boolean(isSceneTransition);
+  const isChapterCard = Boolean(activeChapterCard);
   const isChapterBreakCard = Boolean(chapterBreakState);
   const isStoryFinishedCard = Boolean(storyFinishedState);
   const sceneTransitionDurationMs = prefersReducedMotion
@@ -915,8 +944,14 @@ export function PlayerStoryReader({
   const showDialogueCard =
     Boolean(activeEntry) &&
     !isTransitionCard &&
+    !isChapterCard &&
     !isChapterBreakCard &&
     !isStoryFinishedCard;
+  const activeTypedSurfaceId = activeChapterCard
+    ? `${activeChapterCard.type}:${activeChapterCard.chapterId}`
+    : showDialogueCard && activeEntry
+      ? activeEntry.id
+      : null;
   const lineMotionConfig = activeEntry
     ? getLineMotionConfig(activeEntry)
     : null;
@@ -936,7 +971,7 @@ export function PlayerStoryReader({
         enterDelayMs: lineEnterDelayMs
       })
     : null;
-  const hideStagePortraits = isSceneTransition;
+  const hideStagePortraits = isSceneTransition || isChapterCard;
   const leftStagePortrait =
     activeEntry &&
     !hideStagePortraits &&
@@ -993,7 +1028,9 @@ export function PlayerStoryReader({
     visibleTextLength
   ]);
   const canCompleteTyping =
-    showDialogueCard && !prefersReducedMotion && presentationPhase === "typing";
+    Boolean(activeTypedSurfaceId) &&
+    !prefersReducedMotion &&
+    presentationPhase === "typing";
   const showDressPromptOptions =
     showDialogueCard &&
     presentationPhase === "ready" &&
@@ -1004,8 +1041,7 @@ export function PlayerStoryReader({
     activeEntry?.speaker.type === "cat_name_prompt" &&
     !isCatNameLocked;
   const showContinueButtonSlot =
-    showDialogueCard &&
-    activeEntry?.speaker.type !== "dress_prompt";
+    showDialogueCard && activeEntry?.speaker.type !== "dress_prompt";
   const showContinueButton =
     showContinueButtonSlot &&
     presentationPhase === "ready" &&
@@ -1131,24 +1167,40 @@ export function PlayerStoryReader({
   ]);
 
   useLayoutEffect(() => {
-    if (!showDialogueCard || !activeEntry) {
+    if (!activeTypedSurfaceId) {
+      setChapterCardRevealProgress(0);
       return;
     }
 
     setLineEnterDelayMs(
-      previousShowDialogueCardRef.current
-        ? getLineEnterDelayMs({
-            currentEntry: activeEntry,
-            previousEntry: previousNormalEntryRef.current,
-            reducedMotion: prefersReducedMotion
-          })
-        : 0
+      activeChapterCard
+        ? 0
+        : showDialogueCard && activeEntry && previousShowDialogueCardRef.current
+          ? getLineEnterDelayMs({
+              currentEntry: activeEntry,
+              previousEntry: previousNormalEntryRef.current,
+              reducedMotion: prefersReducedMotion
+            })
+          : 0
     );
-    setVisibleTextLength(prefersReducedMotion ? textCharacters.length : 0);
+
+    if (activeChapterCard) {
+      setVisibleTextLength(0);
+      setChapterCardRevealProgress(prefersReducedMotion ? 1 : 0);
+    } else {
+      setVisibleTextLength(prefersReducedMotion ? textCharacters.length : 0);
+      setChapterCardRevealProgress(0);
+    }
+
     setPresentationPhase(prefersReducedMotion ? "ready" : "entering");
-    previousNormalEntryRef.current = activeEntry;
+
+    if (showDialogueCard && activeEntry) {
+      previousNormalEntryRef.current = activeEntry;
+    }
   }, [
+    activeChapterCard,
     activeEntry,
+    activeTypedSurfaceId,
     prefersReducedMotion,
     showDialogueCard,
     textCharacters.length
@@ -1160,31 +1212,36 @@ export function PlayerStoryReader({
 
   useEffect(() => {
     if (
-      !showDialogueCard ||
+      !activeTypedSurfaceId ||
       prefersReducedMotion ||
       presentationPhase !== "entering"
     ) {
       return;
     }
 
-    const timer = window.setTimeout(() => {
-      setPresentationPhase("typing");
-    }, lineEnterDelayMs + lineEnterDurationMs);
+    const timer = window.setTimeout(
+      () => {
+        setPresentationPhase("typing");
+      },
+      activeChapterCard ? 0 : lineEnterDelayMs + lineEnterDurationMs
+    );
 
     return () => {
       window.clearTimeout(timer);
     };
   }, [
+    activeChapterCard,
     lineEnterDelayMs,
     lineEnterDurationMs,
     prefersReducedMotion,
     presentationPhase,
-    showDialogueCard
+    activeTypedSurfaceId
   ]);
 
   useEffect(() => {
     if (
-      !showDialogueCard ||
+      activeChapterCard ||
+      !activeTypedSurfaceId ||
       prefersReducedMotion ||
       presentationPhase !== "typing" ||
       visibleTextLength >= textCharacters.length
@@ -1206,16 +1263,18 @@ export function PlayerStoryReader({
       window.clearTimeout(timer);
     };
   }, [
+    activeChapterCard,
+    activeTypedSurfaceId,
     prefersReducedMotion,
     presentationPhase,
-    showDialogueCard,
     textCharacters,
     visibleTextLength
   ]);
 
   useEffect(() => {
     if (
-      !showDialogueCard ||
+      activeChapterCard ||
+      !activeTypedSurfaceId ||
       prefersReducedMotion ||
       presentationPhase !== "typing" ||
       visibleTextLength < textCharacters.length
@@ -1225,11 +1284,71 @@ export function PlayerStoryReader({
 
     setPresentationPhase("ready");
   }, [
+    activeChapterCard,
+    activeTypedSurfaceId,
     prefersReducedMotion,
     presentationPhase,
-    showDialogueCard,
     textCharacters.length,
     visibleTextLength
+  ]);
+
+  useEffect(() => {
+    if (
+      !activeChapterCard ||
+      prefersReducedMotion ||
+      presentationPhase !== "typing"
+    ) {
+      return;
+    }
+
+    let startTime: number | null = null;
+    let frameId = 0;
+
+    const tick = (timestamp: number) => {
+      if (startTime === null) {
+        startTime = timestamp;
+      }
+
+      const nextProgress = Math.min(
+        1,
+        (timestamp - startTime) / Math.max(chapterCardTypingDurationMs, 1)
+      );
+
+      setChapterCardRevealProgress(nextProgress);
+
+      if (nextProgress < 1) {
+        frameId = window.requestAnimationFrame(tick);
+      }
+    };
+
+    frameId = window.requestAnimationFrame(tick);
+
+    return () => {
+      window.cancelAnimationFrame(frameId);
+    };
+  }, [
+    activeChapterCard,
+    chapterCardTypingDurationMs,
+    prefersReducedMotion,
+    presentationPhase
+  ]);
+
+  useEffect(() => {
+    if (
+      !activeChapterCard ||
+      prefersReducedMotion ||
+      presentationPhase !== "typing" ||
+      chapterCardRevealProgress < 1
+    ) {
+      return;
+    }
+
+    setPresentationPhase("ready");
+  }, [
+    activeChapterCard,
+    chapterCardRevealProgress,
+    prefersReducedMotion,
+    presentationPhase
   ]);
 
   const handleShowTapHeader = useCallback(() => {
@@ -1241,9 +1360,14 @@ export function PlayerStoryReader({
       return;
     }
 
-    setVisibleTextLength(textCharacters.length);
+    if (activeChapterCard) {
+      setChapterCardRevealProgress(1);
+    } else {
+      setVisibleTextLength(textCharacters.length);
+    }
+
     setPresentationPhase("ready");
-  }, [canCompleteTyping, textCharacters.length]);
+  }, [activeChapterCard, canCompleteTyping, textCharacters.length]);
 
   const handleOpenMap = useCallback(() => {
     setIsTapHeaderVisible(false);
@@ -1340,6 +1464,26 @@ export function PlayerStoryReader({
       return;
     }
 
+    if (!boundaryState) {
+      const firstPlayableState = findFirstPlayableReaderState(bundle.chapter);
+      const openingBoundaryState =
+        firstPlayableState &&
+        firstPlayableState.sceneIndex === readerState.sceneIndex &&
+        firstPlayableState.dialogueIndex === readerState.dialogueIndex
+          ? getChapterOpeningBoundaryState({
+              chapter: bundle.chapter,
+              reason: "backtrack"
+            })
+          : null;
+
+      if (openingBoundaryState) {
+        setIsTapHeaderVisible(false);
+        setPendingSceneState(null);
+        setBoundaryState(openingBoundaryState);
+        return;
+      }
+    }
+
     setIsLoadingChapter(true);
 
     try {
@@ -1376,7 +1520,14 @@ export function PlayerStoryReader({
     } finally {
       setIsLoadingChapter(false);
     }
-  }, [bundle, isLoadingChapter, loadBundle, manifest, readerState]);
+  }, [
+    boundaryState,
+    bundle,
+    isLoadingChapter,
+    loadBundle,
+    manifest,
+    readerState
+  ]);
 
   const commitJumpToScene = useCallback(
     (targetBundle: RuntimeChapterBundle, sceneIndex: number) => {
@@ -1498,10 +1649,14 @@ export function PlayerStoryReader({
   const handleAdvance = useCallback(async () => {
     if (boundaryState) {
       setIsTapHeaderVisible(false);
+      const nextBoundaryState = resolveBoundaryAdvance({
+        boundaryState,
+        currentChapter: bundle?.chapter ?? null
+      });
 
-      if (boundaryState.type !== "story-finished") {
+      if (nextBoundaryState !== boundaryState) {
         setPendingSceneState(null);
-        setBoundaryState(null);
+        setBoundaryState(nextBoundaryState);
       }
 
       return;
@@ -1575,6 +1730,29 @@ export function PlayerStoryReader({
     manifest,
     presentationPhase,
     readerState
+  ]);
+
+  const handleChapterCardClick = useCallback(() => {
+    if (!activeChapterCard) {
+      return;
+    }
+
+    if (canCompleteTyping) {
+      handleCompleteTyping();
+      return;
+    }
+
+    if (presentationPhase !== "ready") {
+      return;
+    }
+
+    void handleAdvance();
+  }, [
+    activeChapterCard,
+    canCompleteTyping,
+    handleAdvance,
+    handleCompleteTyping,
+    presentationPhase
   ]);
 
   const handleDressSelect = useCallback(
@@ -1697,7 +1875,14 @@ export function PlayerStoryReader({
 
       previousNormalEntryRef.current = null;
       setPendingSceneState(null);
-      setBoundaryState(null);
+      setBoundaryState(
+        resolvedRuntime.bundle
+          ? getChapterOpeningBoundaryState({
+              chapter: resolvedRuntime.bundle.chapter,
+              reason: "restart"
+            })
+          : null
+      );
       setBranchFlags({});
       setIsPersistenceReady(true);
 
@@ -1760,7 +1945,10 @@ export function PlayerStoryReader({
   const resolvedDialogueCardVariants = dialogueCardVariants!;
   const resolvedSpeakerName =
     resolvedEntry.speaker.type === "character"
-      ? resolveDialogueTextTemplate(resolvedEntry.speaker.characterName, catName)
+      ? resolveDialogueTextTemplate(
+          resolvedEntry.speaker.characterName,
+          catName
+        )
       : null;
 
   return (
@@ -2020,6 +2208,36 @@ export function PlayerStoryReader({
             ) : null}
           </AnimatePresence>
 
+          {isChapterCard ? (
+            <div className="absolute inset-0 z-20 bg-black">
+              <button
+                onClick={handleChapterCardClick}
+                type="button"
+                aria-label={
+                  chapterOpeningCardState
+                    ? `Chapter opening for ${chapterOpeningCardState.chapterTitle}`
+                    : chapterEndingCardState
+                      ? `Chapter ending for ${chapterEndingCardState.chapterTitle}`
+                      : "Chapter card"
+                }
+                className="flex h-full w-full items-center justify-center px-6 py-10 text-center"
+              >
+                <div className="mx-auto max-w-full">
+                  <ChapterCardHandwriting
+                    text={chapterCardText}
+                    progress={
+                      prefersReducedMotion ||
+                      presentationPhase === "ready" ||
+                      presentationPhase === "exiting"
+                        ? 1
+                        : chapterCardRevealProgress
+                    }
+                  />
+                </div>
+              </button>
+            </div>
+          ) : null}
+
           {isChapterBreakCard || isStoryFinishedCard ? (
             <div className="absolute inset-x-0 top-0 z-20 p-3 md:p-5">
               <div className="rounded-[28px] border border-white/10 bg-slate-950/82 p-5 backdrop-blur">
@@ -2148,7 +2366,9 @@ export function PlayerStoryReader({
                       />
 
                       {catNameInputError ? (
-                        <p className="text-sm text-rose-300">{catNameInputError}</p>
+                        <p className="text-sm text-rose-300">
+                          {catNameInputError}
+                        </p>
                       ) : null}
                     </div>
                   ) : null}
@@ -2192,7 +2412,9 @@ export function PlayerStoryReader({
                                   ease: MOTION_EASE_OUT
                                 }}
                                 onClick={() =>
-                                  void handleDressSelect(selectedDressPromptOption.key)
+                                  void handleDressSelect(
+                                    selectedDressPromptOption.key
+                                  )
                                 }
                                 disabled={isLoadingChapter}
                                 type="button"
@@ -2214,7 +2436,8 @@ export function PlayerStoryReader({
                           </div>
 
                           <div className="mt-2 text-center text-xs text-slate-400">
-                            {dressPromptIndex + 1} of {dressPromptOptions.length}
+                            {dressPromptIndex + 1} of{" "}
+                            {dressPromptOptions.length}
                           </div>
                         </div>
 
@@ -2255,7 +2478,9 @@ export function PlayerStoryReader({
                             : CONTINUE_BUTTON_ENTER_DURATION_MS / 1000,
                           ease: MOTION_EASE_OUT
                         }}
-                        className={showContinueButton ? undefined : "pointer-events-none"}
+                        className={
+                          showContinueButton ? undefined : "pointer-events-none"
+                        }
                       >
                         <button
                           onClick={() => {
@@ -2275,14 +2500,17 @@ export function PlayerStoryReader({
                           aria-label={
                             isLoadingChapter
                               ? "Loading next line"
-                              : activeEntry?.speaker.type === "cat_name_prompt" &&
-                                  !isCatNameLocked
+                              : activeEntry?.speaker.type ===
+                                    "cat_name_prompt" && !isCatNameLocked
                                 ? "Set cat name"
                                 : "Continue"
                           }
                           className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-transparent text-slate-100 transition-opacity hover:text-white disabled:cursor-default disabled:opacity-45"
                         >
-                          <span aria-hidden className="material-symbols-outlined">
+                          <span
+                            aria-hidden
+                            className="material-symbols-outlined"
+                          >
                             arrow_forward
                           </span>
                         </button>
@@ -2534,41 +2762,40 @@ async function resolveAdvanceAction(input: {
     return {
       type: "scene-transition",
       state: result.state,
-      boundaryState: {
-        type: "scene-transition"
-      }
+      boundaryState: createBoundaryStateForAdvance({
+        manifest: input.manifest,
+        currentChapter: input.bundle.chapter,
+        action: {
+          type: "scene-transition"
+        }
+      })
     };
   }
 
   if (result.type === "chapter-break") {
-    const chapterIndex = input.manifest.chapters.findIndex(
-      (chapter) => chapter.id === result.bundle.chapter.id
-    );
-
     return {
       type: "chapter-break",
       bundle: result.bundle,
       state: result.state,
-      boundaryState: {
-        type: "chapter-break",
-        chapterTitle: result.bundle.chapter.title,
-        chapterIndex: chapterIndex + 1,
-        chapterCount: input.manifest.chapters.length
-      }
+      boundaryState: createBoundaryStateForAdvance({
+        manifest: input.manifest,
+        currentChapter: input.bundle.chapter,
+        action: {
+          type: "chapter-break",
+          nextChapter: result.bundle.chapter
+        }
+      })
     };
   }
 
-  const chapterIndex = input.manifest.chapters.findIndex(
-    (chapter) => chapter.id === input.bundle.chapter.id
-  );
-
   return {
     type: "story-finished",
-    boundaryState: {
-      type: "story-finished",
-      chapterTitle: input.bundle.chapter.title,
-      chapterIndex: chapterIndex + 1,
-      chapterCount: input.manifest.chapters.length
-    }
+    boundaryState: createBoundaryStateForAdvance({
+      manifest: input.manifest,
+      currentChapter: input.bundle.chapter,
+      action: {
+        type: "story-finished"
+      }
+    })
   };
 }

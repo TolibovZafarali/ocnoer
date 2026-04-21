@@ -5,6 +5,7 @@ import {
   createRuntimeChapterLoader,
   decidePlayerResumeAction,
   getPlayerRuntimeAssetUrls,
+  getPlayerRuntimeSceneAssetUrls,
   loadPlayerRuntimeBootstrap,
   loadPlayerRuntimeSession
 } from "@/lib/story/runtime";
@@ -647,6 +648,159 @@ describe("getPlayerRuntimeAssetUrls", () => {
       leftCharacterImageUrl: null,
       rightCharacterImageUrl: null
     });
+  });
+});
+
+describe("getPlayerRuntimeSceneAssetUrls", () => {
+  it("collects every unique image the current scene can render", () => {
+    const playableBundle = createBundle({
+      chapterId: "chapter_two",
+      title: "Chapter Two",
+      orderIndex: 2,
+      nextChapterId: null,
+      scenes: [
+        {
+          id: "scene_two",
+          title: "Scene Two",
+          orderIndex: 1,
+          backgroundImage: {
+            id: "bg_scene_two",
+            label: "Background Scene Two",
+            slug: "background-scene-two",
+            altText: null,
+            filePath: "runtime/media/opening-background.png"
+          },
+          backgroundMusic: null,
+          carryOcnoerDressSelection: true,
+          characterPool: [
+            {
+              id: "character_cat",
+              name: "Cat",
+              slug: "cat",
+              bio: null,
+              defaultEmotionKey: "default",
+              defaultEmotionImagePath: "runtime/media/cat-default.png",
+              emotions: [
+                {
+                  key: "default",
+                  label: "Default",
+                  imagePath: "runtime/media/cat-default.png"
+                }
+              ],
+              dresses: []
+            }
+          ],
+          dialogue: [
+            {
+              id: "line_one",
+              orderIndex: 1,
+              text: "The stage is set.",
+              speaker: {
+                type: "narrator"
+              },
+              stage: {
+                left: createStageCharacter({
+                  characterId: "character_left",
+                  characterName: "Left",
+                  characterSlug: "left",
+                  imagePath: "runtime/media/opening-left.png"
+                }),
+                right: null
+              }
+            },
+            {
+              id: "line_two",
+              orderIndex: 2,
+              text: "Are you ready?",
+              speaker: {
+                type: "character",
+                characterId: "character_right",
+                characterName: "Right",
+                characterSlug: "right",
+                emotionKey: "default",
+                emotionLabel: "Default",
+                emotionImagePath: "runtime/media/opening-right.png"
+              },
+              stage: {
+                left: createStageCharacter({
+                  characterId: "character_left",
+                  characterName: "Left",
+                  characterSlug: "left",
+                  imagePath: "runtime/media/opening-left.png"
+                }),
+                right: createStageCharacter({
+                  characterId: "character_right",
+                  characterName: "Right",
+                  characterSlug: "right",
+                  imagePath: "runtime/media/opening-right.png"
+                })
+              }
+            },
+            {
+              id: "line_three",
+              orderIndex: 3,
+              text: "Name your cat.",
+              speaker: {
+                type: "cat_name_prompt",
+                characterId: "character_cat",
+                characterName: "Cat",
+                characterSlug: "cat"
+              },
+              stage: {
+                left: null,
+                right: null
+              }
+            },
+            {
+              id: "line_four",
+              orderIndex: 4,
+              text: "Choose a dress.",
+              speaker: {
+                type: "dress_prompt",
+                characterId: "character_left",
+                characterName: "Left",
+                characterSlug: "left",
+                dressOptions: [
+                  {
+                    key: "default",
+                    label: "Default",
+                    previewImagePath: "runtime/media/dress-preview.png"
+                  },
+                  {
+                    key: "repeat",
+                    label: "Repeat",
+                    previewImagePath: "runtime/media/opening-right.png"
+                  }
+                ]
+              },
+              stage: {
+                left: createStageCharacter({
+                  characterId: "character_left",
+                  characterName: "Left",
+                  characterSlug: "left",
+                  imagePath: "runtime/media/opening-left.png"
+                }),
+                right: null
+              }
+            }
+          ]
+        }
+      ]
+    });
+
+    expect(
+      getPlayerRuntimeSceneAssetUrls({
+        supabaseUrl,
+        bundle: playableBundle,
+        readerState: initialReaderState
+      })
+    ).toEqual([
+      "https://example.supabase.co/storage/v1/object/public/runtime/media/opening-background.png",
+      "https://example.supabase.co/storage/v1/object/public/runtime/media/opening-left.png",
+      "https://example.supabase.co/storage/v1/object/public/runtime/media/opening-right.png",
+      "https://example.supabase.co/storage/v1/object/public/runtime/media/cat-default.png",
+      "https://example.supabase.co/storage/v1/object/public/runtime/media/dress-preview.png"
+    ]);
   });
 });
 

@@ -15,7 +15,10 @@ import type {
   RuntimeScene,
   RuntimeStageCharacter
 } from "@/lib/story/types";
-import { getSelectedDressKey, resolveDressImagePath } from "@/lib/story/wardrobe";
+import {
+  getSelectedDressKey,
+  resolveDressImagePath
+} from "@/lib/story/wardrobe";
 import { getSupabaseEnv, getSupabaseServerEnv } from "@/lib/supabase/env";
 
 export type PlayerRuntimeAssetUrls = {
@@ -327,6 +330,70 @@ export function getPlayerRuntimeAssetUrls(input: {
       visibleStageImagePaths.rightImagePath
     )
   };
+}
+
+export function getPlayerRuntimeSceneAssetUrls(input: {
+  supabaseUrl: string;
+  bundle: RuntimeChapterBundle | null;
+  readerState: ReaderState | null;
+  branchFlags?: PlayerProgress["branchFlags"];
+}) {
+  if (!input.bundle || !input.readerState) {
+    return [];
+  }
+
+  const scene = getCurrentScene(input.bundle.chapter, input.readerState);
+
+  if (!scene) {
+    return [];
+  }
+
+  const branchFlags = input.branchFlags ?? {};
+  const assetUrls = new Set<string>();
+  const addAssetUrl = (storagePath: string | null | undefined) => {
+    const assetUrl = toPublicStorageUrl(input.supabaseUrl, storagePath ?? null);
+
+    if (assetUrl) {
+      assetUrls.add(assetUrl);
+    }
+  };
+
+  addAssetUrl(scene.backgroundImage?.filePath ?? null);
+
+  scene.dialogue.forEach((dialogueEntry) => {
+    addAssetUrl(
+      resolveStageCharacterImagePath({
+        scene,
+        stageCharacter: dialogueEntry.stage.left,
+        branchFlags
+      })
+    );
+    addAssetUrl(
+      resolveStageCharacterImagePath({
+        scene,
+        stageCharacter: dialogueEntry.stage.right,
+        branchFlags
+      })
+    );
+
+    if (dialogueEntry.speaker.type === "cat_name_prompt") {
+      addAssetUrl(
+        resolveSceneCharacterImagePath({
+          scene,
+          characterId: dialogueEntry.speaker.characterId,
+          branchFlags
+        })
+      );
+    }
+
+    if (dialogueEntry.speaker.type === "dress_prompt") {
+      dialogueEntry.speaker.dressOptions.forEach((dressOption) => {
+        addAssetUrl(dressOption.previewImagePath);
+      });
+    }
+  });
+
+  return Array.from(assetUrls);
 }
 
 export function decidePlayerResumeAction(input: {

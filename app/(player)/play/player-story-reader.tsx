@@ -42,6 +42,7 @@ import {
   type PlayerBoundaryState
 } from "@/app/(player)/play/player-story-reader-boundary";
 import {
+  fadeOutBackgroundMusic,
   restartBackgroundMusic,
   resumePausedBackgroundMusic
 } from "@/app/(player)/play/player-story-reader-audio";
@@ -731,6 +732,14 @@ export function PlayerStoryReader({
       }),
     [branchFlags, pendingScene]
   );
+  const pendingSceneBackgroundMusicUrl = useMemo(
+    () =>
+      toPublicStorageUrl(
+        supabaseUrl,
+        pendingScene?.backgroundMusic?.filePath ?? null
+      ),
+    [pendingScene?.backgroundMusic?.filePath, supabaseUrl]
+  );
   const activeAssetUrls = useMemo(
     () =>
       getPlayerRuntimeAssetUrls({
@@ -1127,6 +1136,9 @@ export function PlayerStoryReader({
   const sceneTransitionLeadOutMs = prefersReducedMotion
     ? 0
     : lineExitDurationMs;
+  const sceneTransitionBackgroundMusicFadeOutMs = prefersReducedMotion
+    ? 0
+    : sceneTransitionLeadOutMs + sceneTransitionCoverDurationMs;
   const showSceneTransitionOverlay = sceneTransitionOverlayPhase !== "hidden";
   const sceneTransitionOverlayKey = pendingSceneState
     ? `scene-transition-${pendingSceneState.sceneIndex}-${pendingSceneState.dialogueIndex}`
@@ -1344,11 +1356,20 @@ export function PlayerStoryReader({
     }
 
     let cancelled = false;
+    const shouldFadeOutBackgroundMusic =
+      Boolean(backgroundMusicUrl) &&
+      backgroundMusicUrl !== pendingSceneBackgroundMusicUrl;
 
     const preloadPromise = Promise.race([
       preloadSceneImageUrls(pendingSceneAssetUrls),
       waitForDuration(SCENE_TRANSITION_ASSET_TIMEOUT_MS)
     ]);
+    const backgroundMusicFadeOutPromise = shouldFadeOutBackgroundMusic
+      ? fadeOutBackgroundMusic(
+          audioRef.current,
+          sceneTransitionBackgroundMusicFadeOutMs
+        )
+      : Promise.resolve();
 
     const runTransition = async () => {
       await waitForDuration(sceneTransitionLeadOutMs);
@@ -1359,7 +1380,10 @@ export function PlayerStoryReader({
 
       setSceneTransitionOverlayPhase("covering");
 
-      await waitForDuration(sceneTransitionCoverDurationMs);
+      await Promise.all([
+        backgroundMusicFadeOutPromise,
+        waitForDuration(sceneTransitionCoverDurationMs)
+      ]);
 
       if (cancelled) {
         return;
@@ -1405,10 +1429,13 @@ export function PlayerStoryReader({
       cancelled = true;
     };
   }, [
+    backgroundMusicUrl,
     isSceneTransition,
     pendingSceneState,
     sceneTransitionLeadOutMs,
+    pendingSceneBackgroundMusicUrl,
     pendingSceneAssetUrls,
+    sceneTransitionBackgroundMusicFadeOutMs,
     sceneTransitionCoverDurationMs,
     sceneTransitionMinimumBlackoutMs,
     sceneTransitionPostSwapHoldMs,

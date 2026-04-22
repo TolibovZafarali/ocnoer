@@ -42,6 +42,10 @@ import {
   type PlayerBoundaryState
 } from "@/app/(player)/play/player-story-reader-boundary";
 import {
+  restartBackgroundMusic,
+  resumePausedBackgroundMusic
+} from "@/app/(player)/play/player-story-reader-audio";
+import {
   analyzeSceneLightingFromImageData,
   buildSceneOverlayBackground,
   buildStageCharacterFilter,
@@ -1053,9 +1057,7 @@ export function PlayerStoryReader({
       return;
     }
 
-    audio.currentTime = 0;
-
-    void audio.play().catch(() => undefined);
+    restartBackgroundMusic(audio);
   }, [backgroundMusicUrl, isResolvingResume]);
 
   const activeScene = scene;
@@ -2082,6 +2084,7 @@ export function PlayerStoryReader({
         return;
       }
 
+      resumePausedBackgroundMusic(audioRef.current);
       setIsTapHeaderVisible(false);
       setOpeningSceneFadePhase("covering-chapter-card");
       return;

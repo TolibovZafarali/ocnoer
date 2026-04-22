@@ -66,6 +66,7 @@ function countBackgroundMusicUsage(
   return story.chapters.reduce((count, chapter) => {
     return (
       count +
+      (chapter.endingCardBackgroundMusicAssetId === assetId ? 1 : 0) +
       chapter.scenes.filter((scene) => scene.backgroundMusicAssetId === assetId)
         .length
     );
@@ -486,7 +487,7 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
                             <div className="mt-4 border-t border-slate-200 pt-4">
                               <p className="text-sm text-slate-600">
                                 {deleteBlocked
-                                  ? `Delete is blocked while ${usageCount} ${usageCount === 1 ? "scene" : "scenes"} still reference this music track.`
+                                  ? `Delete is blocked while ${usageCount} ${usageCount === 1 ? "reference" : "references"} still use this music track.`
                                   : "Delete permanently removes this music track asset."}
                               </p>
                               <form
@@ -536,7 +537,10 @@ export default async function AssetsPage({ searchParams }: AssetsPageProps) {
                       footer={
                         <>
                           <Pill>{track.type}</Pill>
-                          <Pill>{usageCount} scenes</Pill>
+                          <Pill>
+                            {usageCount}{" "}
+                            {usageCount === 1 ? "reference" : "references"}
+                          </Pill>
                         </>
                       }
                     />

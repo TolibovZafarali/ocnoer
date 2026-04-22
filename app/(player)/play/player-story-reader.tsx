@@ -758,11 +758,31 @@ export function PlayerStoryReader({
     [bundle, effectivePendingSceneBranchFlags, pendingSceneState, supabaseUrl]
   );
   const backgroundImageUrl = activeAssetUrls.backgroundImageUrl;
-  const backgroundMusicUrl = useMemo(
-    () =>
-      toPublicStorageUrl(supabaseUrl, scene?.backgroundMusic?.filePath ?? null),
-    [scene?.backgroundMusic?.filePath, supabaseUrl]
-  );
+  const chapterOpeningCardState =
+    boundaryState?.type === "chapter-opening-card" ? boundaryState : null;
+  const chapterEndingCardState =
+    boundaryState?.type === "chapter-ending-card" ? boundaryState : null;
+  const backgroundMusicUrl = useMemo(() => {
+    const sceneBackgroundMusicFilePath =
+      scene?.backgroundMusic?.filePath ?? null;
+
+    if (!chapterEndingCardState) {
+      return toPublicStorageUrl(supabaseUrl, sceneBackgroundMusicFilePath);
+    }
+
+    const endingCardBackgroundMusicFilePath =
+      chapterEndingCardState.backgroundMusicFilePath ??
+      (bundle?.chapter.id === chapterEndingCardState.chapterId
+        ? sceneBackgroundMusicFilePath
+        : null);
+
+    return toPublicStorageUrl(supabaseUrl, endingCardBackgroundMusicFilePath);
+  }, [
+    bundle?.chapter.id,
+    chapterEndingCardState,
+    scene?.backgroundMusic?.filePath,
+    supabaseUrl
+  ]);
   const stageSizeStyle = useMemo(
     () => ({
       maxWidth: `calc(100dvh * ${stageAspectRatio})`
@@ -1040,10 +1060,6 @@ export function PlayerStoryReader({
 
   const activeScene = scene;
   const activeEntry = entry;
-  const chapterOpeningCardState =
-    boundaryState?.type === "chapter-opening-card" ? boundaryState : null;
-  const chapterEndingCardState =
-    boundaryState?.type === "chapter-ending-card" ? boundaryState : null;
   const activeChapterCard = chapterOpeningCardState ?? chapterEndingCardState;
   const isTerminalChapterEndingCard =
     chapterEndingCardState?.nextState.type === "story-finished";

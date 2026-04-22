@@ -380,6 +380,12 @@ function createRuntimeChapterBundle(input: {
   backgroundMusicById: Map<string, RuntimeBackgroundMusic>;
 }) {
   const path = `${input.bucket}/${input.runtimePrefix}/chapters/${input.chapter.id}.json`;
+  const endingCardBackgroundMusic = input.chapter
+    .endingCardBackgroundMusicAssetId
+    ? (input.backgroundMusicById.get(
+        input.chapter.endingCardBackgroundMusicAssetId
+      ) ?? null)
+    : null;
   const scenes = [...input.chapter.scenes]
     .sort((left, right) => left.orderIndex - right.orderIndex)
     .map((scene) =>
@@ -390,6 +396,15 @@ function createRuntimeChapterBundle(input: {
         backgroundMusicById: input.backgroundMusicById
       })
     );
+
+  if (
+    input.chapter.endingCardBackgroundMusicAssetId &&
+    !endingCardBackgroundMusic
+  ) {
+    throw new Error(
+      `Chapter "${input.chapter.title}" references an unknown ending card background music track.`
+    );
+  }
 
   return {
     chapterId: input.chapter.id,
@@ -404,6 +419,7 @@ function createRuntimeChapterBundle(input: {
         orderIndex: input.chapter.orderIndex,
         openingCardText: input.chapter.openingCardText ?? null,
         endingCardText: input.chapter.endingCardText ?? null,
+        endingCardBackgroundMusic,
         scenes
       },
       nextChapterId: input.nextChapterId

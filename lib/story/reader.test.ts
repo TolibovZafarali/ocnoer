@@ -69,6 +69,7 @@ function createBundle(input: {
       orderIndex: input.orderIndex,
       openingCardText: null,
       endingCardText: null,
+      endingCardBackgroundMusic: null,
       scenes: input.scenes
     }
   };

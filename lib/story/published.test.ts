@@ -88,6 +88,7 @@ const snapshot: StoryAuthoringSnapshot = {
       orderIndex: 1,
       openingCardText: null,
       endingCardText: null,
+      endingCardBackgroundMusicAssetId: null,
       createdAt: "2026-03-16T00:00:00.000Z",
       updatedAt: "2026-03-16T00:00:00.000Z",
       scenes: [
@@ -177,6 +178,7 @@ describe("compileRuntimeStory", () => {
     const bundle = compiled.chapterBundles[0]?.bundle;
     expect(bundle?.chapter.openingCardText).toBeNull();
     expect(bundle?.chapter.endingCardText).toBeNull();
+    expect(bundle?.chapter.endingCardBackgroundMusic).toBeNull();
     const scene = bundle?.chapter.scenes[0];
     const narratorEntry = scene?.dialogue[0];
     const renEntry = scene?.dialogue[1];
@@ -233,7 +235,8 @@ describe("compileRuntimeStory", () => {
           {
             ...snapshot.chapters[0],
             openingCardText: "Open with silence.",
-            endingCardText: "Close in darkness."
+            endingCardText: "Close in darkness.",
+            endingCardBackgroundMusicAssetId: "music_theme"
           }
         ]
       },
@@ -248,6 +251,10 @@ describe("compileRuntimeStory", () => {
     expect(compiled.chapterBundles[0]?.bundle.chapter.endingCardText).toBe(
       "Close in darkness."
     );
+    expect(
+      compiled.chapterBundles[0]?.bundle.chapter.endingCardBackgroundMusic
+        ?.filePath
+    ).toBe("runtime/media/theme.mp3");
   });
 
   it("falls back to the left stage when Ocnoer is absent from a scene", () => {
@@ -262,6 +269,7 @@ describe("compileRuntimeStory", () => {
             orderIndex: 1,
             openingCardText: null,
             endingCardText: null,
+            endingCardBackgroundMusicAssetId: null,
             createdAt: "2026-03-16T00:00:00.000Z",
             updatedAt: "2026-03-16T00:00:00.000Z",
             scenes: [

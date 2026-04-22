@@ -225,6 +225,9 @@ function sortSnapshot(
       ...chapter,
       openingCardText: normalizeChapterCardText(chapter.openingCardText),
       endingCardText: normalizeChapterCardText(chapter.endingCardText),
+      endingCardBackgroundMusicAssetId: normalizeOptionalSceneDraftValue(
+        chapter.endingCardBackgroundMusicAssetId ?? null
+      ),
       scenes: sortByOrderIndex(chapter.scenes).map((scene) => ({
         ...scene,
         carryOcnoerDressSelection: scene.carryOcnoerDressSelection ?? true,
@@ -1745,10 +1748,12 @@ function isBackgroundMusicReferenced(
   snapshot: StoryAuthoringSnapshot,
   backgroundMusicAssetId: string
 ) {
-  return snapshot.chapters.some((chapter) =>
-    chapter.scenes.some(
-      (scene) => scene.backgroundMusicAssetId === backgroundMusicAssetId
-    )
+  return snapshot.chapters.some(
+    (chapter) =>
+      chapter.endingCardBackgroundMusicAssetId === backgroundMusicAssetId ||
+      chapter.scenes.some(
+        (scene) => scene.backgroundMusicAssetId === backgroundMusicAssetId
+      )
   );
 }
 
@@ -2701,7 +2706,7 @@ export async function deleteBackgroundMusicTrack(assetId: string) {
 
   if (isBackgroundMusicReferenced(snapshot, track.id)) {
     throw new StoryRepositoryError(
-      "Cannot delete a music track while one or more scenes still reference it."
+      "Cannot delete a music track while one or more scenes or chapter endings still reference it."
     );
   }
 
@@ -2718,13 +2723,21 @@ export async function createChapter(input: {
   orderIndex: number;
   openingCardText?: string | null;
   endingCardText?: string | null;
+  endingCardBackgroundMusicAssetId?: string | null;
 }) {
   const snapshot = await loadAuthoringSnapshot();
   const chapterId = createEntityId("chapter");
   const normalizedSlug = normalizeSlugInput(input.slug, input.title);
+  const endingCardBackgroundMusicAssetId = normalizeOptionalSceneDraftValue(
+    input.endingCardBackgroundMusicAssetId ?? null
+  );
 
   ensureUniqueChapterSlug(snapshot, normalizedSlug);
   ensureUniqueChapterOrder(snapshot, input.orderIndex);
+
+  if (endingCardBackgroundMusicAssetId) {
+    findBackgroundMusicOrThrow(snapshot, endingCardBackgroundMusicAssetId);
+  }
 
   const chapter: ChapterDefinition = {
     id: chapterId,
@@ -2733,6 +2746,7 @@ export async function createChapter(input: {
     orderIndex: input.orderIndex,
     openingCardText: normalizeChapterCardText(input.openingCardText),
     endingCardText: normalizeChapterCardText(input.endingCardText),
+    endingCardBackgroundMusicAssetId,
     scenes: [],
     createdAt: nowIsoString(),
     updatedAt: nowIsoString()
@@ -2751,10 +2765,14 @@ export async function updateChapter(input: {
   orderIndex: number;
   openingCardText?: string | null;
   endingCardText?: string | null;
+  endingCardBackgroundMusicAssetId?: string | null;
 }) {
   const snapshot = await loadAuthoringSnapshot();
   const chapter = findChapterOrThrow(snapshot, input.chapterId);
   const normalizedSlug = normalizeSlugInput(input.slug, input.title);
+  const endingCardBackgroundMusicAssetId = normalizeOptionalSceneDraftValue(
+    input.endingCardBackgroundMusicAssetId ?? null
+  );
   const orderChanged = input.orderIndex !== chapter.orderIndex;
 
   ensureUniqueChapterSlug(snapshot, normalizedSlug, chapter.id);
@@ -2763,10 +2781,15 @@ export async function updateChapter(input: {
     ensureUniqueChapterOrder(snapshot, input.orderIndex, chapter.id);
   }
 
+  if (endingCardBackgroundMusicAssetId) {
+    findBackgroundMusicOrThrow(snapshot, endingCardBackgroundMusicAssetId);
+  }
+
   chapter.title = input.title.trim();
   chapter.slug = normalizedSlug;
   chapter.openingCardText = normalizeChapterCardText(input.openingCardText);
   chapter.endingCardText = normalizeChapterCardText(input.endingCardText);
+  chapter.endingCardBackgroundMusicAssetId = endingCardBackgroundMusicAssetId;
   chapter.updatedAt = nowIsoString();
 
   if (orderChanged) {

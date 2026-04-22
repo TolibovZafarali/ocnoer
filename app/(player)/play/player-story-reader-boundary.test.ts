@@ -14,6 +14,7 @@ function createChapter(input: {
   orderIndex: number;
   openingCardText?: string | null;
   endingCardText?: string | null;
+  endingCardBackgroundMusicFilePath?: string | null;
 }) {
   return {
     id: input.id,
@@ -22,6 +23,14 @@ function createChapter(input: {
     orderIndex: input.orderIndex,
     openingCardText: input.openingCardText ?? null,
     endingCardText: input.endingCardText ?? null,
+    endingCardBackgroundMusic: input.endingCardBackgroundMusicFilePath
+      ? {
+          id: `${input.id}_ending_music`,
+          label: `${input.title} Ending`,
+          slug: `${input.id}-ending`,
+          filePath: input.endingCardBackgroundMusicFilePath
+        }
+      : null,
     scenes: []
   };
 }
@@ -31,7 +40,8 @@ const chapterOne = createChapter({
   title: "Chapter One",
   orderIndex: 1,
   openingCardText: "Open chapter one.",
-  endingCardText: "Close chapter one."
+  endingCardText: "Close chapter one.",
+  endingCardBackgroundMusicFilePath: "runtime/media/chapter-one-ending.mp3"
 });
 const chapterTwo = createChapter({
   id: "chapter_two",
@@ -120,6 +130,7 @@ describe("player story reader boundary helpers", () => {
       chapterId: "chapter_one",
       chapterTitle: "Chapter One",
       text: "Close chapter one.",
+      backgroundMusicFilePath: "runtime/media/chapter-one-ending.mp3",
       nextState: {
         type: "chapter-break",
         chapterTitle: "Chapter Two",
@@ -143,6 +154,7 @@ describe("player story reader boundary helpers", () => {
       chapterId: "chapter_one",
       chapterTitle: "Chapter One",
       text: "Close chapter one.",
+      backgroundMusicFilePath: "runtime/media/chapter-one-ending.mp3",
       nextState: {
         type: "story-finished",
         chapterTitle: "Chapter One",

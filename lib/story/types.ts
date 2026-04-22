@@ -127,6 +127,7 @@ export type ChapterDefinition = {
   orderIndex: number;
   openingCardText: string | null;
   endingCardText: string | null;
+  endingCardBackgroundMusicAssetId: string | null;
   scenes: SceneDefinition[];
   createdAt: string;
   updatedAt: string;
@@ -296,6 +297,7 @@ export type RuntimeChapterBundle = {
     orderIndex: number;
     openingCardText: string | null;
     endingCardText: string | null;
+    endingCardBackgroundMusic: RuntimeBackgroundMusic | null;
     scenes: RuntimeScene[];
   };
   nextChapterId: string | null;

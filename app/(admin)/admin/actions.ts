@@ -1046,7 +1046,11 @@ export async function updateChapterAction(formData: FormData) {
             min: 1
           }) ?? (await resolveExistingChapterOrderIndex(chapterId)),
         openingCardText: getOptionalString(formData, "openingCardText"),
-        endingCardText: getOptionalString(formData, "endingCardText")
+        endingCardText: getOptionalString(formData, "endingCardText"),
+        endingCardBackgroundMusicAssetId: getOptionalString(
+          formData,
+          "endingCardBackgroundMusicAssetId"
+        )
       });
 
       return withStatus(

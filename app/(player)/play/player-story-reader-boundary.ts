@@ -37,6 +37,7 @@ export type PlayerBoundaryState =
       chapterId: string;
       chapterTitle: string;
       text: string;
+      backgroundMusicFilePath: string | null;
       nextState: ChapterBreakBoundaryState | StoryFinishedBoundaryState;
     }
   | ChapterBreakBoundaryState
@@ -144,6 +145,8 @@ export function createBoundaryStateForAdvance(input: {
     chapterId: input.currentChapter.id,
     chapterTitle: input.currentChapter.title,
     text,
+    backgroundMusicFilePath:
+      input.currentChapter.endingCardBackgroundMusic?.filePath ?? null,
     nextState
   };
 }

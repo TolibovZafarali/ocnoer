@@ -11,6 +11,7 @@ import {
   Notice,
   PageHeader,
   Pill,
+  SelectInput,
   SectionCard,
   TextArea,
   TextInput
@@ -146,6 +147,25 @@ export default async function ChapterSettingsPage({
                 defaultValue={chapter.endingCardText ?? ""}
                 rows={5}
               />
+            </Field>
+
+            <Field
+              label="Ending Black Screen Music"
+              htmlFor="chapter-ending-card-background-music"
+              hint="Optional. Plays while the ending black screen is visible."
+            >
+              <SelectInput
+                id="chapter-ending-card-background-music"
+                name="endingCardBackgroundMusicAssetId"
+                defaultValue={chapter.endingCardBackgroundMusicAssetId ?? ""}
+              >
+                <option value="">No music</option>
+                {story.backgroundMusicTracks.map((asset) => (
+                  <option key={asset.id} value={asset.id}>
+                    {asset.label}
+                  </option>
+                ))}
+              </SelectInput>
             </Field>
 
             <div className="flex justify-end">

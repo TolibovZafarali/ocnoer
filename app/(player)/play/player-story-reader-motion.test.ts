@@ -3,10 +3,13 @@ import { describe, expect, it } from "vitest";
 import type { RuntimeDialogueEntry } from "@/lib/story/types";
 
 import {
+  CHAPTER_CARD_PAUSE_DURATION_MS,
   DEFAULT_LINE_EXIT_DURATION_MS,
   TYPING_BASE_DELAY_MS,
   TYPING_COMMA_EXTRA_DELAY_MS,
   TYPING_SENTENCE_EXTRA_DELAY_MS,
+  createChapterCardRevealPlan,
+  getChapterCardRevealProgress,
   getDialogueCardPlacement,
   getLineEnterDelayMs,
   getLineMotionConfig,
@@ -178,5 +181,53 @@ describe("player story reader motion helpers", () => {
         reducedMotion: true
       })
     ).toBe(0);
+  });
+
+  it("removes ending-card pause markers from rendered text and adds a 1.25s hold", () => {
+    const plan = createChapterCardRevealPlan({
+      text: "Before#After",
+      enablePauseMarker: true,
+      minimumTypingDurationMs: 0,
+      typingDurationMultiplier: 1
+    });
+
+    expect(plan.displayText).toBe("BeforeAfter");
+    expect(plan.pauseDurationsMs).toEqual([CHAPTER_CARD_PAUSE_DURATION_MS, 0]);
+    expect(plan.totalDurationMs).toBe(
+      getTypingDurationMs({ text: "Before" }) +
+        CHAPTER_CARD_PAUSE_DURATION_MS +
+        getTypingDurationMs({ text: "After" })
+    );
+  });
+
+  it("holds reveal progress at the marker boundary until the pause finishes", () => {
+    const plan = createChapterCardRevealPlan({
+      text: "Before#After",
+      enablePauseMarker: true,
+      minimumTypingDurationMs: 0,
+      typingDurationMultiplier: 1
+    });
+    const beforeDurationMs = getTypingDurationMs({ text: "Before" });
+    const beforeProgress =
+      Array.from("Before").length / Array.from("BeforeAfter").length;
+
+    expect(
+      getChapterCardRevealProgress({
+        elapsedMs: beforeDurationMs,
+        plan
+      })
+    ).toBeCloseTo(beforeProgress, 5);
+    expect(
+      getChapterCardRevealProgress({
+        elapsedMs: beforeDurationMs + CHAPTER_CARD_PAUSE_DURATION_MS / 2,
+        plan
+      })
+    ).toBeCloseTo(beforeProgress, 5);
+    expect(
+      getChapterCardRevealProgress({
+        elapsedMs: plan.totalDurationMs,
+        plan
+      })
+    ).toBe(1);
   });
 });

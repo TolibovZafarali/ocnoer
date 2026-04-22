@@ -19,6 +19,7 @@ import { signOutPlayerAction } from "@/app/(player)/play/actions";
 import { Button } from "@/components/ui/button";
 import { ChapterCardHandwriting } from "@/app/(player)/play/chapter-card-handwriting";
 import {
+  createChapterCardRevealPlan,
   CONTINUE_BUTTON_ENTER_DURATION_MS,
   DEFAULT_LINE_ENTER_DURATION_MS,
   DEFAULT_LINE_EXIT_DURATION_MS,
@@ -26,6 +27,7 @@ import {
   TYPING_BASE_DELAY_MS,
   type MotionDirection,
   type PresentationPhase,
+  getChapterCardRevealProgress,
   getDialogueCardPlacement,
   getLineEnterDelayMs,
   getLineMotionConfig,
@@ -1043,18 +1045,20 @@ export function PlayerStoryReader({
   const chapterEndingCardState =
     boundaryState?.type === "chapter-ending-card" ? boundaryState : null;
   const activeChapterCard = chapterOpeningCardState ?? chapterEndingCardState;
-  const chapterCardText = activeChapterCard?.text ?? "";
-  const chapterCardTypingDurationMs = useMemo(
+  const isTerminalChapterEndingCard =
+    chapterEndingCardState?.nextState.type === "story-finished";
+  const chapterCardRevealPlan = useMemo(
     () =>
-      Math.max(
-        520,
-        getTypingDurationMs({
-          text: chapterCardText,
-          reducedMotion: prefersReducedMotion
-        })
-      ) * CHAPTER_CARD_TYPING_DURATION_MULTIPLIER,
-    [chapterCardText, prefersReducedMotion]
+      createChapterCardRevealPlan({
+        text: activeChapterCard?.text ?? "",
+        reducedMotion: prefersReducedMotion,
+        enablePauseMarker: activeChapterCard?.type === "chapter-ending-card",
+        minimumTypingDurationMs: 520,
+        typingDurationMultiplier: CHAPTER_CARD_TYPING_DURATION_MULTIPLIER
+      }),
+    [activeChapterCard, prefersReducedMotion]
   );
+  const chapterCardText = chapterCardRevealPlan.displayText;
   const resolvedDialogueText = useMemo(
     () => resolveDialogueTextTemplate(activeEntry?.text ?? "", catName),
     [activeEntry?.text, catName]
@@ -1091,6 +1095,13 @@ export function PlayerStoryReader({
   const isChapterCard = Boolean(activeChapterCard);
   const isChapterBreakCard = Boolean(chapterBreakState);
   const isStoryFinishedCard = Boolean(storyFinishedState);
+  const isInteractiveChapterCard =
+    Boolean(activeChapterCard) && !isTerminalChapterEndingCard;
+  const chapterCardAriaLabel = chapterOpeningCardState
+    ? `Chapter opening for ${chapterOpeningCardState.chapterTitle}`
+    : chapterEndingCardState
+      ? `Chapter ending for ${chapterEndingCardState.chapterTitle}`
+      : "Chapter card";
   const showOpeningSceneFade =
     openingSceneFadePhase !== "hidden" &&
     (!isChapterCard || openingSceneFadePhase === "covering-chapter-card");
@@ -1590,7 +1601,10 @@ export function PlayerStoryReader({
 
       const nextProgress = Math.min(
         1,
-        (timestamp - startTime) / Math.max(chapterCardTypingDurationMs, 1)
+        getChapterCardRevealProgress({
+          elapsedMs: timestamp - startTime,
+          plan: chapterCardRevealPlan
+        })
       );
 
       setChapterCardRevealProgress(nextProgress);
@@ -1607,7 +1621,7 @@ export function PlayerStoryReader({
     };
   }, [
     activeChapterCard,
-    chapterCardTypingDurationMs,
+    chapterCardRevealPlan,
     prefersReducedMotion,
     presentationPhase
   ]);
@@ -2172,51 +2186,6 @@ export function PlayerStoryReader({
     });
   }, [dressPromptOptions.length]);
 
-  const handleRestart = useCallback(async () => {
-    if (!manifest?.firstChapterId) {
-      return;
-    }
-
-    try {
-      const resolvedRuntime = await loadPlayerRuntimeSession({
-        manifestPath,
-        supabaseUrl,
-        progress: null,
-        initialManifest: manifest,
-        loadChapter: loadBundle
-      });
-
-      previousNormalEntryRef.current = null;
-      setPendingSceneState(null);
-      setBoundaryState(
-        resolvedRuntime.bundle
-          ? getChapterOpeningBoundaryState({
-              chapter: resolvedRuntime.bundle.chapter,
-              reason: "restart"
-            })
-          : null
-      );
-      setBranchFlags({});
-      setIsPersistenceReady(true);
-
-      if (!resolvedRuntime.bundle || !resolvedRuntime.readerState) {
-        setBundle(null);
-        setReaderState(null);
-        return;
-      }
-
-      setManifest(resolvedRuntime.manifest);
-      setBundle(resolvedRuntime.bundle);
-      setReaderState(resolvedRuntime.readerState);
-    } catch (caughtError) {
-      setError(
-        caughtError instanceof Error
-          ? caughtError.message
-          : "Unable to restart the story."
-      );
-    }
-  }, [loadBundle, manifest, manifestPath, supabaseUrl]);
-
   if (isLoading || isResolvingResume) {
     return (
       <div className="flex min-h-screen w-full items-center justify-center px-6 py-6">
@@ -2544,100 +2513,87 @@ export function PlayerStoryReader({
 
           {isChapterCard ? (
             <div className="absolute inset-0 z-20 bg-black">
-              <button
-                onClick={handleChapterCardClick}
-                type="button"
-                aria-label={
-                  chapterOpeningCardState
-                    ? `Chapter opening for ${chapterOpeningCardState.chapterTitle}`
-                    : chapterEndingCardState
-                      ? `Chapter ending for ${chapterEndingCardState.chapterTitle}`
-                      : "Chapter card"
-                }
-                className="flex h-full w-full items-center justify-center px-6 py-10 text-center"
-              >
-                <div className="mx-auto max-w-full">
-                  <ChapterCardHandwriting
-                    text={chapterCardText}
-                    progress={
-                      prefersReducedMotion ||
-                      presentationPhase === "ready" ||
-                      presentationPhase === "exiting"
-                        ? 1
-                        : chapterCardRevealProgress
-                    }
-                  />
+              {isInteractiveChapterCard ? (
+                <button
+                  onClick={handleChapterCardClick}
+                  type="button"
+                  aria-label={chapterCardAriaLabel}
+                  className="flex h-full w-full items-center justify-center px-6 py-10 text-center"
+                >
+                  <div className="mx-auto max-w-full">
+                    <ChapterCardHandwriting
+                      text={chapterCardText}
+                      progress={
+                        prefersReducedMotion ||
+                        presentationPhase === "ready" ||
+                        presentationPhase === "exiting"
+                          ? 1
+                          : chapterCardRevealProgress
+                      }
+                    />
+                  </div>
+                </button>
+              ) : (
+                <div
+                  aria-label={chapterCardAriaLabel}
+                  className="flex h-full w-full items-center justify-center px-6 py-10 text-center"
+                >
+                  <div className="mx-auto max-w-full">
+                    <ChapterCardHandwriting
+                      text={chapterCardText}
+                      progress={
+                        prefersReducedMotion ||
+                        presentationPhase === "ready" ||
+                        presentationPhase === "exiting"
+                          ? 1
+                          : chapterCardRevealProgress
+                      }
+                    />
+                  </div>
                 </div>
-              </button>
+              )}
             </div>
           ) : null}
 
-          {isChapterBreakCard || isStoryFinishedCard ? (
+          {isChapterBreakCard ? (
             <div className="absolute inset-x-0 top-0 z-20 p-3 md:p-5">
               <div className="rounded-[28px] border border-white/10 bg-slate-950/82 p-5 backdrop-blur">
-                {isChapterBreakCard ? (
-                  <div>
-                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
-                          Chapter Break
-                        </p>
-                        <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-50">
-                          {chapterBreakState?.chapterTitle}
-                        </h2>
-                      </div>
-                      <PillLike>
-                        Chapter {chapterBreakState?.chapterIndex} of{" "}
-                        {chapterBreakState?.chapterCount}
-                      </PillLike>
+                <div>
+                  <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
+                        Chapter Break
+                      </p>
+                      <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-50">
+                        {chapterBreakState?.chapterTitle}
+                      </h2>
                     </div>
-
-                    <p className="max-w-3xl text-base leading-7 text-slate-300">
-                      The previous chapter is complete. Continue when you are
-                      ready to begin the next chapter.
-                    </p>
-
-                    <div className="mt-6 flex justify-end">
-                      <Button
-                        onClick={() => void handleAdvance()}
-                        disabled={isLoadingChapter}
-                      >
-                        Begin Chapter
-                      </Button>
-                    </div>
+                    <PillLike>
+                      Chapter {chapterBreakState?.chapterIndex} of{" "}
+                      {chapterBreakState?.chapterCount}
+                    </PillLike>
                   </div>
-                ) : (
-                  <div>
-                    <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-                      <div>
-                        <p className="text-sm uppercase tracking-[0.2em] text-slate-400">
-                          Story Complete
-                        </p>
-                        <h2 className="mt-2 text-3xl font-semibold tracking-tight text-slate-50">
-                          You reached the end of the current story.
-                        </h2>
-                      </div>
-                      <PillLike>
-                        Chapter {storyFinishedState?.chapterIndex} of{" "}
-                        {storyFinishedState?.chapterCount}
-                      </PillLike>
-                    </div>
 
-                    <p className="max-w-3xl text-base leading-7 text-slate-300">
-                      {storyFinishedState?.chapterTitle} is the current ending
-                      point. Restart to read from the beginning again.
-                    </p>
+                  <p className="max-w-3xl text-base leading-7 text-slate-300">
+                    The previous chapter is complete. Continue when you are
+                    ready to begin the next chapter.
+                  </p>
 
-                    <div className="mt-6 flex flex-wrap items-center justify-between gap-3">
-                      <div className="text-sm text-slate-400">
-                        The published story ends here for now.
-                      </div>
-                      <Button onClick={handleRestart}>Restart Story</Button>
-                    </div>
+                  <div className="mt-6 flex justify-end">
+                    <Button
+                      onClick={() => void handleAdvance()}
+                      disabled={isLoadingChapter}
+                    >
+                      Begin Chapter
+                    </Button>
                   </div>
-                )}
+                </div>
               </div>
             </div>
+          ) : null}
+
+          {isStoryFinishedCard ? (
+            <div className="absolute inset-0 z-20 bg-black" />
           ) : null}
 
           {showDialogueCard ? (

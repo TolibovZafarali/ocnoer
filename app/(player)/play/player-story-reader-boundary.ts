@@ -157,6 +157,10 @@ export function resolveBoundaryAdvance(input: {
   }
 
   if (input.boundaryState.type === "chapter-ending-card") {
+    if (input.boundaryState.nextState.type === "story-finished") {
+      return input.boundaryState;
+    }
+
     return input.boundaryState.nextState;
   }
 

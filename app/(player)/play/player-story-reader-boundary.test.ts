@@ -152,6 +152,46 @@ describe("player story reader boundary helpers", () => {
     });
   });
 
+  it("advances non-terminal ending cards into chapter breaks", () => {
+    const boundaryState = createBoundaryStateForAdvance({
+      manifest,
+      currentChapter: chapterOne,
+      action: {
+        type: "chapter-break",
+        nextChapter: chapterTwo
+      }
+    });
+
+    expect(
+      resolveBoundaryAdvance({
+        boundaryState,
+        currentChapter: chapterTwo
+      })
+    ).toEqual({
+      type: "chapter-break",
+      chapterTitle: "Chapter Two",
+      chapterIndex: 2,
+      chapterCount: 2
+    });
+  });
+
+  it("keeps the final ending card on screen when the story is finished", () => {
+    const boundaryState = createBoundaryStateForAdvance({
+      manifest,
+      currentChapter: chapterOne,
+      action: {
+        type: "story-finished"
+      }
+    });
+
+    expect(
+      resolveBoundaryAdvance({
+        boundaryState,
+        currentChapter: chapterOne
+      })
+    ).toBe(boundaryState);
+  });
+
   it("turns chapter-break continuation into the next chapter opening card", () => {
     expect(
       resolveBoundaryAdvance({

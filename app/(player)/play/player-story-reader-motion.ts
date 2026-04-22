@@ -8,6 +8,8 @@ export const CONTINUE_BUTTON_ENTER_DURATION_MS = 180;
 export const TYPING_BASE_DELAY_MS = 22;
 export const TYPING_COMMA_EXTRA_DELAY_MS = 42;
 export const TYPING_SENTENCE_EXTRA_DELAY_MS = 110;
+export const CHAPTER_CARD_PAUSE_MARKER = "#";
+export const CHAPTER_CARD_PAUSE_DURATION_MS = 1250;
 
 export type PresentationPhase = "entering" | "typing" | "ready" | "exiting";
 
@@ -22,6 +24,15 @@ export type LineMotionConfig = {
     left: boolean;
     right: boolean;
   };
+};
+
+export type ChapterCardRevealPlan = {
+  displayText: string;
+  totalDurationMs: number;
+  totalVisibleCharacterCount: number;
+  segmentCharacterCounts: number[];
+  segmentTypingDurationsMs: number[];
+  pauseDurationsMs: number[];
 };
 
 export function getDialogueCardPlacement(
@@ -163,4 +174,134 @@ export function getTypingDurationMs(input: {
       total + getTypingCharacterDelayMs(characters[index - 1] ?? character)
     );
   }, 0);
+}
+
+export function createChapterCardRevealPlan(input: {
+  text: string;
+  reducedMotion?: boolean;
+  enablePauseMarker?: boolean;
+  minimumTypingDurationMs?: number;
+  typingDurationMultiplier?: number;
+  pauseDurationMs?: number;
+}): ChapterCardRevealPlan {
+  const segments = input.enablePauseMarker
+    ? input.text.split(CHAPTER_CARD_PAUSE_MARKER)
+    : [input.text];
+  const displayText = segments.join("");
+  const segmentCharacterCounts = segments.map(
+    (segment) => Array.from(segment).length
+  );
+  const totalVisibleCharacterCount = segmentCharacterCounts.reduce(
+    (sum, count) => sum + count,
+    0
+  );
+
+  if (input.reducedMotion || totalVisibleCharacterCount === 0) {
+    return {
+      displayText,
+      totalDurationMs: 0,
+      totalVisibleCharacterCount,
+      segmentCharacterCounts,
+      segmentTypingDurationsMs: segmentCharacterCounts.map(() => 0),
+      pauseDurationsMs: segmentCharacterCounts.map(() => 0)
+    };
+  }
+
+  const rawSegmentTypingDurationsMs = segments.map((segment) =>
+    getTypingDurationMs({ text: segment })
+  );
+  const rawTypingDurationMs = rawSegmentTypingDurationsMs.reduce(
+    (sum, durationMs) => sum + durationMs,
+    0
+  );
+  const typingDurationMs =
+    Math.max(input.minimumTypingDurationMs ?? 0, rawTypingDurationMs) *
+    (input.typingDurationMultiplier ?? 1);
+  const segmentTypingDurationsMs =
+    rawTypingDurationMs > 0
+      ? rawSegmentTypingDurationsMs.map(
+          (durationMs) => (durationMs / rawTypingDurationMs) * typingDurationMs
+        )
+      : segmentCharacterCounts.map(
+          (characterCount) =>
+            (characterCount / totalVisibleCharacterCount) * typingDurationMs
+        );
+  const pauseDurationMs =
+    input.pauseDurationMs ?? CHAPTER_CARD_PAUSE_DURATION_MS;
+  const pauseDurationsMs = segmentCharacterCounts.map((_, segmentIndex) => {
+    if (segmentIndex === segmentCharacterCounts.length - 1) {
+      return 0;
+    }
+
+    const remainingCharacterCount = segmentCharacterCounts
+      .slice(segmentIndex + 1)
+      .reduce((sum, count) => sum + count, 0);
+
+    return remainingCharacterCount > 0 ? pauseDurationMs : 0;
+  });
+
+  return {
+    displayText,
+    totalDurationMs:
+      segmentTypingDurationsMs.reduce(
+        (sum, durationMs) => sum + durationMs,
+        0
+      ) + pauseDurationsMs.reduce((sum, durationMs) => sum + durationMs, 0),
+    totalVisibleCharacterCount,
+    segmentCharacterCounts,
+    segmentTypingDurationsMs,
+    pauseDurationsMs
+  };
+}
+
+export function getChapterCardRevealProgress(input: {
+  elapsedMs: number;
+  plan: ChapterCardRevealPlan;
+}) {
+  if (
+    input.plan.totalDurationMs <= 0 ||
+    input.plan.totalVisibleCharacterCount === 0
+  ) {
+    return 1;
+  }
+
+  let remainingElapsedMs = Math.max(0, input.elapsedMs);
+  let revealedCharacterCount = 0;
+
+  for (
+    let segmentIndex = 0;
+    segmentIndex < input.plan.segmentCharacterCounts.length;
+    segmentIndex += 1
+  ) {
+    const segmentCharacterCount =
+      input.plan.segmentCharacterCounts[segmentIndex] ?? 0;
+    const segmentTypingDurationMs =
+      input.plan.segmentTypingDurationsMs[segmentIndex] ?? 0;
+
+    if (
+      segmentTypingDurationMs > 0 &&
+      remainingElapsedMs < segmentTypingDurationMs
+    ) {
+      return Math.min(
+        1,
+        (revealedCharacterCount +
+          (remainingElapsedMs / segmentTypingDurationMs) *
+            segmentCharacterCount) /
+          input.plan.totalVisibleCharacterCount
+      );
+    }
+
+    remainingElapsedMs -= segmentTypingDurationMs;
+    revealedCharacterCount += segmentCharacterCount;
+
+    const pauseDurationMs = input.plan.pauseDurationsMs[segmentIndex] ?? 0;
+
+    if (pauseDurationMs > 0 && remainingElapsedMs < pauseDurationMs) {
+      return revealedCharacterCount / input.plan.totalVisibleCharacterCount;
+    }
+
+    remainingElapsedMs -= pauseDurationMs;
+  }
+
+  return 1;
 }

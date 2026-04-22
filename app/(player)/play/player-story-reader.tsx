@@ -95,6 +95,12 @@ type VisibleStagePortrait = {
   direction: MotionDirection;
 };
 
+type OpeningSceneFadePhase =
+  | "pending"
+  | "covering-chapter-card"
+  | "revealing"
+  | "hidden";
+
 type SceneTransitionOverlayPhase = "hidden" | "covering" | "revealing";
 
 type ResolvedAdvanceAction =
@@ -385,8 +391,8 @@ export function PlayerStoryReader({
   const [isTapHeaderVisible, setIsTapHeaderVisible] = useState(false);
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [isMapImageReady, setIsMapImageReady] = useState(false);
-  const [isOpeningSceneFadeVisible, setIsOpeningSceneFadeVisible] =
-    useState(false);
+  const [openingSceneFadePhase, setOpeningSceneFadePhase] =
+    useState<OpeningSceneFadePhase>("pending");
   const [sceneTransitionOverlayPhase, setSceneTransitionOverlayPhase] =
     useState<SceneTransitionOverlayPhase>("hidden");
   const [desktopNavGutterWidth, setDesktopNavGutterWidth] = useState(0);
@@ -679,35 +685,6 @@ export function PlayerStoryReader({
     }
   }, [branchFlags]);
 
-  useEffect(() => {
-    if (
-      hasPlayedOpeningSceneFadeRef.current ||
-      !hasPlayableSceneReady ||
-      isLoading ||
-      isResolvingResume ||
-      boundaryState
-    ) {
-      return;
-    }
-
-    hasPlayedOpeningSceneFadeRef.current = true;
-    setIsOpeningSceneFadeVisible(true);
-  }, [boundaryState, hasPlayableSceneReady, isLoading, isResolvingResume]);
-
-  useEffect(() => {
-    if (!isOpeningSceneFadeVisible) {
-      return;
-    }
-
-    const timer = window.setTimeout(() => {
-      setIsOpeningSceneFadeVisible(false);
-    }, openingSceneFadeDurationMs);
-
-    return () => {
-      window.clearTimeout(timer);
-    };
-  }, [isOpeningSceneFadeVisible, openingSceneFadeDurationMs]);
-
   const runtimeAvailability = getRuntimeAvailability({
     manifest,
     bundle,
@@ -815,6 +792,117 @@ export function PlayerStoryReader({
 
     void preloadSceneImageUrls(activeSceneAssetUrls);
   }, [activeSceneAssetUrls]);
+
+  useEffect(() => {
+    if (boundaryState?.type !== "chapter-opening-card") {
+      return;
+    }
+
+    hasPlayedOpeningSceneFadeRef.current = false;
+    setOpeningSceneFadePhase("pending");
+  }, [boundaryState]);
+
+  useEffect(() => {
+    if (
+      boundaryState?.type !== "chapter-opening-card" ||
+      openingSceneFadePhase !== "covering-chapter-card"
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const runChapterOpeningCover = async () => {
+      await waitForDuration(sceneTransitionCoverDurationMs);
+
+      if (cancelled) {
+        return;
+      }
+
+      setBoundaryState((current) =>
+        current?.type === "chapter-opening-card" ? null : current
+      );
+      setOpeningSceneFadePhase("pending");
+    };
+
+    void runChapterOpeningCover();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [boundaryState, openingSceneFadePhase, sceneTransitionCoverDurationMs]);
+
+  useEffect(() => {
+    if (
+      hasPlayedOpeningSceneFadeRef.current ||
+      openingSceneFadePhase !== "pending" ||
+      !hasPlayableSceneReady ||
+      isLoading ||
+      isResolvingResume ||
+      boundaryState
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const preloadPromise = Promise.race([
+      preloadSceneImageUrls(activeSceneAssetUrls),
+      waitForDuration(SCENE_TRANSITION_ASSET_TIMEOUT_MS)
+    ]);
+
+    const runOpeningSceneFade = async () => {
+      await Promise.all([
+        preloadPromise,
+        waitForDuration(sceneTransitionMinimumBlackoutMs)
+      ]);
+
+      if (cancelled) {
+        return;
+      }
+
+      setOpeningSceneFadePhase("revealing");
+    };
+
+    void runOpeningSceneFade();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    activeSceneAssetUrls,
+    boundaryState,
+    hasPlayableSceneReady,
+    isLoading,
+    isResolvingResume,
+    sceneTransitionMinimumBlackoutMs,
+    openingSceneFadePhase
+  ]);
+
+  useEffect(() => {
+    if (openingSceneFadePhase !== "revealing") {
+      return;
+    }
+
+    let cancelled = false;
+
+    const finishOpeningSceneFade = async () => {
+      await waitForDuration(openingSceneFadeDurationMs);
+
+      if (cancelled) {
+        return;
+      }
+
+      hasPlayedOpeningSceneFadeRef.current = true;
+      setOpeningSceneFadePhase("hidden");
+    };
+
+    void finishOpeningSceneFade();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [openingSceneFadeDurationMs, openingSceneFadePhase]);
 
   useEffect(() => {
     if (!backgroundImageUrl || typeof window === "undefined") {
@@ -992,6 +1080,10 @@ export function PlayerStoryReader({
   const isChapterCard = Boolean(activeChapterCard);
   const isChapterBreakCard = Boolean(chapterBreakState);
   const isStoryFinishedCard = Boolean(storyFinishedState);
+  const showOpeningSceneFade =
+    openingSceneFadePhase !== "hidden" &&
+    (!isChapterCard || openingSceneFadePhase === "covering-chapter-card");
+  const isOpeningSceneRevealActive = showOpeningSceneFade && !isChapterCard;
   const sceneTransitionLeadOutMs = prefersReducedMotion
     ? 0
     : lineExitDurationMs;
@@ -1011,7 +1103,8 @@ export function PlayerStoryReader({
     !isTransitionCard &&
     !isChapterCard &&
     !isChapterBreakCard &&
-    !isStoryFinishedCard;
+    !isStoryFinishedCard &&
+    !isOpeningSceneRevealActive;
   const activeTypedSurfaceId = activeChapterCard
     ? `${activeChapterCard.type}:${activeChapterCard.chapterId}`
     : showDialogueCard && activeEntry
@@ -1036,7 +1129,8 @@ export function PlayerStoryReader({
         enterDelayMs: lineEnterDelayMs
       })
     : null;
-  const hideStagePortraits = isSceneTransition || isChapterCard;
+  const hideStagePortraits =
+    isSceneTransition || isChapterCard || isOpeningSceneRevealActive;
   const leftStagePortrait =
     activeEntry &&
     !hideStagePortraits &&
@@ -1856,12 +1950,24 @@ export function PlayerStoryReader({
       return;
     }
 
+    if (chapterOpeningCardState) {
+      if (openingSceneFadePhase !== "pending") {
+        return;
+      }
+
+      setIsTapHeaderVisible(false);
+      setOpeningSceneFadePhase("covering-chapter-card");
+      return;
+    }
+
     void handleAdvance();
   }, [
     activeChapterCard,
     canCompleteTyping,
+    chapterOpeningCardState,
     handleAdvance,
     handleCompleteTyping,
+    openingSceneFadePhase,
     presentationPhase
   ]);
 
@@ -2236,14 +2342,24 @@ export function PlayerStoryReader({
 
         <div className="relative z-10 h-full">
           <AnimatePresence initial={false}>
-            {isOpeningSceneFadeVisible ? (
+            {showOpeningSceneFade ? (
               <motion.div
                 key="opening-scene-fade"
-                initial={{ opacity: 1 }}
-                animate={{ opacity: 0 }}
+                initial={{
+                  opacity:
+                    openingSceneFadePhase === "covering-chapter-card" ? 0 : 1
+                }}
+                animate={{
+                  opacity: openingSceneFadePhase === "revealing" ? 0 : 1
+                }}
                 exit={{ opacity: 0 }}
                 transition={{
-                  duration: openingSceneFadeDurationMs / 1000,
+                  duration:
+                    openingSceneFadePhase === "covering-chapter-card"
+                      ? sceneTransitionCoverDurationMs / 1000
+                      : openingSceneFadePhase === "revealing"
+                      ? openingSceneFadeDurationMs / 1000
+                      : 0,
                   ease: MOTION_EASE_OUT
                 }}
                 className="pointer-events-none absolute inset-0 z-30 bg-black will-change-opacity"

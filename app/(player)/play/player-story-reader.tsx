@@ -133,6 +133,8 @@ const SCENE_TRANSITION_POST_SWAP_HOLD_MS = 380;
 const SCENE_TRANSITION_REVEAL_DURATION_MS = 880;
 const SCENE_TRANSITION_ASSET_TIMEOUT_MS = 6000;
 const OPENING_SCENE_FADE_DURATION_MS = 1200;
+const CHAPTER_CARD_TYPING_DURATION_MULTIPLIER = 2;
+const CHAPTER_CARD_TEXT_APPEAR_DELAY_MS = 2000;
 const MAP_OVERLAY_DURATION_MS = 340;
 const DESKTOP_SCENE_NAV_MIN_GUTTER_WIDTH_PX = 220;
 const DESKTOP_SCENE_NAV_HORIZONTAL_PADDING_PX = 12;
@@ -1042,7 +1044,7 @@ export function PlayerStoryReader({
           text: chapterCardText,
           reducedMotion: prefersReducedMotion
         })
-      ),
+      ) * CHAPTER_CARD_TYPING_DURATION_MULTIPLIER,
     [chapterCardText, prefersReducedMotion]
   );
   const resolvedDialogueText = useMemo(
@@ -1427,7 +1429,9 @@ export function PlayerStoryReader({
       () => {
         setPresentationPhase("typing");
       },
-      activeChapterCard ? 0 : lineEnterDelayMs + lineEnterDurationMs
+      activeChapterCard
+        ? CHAPTER_CARD_TEXT_APPEAR_DELAY_MS
+        : lineEnterDelayMs + lineEnterDurationMs
     );
 
     return () => {

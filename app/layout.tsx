@@ -55,6 +55,7 @@ export default function RootLayout({ children }: RootLayoutProps) {
         />
       </head>
       <body
+        suppressHydrationWarning
         className={`${dialogueFont.variable} ${characterNameFont.variable} ${dressPromptFont.variable} ${chapterCardFont.variable}`}
       >
         {children}

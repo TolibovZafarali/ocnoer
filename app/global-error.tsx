@@ -26,6 +26,7 @@ export default function GlobalErrorPage({
   return (
     <html lang="en">
       <body
+        suppressHydrationWarning
         className="min-h-screen bg-slate-950 text-slate-50"
         style={{
           background:

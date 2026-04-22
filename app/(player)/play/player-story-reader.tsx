@@ -124,6 +124,12 @@ type ResolvedAdvanceAction =
       boundaryState: PlayerBoundaryState;
     };
 
+type PendingEndingCardTransition = {
+  bundle: RuntimeChapterBundle;
+  state: ReaderState;
+  boundaryState: Extract<PlayerBoundaryState, { type: "chapter-ending-card" }>;
+};
+
 const DEFAULT_STAGE_ASPECT_RATIO = 9 / 16;
 const MOTION_EASE_OUT = [0.22, 1, 0.36, 1] as const;
 const MOTION_EASE_IN = [0.4, 0, 1, 1] as const;
@@ -374,6 +380,8 @@ export function PlayerStoryReader({
     useState<PlayerBoundaryState | null>(null);
   const [pendingSceneState, setPendingSceneState] =
     useState<ReaderState | null>(null);
+  const [pendingEndingCardTransition, setPendingEndingCardTransition] =
+    useState<PendingEndingCardTransition | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(!initialManifest);
   const [isResolvingResume, setIsResolvingResume] = useState(false);
@@ -1074,11 +1082,12 @@ export function PlayerStoryReader({
   const leftCharacterImageUrl = activeAssetUrls.leftCharacterImageUrl;
   const rightCharacterImageUrl = activeAssetUrls.rightCharacterImageUrl;
   const isSceneTransition = boundaryState?.type === "scene-transition";
+  const isEndingCardTransition = Boolean(pendingEndingCardTransition);
   const chapterBreakState =
     boundaryState?.type === "chapter-break" ? boundaryState : null;
   const storyFinishedState =
     boundaryState?.type === "story-finished" ? boundaryState : null;
-  const isTransitionCard = Boolean(isSceneTransition);
+  const isTransitionCard = Boolean(isSceneTransition || isEndingCardTransition);
   const isChapterCard = Boolean(activeChapterCard);
   const isChapterBreakCard = Boolean(chapterBreakState);
   const isStoryFinishedCard = Boolean(storyFinishedState);
@@ -1090,6 +1099,11 @@ export function PlayerStoryReader({
     ? 0
     : lineExitDurationMs;
   const showSceneTransitionOverlay = sceneTransitionOverlayPhase !== "hidden";
+  const sceneTransitionOverlayKey = pendingSceneState
+    ? `scene-transition-${pendingSceneState.sceneIndex}-${pendingSceneState.dialogueIndex}`
+    : pendingEndingCardTransition
+      ? `ending-card-transition-${pendingEndingCardTransition.boundaryState.chapterId}`
+      : "scene-transition-overlay";
   const sceneTransitionOverlayOpacity =
     sceneTransitionOverlayPhase === "revealing" ? 0 : 1;
   const sceneTransitionOverlayDurationMs =
@@ -1132,7 +1146,7 @@ export function PlayerStoryReader({
       })
     : null;
   const hideStagePortraits =
-    isSceneTransition || isChapterCard || isOpeningSceneRevealActive;
+    isTransitionCard || isChapterCard || isOpeningSceneRevealActive;
   const leftStagePortrait =
     activeEntry &&
     !hideStagePortraits &&
@@ -1370,6 +1384,63 @@ export function PlayerStoryReader({
     sceneTransitionMinimumBlackoutMs,
     sceneTransitionPostSwapHoldMs,
     sceneTransitionRevealDurationMs
+  ]);
+
+  useEffect(() => {
+    if (!pendingEndingCardTransition) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const runTransition = async () => {
+      await waitForDuration(sceneTransitionLeadOutMs);
+
+      if (cancelled) {
+        return;
+      }
+
+      setSceneTransitionOverlayPhase("covering");
+
+      await waitForDuration(sceneTransitionCoverDurationMs);
+
+      if (cancelled) {
+        return;
+      }
+
+      await waitForDuration(sceneTransitionMinimumBlackoutMs);
+
+      if (cancelled) {
+        return;
+      }
+
+      startTransition(() => {
+        setBundle(pendingEndingCardTransition.bundle);
+        setReaderState(pendingEndingCardTransition.state);
+        setBoundaryState(pendingEndingCardTransition.boundaryState);
+      });
+
+      await waitForDuration(sceneTransitionPostSwapHoldMs);
+
+      if (cancelled) {
+        return;
+      }
+
+      setSceneTransitionOverlayPhase("hidden");
+      setPendingEndingCardTransition(null);
+    };
+
+    void runTransition();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    pendingEndingCardTransition,
+    sceneTransitionLeadOutMs,
+    sceneTransitionCoverDurationMs,
+    sceneTransitionMinimumBlackoutMs,
+    sceneTransitionPostSwapHoldMs
   ]);
 
   useLayoutEffect(() => {
@@ -1910,10 +1981,32 @@ export function PlayerStoryReader({
         }
 
         if (resolvedAdvance.type === "chapter-break") {
+          if (resolvedAdvance.boundaryState.type === "chapter-ending-card") {
+            setPendingSceneState(null);
+            setPendingEndingCardTransition({
+              bundle: resolvedAdvance.bundle,
+              state: resolvedAdvance.state,
+              boundaryState: resolvedAdvance.boundaryState
+            });
+            setBoundaryState(null);
+            return;
+          }
+
           setPendingSceneState(null);
           setBundle(resolvedAdvance.bundle);
           setReaderState(resolvedAdvance.state);
           setBoundaryState(resolvedAdvance.boundaryState);
+          return;
+        }
+
+        if (resolvedAdvance.boundaryState.type === "chapter-ending-card") {
+          setPendingSceneState(null);
+          setPendingEndingCardTransition({
+            bundle,
+            state: readerState,
+            boundaryState: resolvedAdvance.boundaryState
+          });
+          setBoundaryState(null);
           return;
         }
 
@@ -2362,8 +2455,8 @@ export function PlayerStoryReader({
                     openingSceneFadePhase === "covering-chapter-card"
                       ? sceneTransitionCoverDurationMs / 1000
                       : openingSceneFadePhase === "revealing"
-                      ? openingSceneFadeDurationMs / 1000
-                      : 0,
+                        ? openingSceneFadeDurationMs / 1000
+                        : 0,
                   ease: MOTION_EASE_OUT
                 }}
                 className="pointer-events-none absolute inset-0 z-30 bg-black will-change-opacity"
@@ -2371,7 +2464,7 @@ export function PlayerStoryReader({
             ) : null}
             {showSceneTransitionOverlay ? (
               <motion.div
-                key={`scene-transition-${pendingSceneState?.sceneIndex ?? "none"}-${pendingSceneState?.dialogueIndex ?? "none"}`}
+                key={sceneTransitionOverlayKey}
                 initial={{ opacity: 0 }}
                 animate={{ opacity: sceneTransitionOverlayOpacity }}
                 exit={{ opacity: 0 }}

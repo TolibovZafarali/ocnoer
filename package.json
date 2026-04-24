@@ -5,6 +5,7 @@
   "scripts": {
     "dev": "next dev --hostname localhost",
     "dev:web": "next dev --hostname localhost",
+    "dev:mobile-api": "next dev --hostname 0.0.0.0",
     "dev:ios": "corepack pnpm --filter @ocnoer/ios start",
     "build": "next build",
     "build:web": "next build",

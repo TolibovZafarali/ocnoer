@@ -33,6 +33,10 @@ function getErrorMessage(payload: unknown, fallback: string) {
   return fallback;
 }
 
+function getNetworkErrorMessage(baseUrl: string) {
+  return `Unable to reach the mobile API at ${baseUrl}. Start the Next.js backend and make sure this URL is reachable from this device.`;
+}
+
 export type MobileApiClient = {
   requestJson: <T>(path: string, options?: RequestJsonOptions) => Promise<T>;
 };
@@ -42,15 +46,24 @@ export function createMobileApiClient(
 ): MobileApiClient {
   return {
     requestJson: async <T>(path: string, options: RequestJsonOptions = {}) => {
-      const response = await fetch(`${config.baseUrl}${path}`, {
-        method: options.method ?? "GET",
-        headers: {
-          accept: "application/json",
-          ...(options.body ? { "content-type": "application/json" } : {}),
-          ...(options.token ? { authorization: `Bearer ${options.token}` } : {})
-        },
-        body: options.body ? JSON.stringify(options.body) : undefined
-      });
+      let response: Response;
+
+      try {
+        response = await fetch(`${config.baseUrl}${path}`, {
+          method: options.method ?? "GET",
+          headers: {
+            accept: "application/json",
+            ...(options.body ? { "content-type": "application/json" } : {}),
+            ...(options.token
+              ? { authorization: `Bearer ${options.token}` }
+              : {})
+          },
+          body: options.body ? JSON.stringify(options.body) : undefined
+        });
+      } catch {
+        throw new MobileApiError(getNetworkErrorMessage(config.baseUrl), 0);
+      }
+
       const payload = await readResponseJson(response);
 
       if (!response.ok) {

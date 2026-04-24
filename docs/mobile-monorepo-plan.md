@@ -52,7 +52,9 @@ Set these values before starting `apps/ios`:
 
 - `EXPO_PUBLIC_OCNOER_API_BASE_URL`: the public URL for the Next.js backend
   that serves the mobile player API. In local simulator development this is
-  usually `http://localhost:3000`.
+  usually `http://localhost:3000`. For physical-device development, start the
+  backend with `pnpm dev:mobile-api` so it listens on the LAN, then use the Mac
+  LAN URL such as `http://192.168.1.10:3000`.
 - `EXPO_PUBLIC_OCNOER_SUPABASE_URL`: the public Supabase project URL, matching
   the web app's `NEXT_PUBLIC_SUPABASE_URL`.
 - `EXPO_PUBLIC_OCNOER_RUNTIME_MANIFEST_PATH`: the public storage path for the

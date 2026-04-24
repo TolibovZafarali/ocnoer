@@ -1,3 +1,5 @@
+import { NativeModules } from "react-native";
+
 export type MobileApiConfig = {
   baseUrl: string;
 };
@@ -24,8 +26,52 @@ function readPublicEnvVar(name: MobileApiEnvVar) {
   return value;
 }
 
+function isLocalhost(hostname: string) {
+  return (
+    hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1"
+  );
+}
+
+function getDevServerHostname() {
+  const scriptURL = NativeModules.SourceCode?.scriptURL;
+
+  if (typeof scriptURL !== "string" || scriptURL.length === 0) {
+    return null;
+  }
+
+  try {
+    const hostname = new URL(scriptURL).hostname;
+
+    return hostname.length > 0 ? hostname : null;
+  } catch {
+    return null;
+  }
+}
+
+function resolveDeviceReachableLocalhost(value: string) {
+  try {
+    const url = new URL(value);
+
+    if (!isLocalhost(url.hostname)) {
+      return value;
+    }
+
+    const devServerHostname = getDevServerHostname();
+
+    if (!devServerHostname || isLocalhost(devServerHostname)) {
+      return value;
+    }
+
+    url.hostname = devServerHostname;
+
+    return url.toString();
+  } catch {
+    return value;
+  }
+}
+
 function normalizeBaseUrl(value: string) {
-  return value.replace(/\/+$/, "");
+  return resolveDeviceReachableLocalhost(value).replace(/\/+$/, "");
 }
 
 export function getMobileApiConfig(): MobileApiConfig {

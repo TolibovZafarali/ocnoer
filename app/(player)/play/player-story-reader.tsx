@@ -32,8 +32,7 @@ import {
   getLineEnterDelayMs,
   getLineMotionConfig,
   getMotionOffset,
-  getTypingCharacterDelayMs,
-  getTypingDurationMs
+  getTypingCharacterDelayMs
 } from "@/app/(player)/play/player-story-reader-motion";
 import {
   createBoundaryStateForAdvance,
@@ -48,11 +47,6 @@ import {
   resumePausedBackgroundMusic
 } from "@/app/(player)/play/player-story-reader-audio";
 import {
-  findSceneBackgroundMusicById,
-  resolveReaderStateSceneBackgroundMusicTrackId,
-  resolveSceneBackgroundMusicTrackId
-} from "@/app/(player)/play/player-story-reader-background-music";
-import {
   analyzeSceneLightingFromImageData,
   buildSceneOverlayBackground,
   buildStageCharacterFilter,
@@ -64,10 +58,13 @@ import {
   advanceRuntimePosition,
   createStoredProgress,
   findFirstPlayableReaderState,
+  findSceneBackgroundMusicById,
   getCurrentDialogue,
   getCurrentScene,
   type PlayerProgress,
   type ReaderState,
+  resolveReaderStateSceneBackgroundMusicTrackId,
+  resolveSceneBackgroundMusicTrackId,
   retreatRuntimePosition
 } from "@ocnoer/story-core";
 import type {

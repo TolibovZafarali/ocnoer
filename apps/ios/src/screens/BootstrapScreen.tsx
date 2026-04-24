@@ -18,11 +18,16 @@ import {
 } from "../runtime/preview";
 import type { MobilePlayer } from "../api/playerSessionTypes";
 import type { PlayerProgress } from "@ocnoer/story-core";
+import { AudioStatusPanel } from "../audio/AudioControls";
+import type { NativeAudioPreferences } from "../storage/audioPreferenceStorage";
 
 type BootstrapScreenProps = {
   state: RuntimeBootstrapState;
   player: MobilePlayer;
   isSigningOut: boolean;
+  audioPreferences: NativeAudioPreferences;
+  audioPreferenceError: string | null;
+  isLoadingAudioPreferences: boolean;
   isUpdatingCatName: boolean;
   isLoadingProgress: boolean;
   isResettingProgress: boolean;
@@ -33,6 +38,7 @@ type BootstrapScreenProps = {
   onRestartReading: () => void;
   onResetProgress: () => void;
   onSignOut: () => void;
+  onToggleAudioMuted: () => void;
   onUpdateCatName: (catName: string) => void;
   onOpenPreview: (chapterId: string) => void;
 };
@@ -275,6 +281,15 @@ export function BootstrapScreen(props: BootstrapScreenProps) {
               </View>
             </>
           ) : null}
+        </View>
+
+        <View style={styles.panel}>
+          <AudioStatusPanel
+            error={props.audioPreferenceError}
+            isLoading={props.isLoadingAudioPreferences}
+            preferences={props.audioPreferences}
+            onToggleMuted={props.onToggleAudioMuted}
+          />
         </View>
 
         <View style={styles.panel}>

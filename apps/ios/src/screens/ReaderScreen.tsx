@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, type ReactNode } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -17,6 +17,9 @@ import {
 import type { PlayerRuntimeBootstrap } from "@ocnoer/story-core";
 
 import type { MobilePlayer } from "../api/playerSessionTypes";
+import { AudioStatusPanel } from "../audio/AudioControls";
+import { resolveNativeReaderBackgroundMusicCue } from "../audio/nativeBackgroundMusicCue";
+import { useNativeBackgroundMusic } from "../audio/useNativeBackgroundMusic";
 import type { MobileRuntimeConfig } from "../config/runtime";
 import type { NativeReaderBoundaryPresentation } from "../reader/boundaryPresentation";
 import { useReaderImagePreload } from "../reader/imagePreload";
@@ -26,13 +29,16 @@ import type {
   NativeReaderPresentation
 } from "../reader/readerPresentation";
 import { useNativeReaderController } from "../reader/useNativeReaderController";
+import type { NativeAudioPreferences } from "../storage/audioPreferenceStorage";
 
 type ReaderScreenProps = {
   bootstrap: PlayerRuntimeBootstrap;
   config: MobileRuntimeConfig;
   player: MobilePlayer;
+  audioPreferences: NativeAudioPreferences;
   onBackHome: () => void;
   onProgressSaved: () => void;
+  onToggleAudioMuted: () => void;
   onUpdateCatName: (catName: string) => Promise<void>;
 };
 
@@ -422,6 +428,27 @@ export function ReaderScreen(props: ReaderScreenProps) {
   });
   const presentation = reader.presentation;
   const boundaryPresentation = reader.boundaryPresentation;
+  const backgroundMusicCue = useMemo(() => {
+    if (reader.state.status !== "ready" && reader.state.status !== "finished") {
+      return resolveNativeReaderBackgroundMusicCue({
+        supabaseUrl: props.config.supabaseUrl,
+        bundle: null,
+        readerState: null,
+        boundaryState: reader.boundaryState
+      });
+    }
+
+    return resolveNativeReaderBackgroundMusicCue({
+      supabaseUrl: props.config.supabaseUrl,
+      bundle: reader.state.bundle,
+      readerState: reader.state.readerState,
+      boundaryState: reader.boundaryState
+    });
+  }, [props.config.supabaseUrl, reader.boundaryState, reader.state]);
+  const audioStatus = useNativeBackgroundMusic({
+    cue: backgroundMusicCue,
+    preferences: props.audioPreferences
+  });
 
   useReaderImagePreload(reader.preloadImageUrls);
 
@@ -506,6 +533,13 @@ export function ReaderScreen(props: ReaderScreenProps) {
             subtitle={boundaryPresentation.eyebrow}
             onBackHome={props.onBackHome}
           />
+          <View style={styles.audioBar}>
+            <AudioStatusPanel
+              preferences={props.audioPreferences}
+              status={audioStatus}
+              onToggleMuted={props.onToggleAudioMuted}
+            />
+          </View>
           <ReaderBoundaryCard
             actionError={reader.actionError}
             boundary={boundaryPresentation}
@@ -529,6 +563,13 @@ export function ReaderScreen(props: ReaderScreenProps) {
             subtitle="Story complete"
             onBackHome={props.onBackHome}
           />
+          <View style={styles.audioBar}>
+            <AudioStatusPanel
+              preferences={props.audioPreferences}
+              status={audioStatus}
+              onToggleMuted={props.onToggleAudioMuted}
+            />
+          </View>
           <ReaderStage presentation={presentation} />
           <View style={styles.dialoguePanel}>
             <Text style={styles.messageTitle}>Story Finished</Text>
@@ -557,6 +598,13 @@ export function ReaderScreen(props: ReaderScreenProps) {
           subtitle={`Scene ${presentation.sceneIndex + 1}/${presentation.sceneCount} - Line ${presentation.dialogueIndex + 1}/${presentation.dialogueCount}`}
           onBackHome={props.onBackHome}
         />
+        <View style={styles.audioBar}>
+          <AudioStatusPanel
+            preferences={props.audioPreferences}
+            status={audioStatus}
+            onToggleMuted={props.onToggleAudioMuted}
+          />
+        </View>
         <ReaderStage presentation={presentation} />
         <FadeInView
           animationKey={`${presentation.status}:${presentation.dialogueEntryId}`}
@@ -622,6 +670,15 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 17,
     marginTop: 2
+  },
+  audioBar: {
+    backgroundColor: "#0b1220",
+    borderColor: "#273244",
+    borderRadius: 8,
+    borderWidth: 1,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10
   },
   stage: {
     backgroundColor: "#111827",

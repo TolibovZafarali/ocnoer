@@ -4,6 +4,7 @@ import { StatusBar } from "expo-status-bar";
 import type { PlayerProgress } from "@ocnoer/story-core";
 
 import { createPlayerSessionClient } from "./src/api/playerSessionClient";
+import { useAudioPreferences } from "./src/audio/useAudioPreferences";
 import type { StoredPlayerSession } from "./src/storage/playerSessionStorage";
 import { usePlayerSession } from "./src/hooks/usePlayerSession";
 import { useRuntimeBootstrap } from "./src/hooks/useRuntimeBootstrap";
@@ -38,6 +39,7 @@ type AuthenticatedScreen =
 
 function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
   const { state, reload } = useRuntimeBootstrap();
+  const audioPreferences = useAudioPreferences();
   const mountedRef = useRef(true);
   const [activeScreen, setActiveScreen] = useState<AuthenticatedScreen>({
     type: "home"
@@ -161,8 +163,10 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
   if (state.status === "success" && activeScreen.type === "reader") {
     return (
       <ReaderScreen
+        audioPreferences={audioPreferences.preferences}
         bootstrap={state.bootstrap}
         config={state.config}
+        onToggleAudioMuted={audioPreferences.toggleMuted}
         onBackHome={returnHomeFromReader}
         onProgressSaved={() => undefined}
         onUpdateCatName={(catName) =>
@@ -178,6 +182,9 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
   return (
     <BootstrapScreen
       catNameError={catNameError}
+      audioPreferenceError={audioPreferences.error}
+      audioPreferences={audioPreferences.preferences}
+      isLoadingAudioPreferences={audioPreferences.isLoading}
       isLoadingProgress={isLoadingProgress}
       isResettingProgress={isResettingProgress}
       isUpdatingCatName={isUpdatingCatName}
@@ -194,6 +201,7 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
         })
       }
       onRetry={reload}
+      onToggleAudioMuted={audioPreferences.toggleMuted}
       onRestartReading={restartReading}
       onResetProgress={resetProgress}
       onSignOut={props.onSignOut}

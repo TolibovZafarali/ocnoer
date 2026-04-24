@@ -29,6 +29,8 @@ Currently shared:
 - reader state and progression logic from `lib/story/reader.ts`
 - wardrobe/dress branch flag logic from `lib/story/wardrobe.ts`
 - primary character staging helper from `lib/story/staging.ts`
+- portable background music cue resolution for scene defaults, ordered
+  after-dialogue cues, and explicit cue-to-silence transitions
 - platform-safe runtime helpers for public storage URLs, scene asset URL
   resolution, runtime manifest/chapter fetching, bootstrap loading, and resume
   decisions
@@ -39,7 +41,7 @@ Not shared yet:
 - server actions
 - cookie-based auth/session code
 - Supabase service-role code
-- DOM, browser, audio, and React UI code
+- DOM, browser audio elements, native audio managers, and React UI code
 - localStorage persistence implementation
 
 ## iOS Runtime Configuration
@@ -202,16 +204,69 @@ Basic immersion support in this MVP:
   image prefetch
 - background, boundary, portrait, and dialogue changes use small native fades
 
+## iOS Background Music MVP
+
+The native reader now plays background music from the same published runtime
+data used by the web player. The shared cue resolver lives in
+`@ocnoer/story-core` and handles these portable rules:
+
+- start with the active scene's `backgroundMusic`
+- apply ordered `backgroundMusicCues` only after the referenced dialogue row has
+  passed
+- switch tracks when a later active cue points at a different runtime music
+  asset
+- switch to silence when a cue explicitly has `backgroundMusic: null`
+- use chapter ending-card music while a `chapter-ending-card` boundary is active
+
+The current published runtime checked for this pass was generated on
+2026-04-23T15:58:48.711Z. It has 15 published background music tracks, 12
+scenes with default scene music, one in-scene music cue, no explicit silence
+cues, and chapter ending-card music for Chapter 1. The iOS implementation uses
+those real runtime file paths through Supabase public object URLs; it does not
+mock or bundle fake audio.
+
+Native playback is intentionally separate from the web `<audio>` implementation:
+
+- `expo-audio` creates one native looping player at a time
+- scene dialogue advances keep the current player stable when the resolved cue
+  does not change
+- track changes fade out the old player, release it, create the next player,
+  and fade in to the saved volume
+- unsupported music paths are surfaced as `Music unavailable` in the reader
+  audio status instead of being treated as normal silence
+- the reader stops and releases playback when it unmounts, when the player
+  returns home, or when sign-out unmounts the authenticated shell
+- the app pauses/releases active music when iOS sends it to the background and
+  resumes the current cue when it returns to the foreground
+
+Audio preference storage is local-only:
+
+- `apps/ios/src/storage/audioPreferenceStorage.ts` stores
+  `ocnoer.mobile.audioPreferences.v1` in AsyncStorage
+- the stored fields are `muted` and `volume`
+- the current UI exposes mute/unmute on the home screen and reader; volume is
+  stored and honored by the audio manager, but a slider is intentionally left
+  out until the mobile settings UI has a better home
+
+Supported music cases in this pass:
+
+- scene default background music
+- in-scene after-dialogue music cue changes
+- explicit in-scene music cue silence
+- chapter ending-card music
+- no-music scene/reader states
+- invalid or unsupported runtime music file paths as visible unsupported states
+
 Still missing before rough parity with the web reader:
 
 - full web stage positioning, lighting analysis, and DOM-style portrait motion
 - Framer Motion parity, typed text timing, scene blackout choreography, and map
   UI
-- background music/audio playback
 - next-chapter asset preloading before a chapter bundle has been loaded
 - backend progress sync
 - full mobile-specific handling for any future branch or prompt types beyond the
   four supported MVP entry types
+- sound effects and a production-level audio mixing/settings system
 
 Native staging simplification versus web:
 
@@ -243,9 +298,10 @@ adapter, and auth/session flow must be implemented separately for Expo.
    helpers as the shared surface grows.
 2. Exercise the native boundary/staging pass in the simulator against the
    current public runtime and adjust layout only where real content breaks it.
-3. Add backend progress sync once the mobile reader has real progression
+3. Manually test native background music cue changes and app lifecycle behavior
+   on an iOS simulator/device with the current published runtime.
+4. Add backend progress sync once the mobile reader has real progression
    events to save.
-4. Add mobile-specific audio/music playback after visual reader parity is
-   stable.
-5. Revisit map UI, typed text, lighting, and richer scene transitions after the
+5. Revisit map UI, typed text, lighting, sound effects, and richer scene
+   transitions after the
    native reader can complete the currently published chapter comfortably.

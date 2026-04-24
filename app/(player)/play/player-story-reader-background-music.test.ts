@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 
 import {
   findSceneBackgroundMusicById,
+  resolveSceneBackgroundMusic,
   resolveSceneBackgroundMusicTrackId
-} from "@/app/(player)/play/player-story-reader-background-music";
+} from "@ocnoer/story-core";
 import type { RuntimeScene } from "@ocnoer/story-core";
 
 const scene: RuntimeScene = {
@@ -97,6 +98,38 @@ describe("player story reader background music helpers", () => {
         dialogueIndex: 2
       })
     ).toBeNull();
+  });
+
+  it("reports whether the active runtime music source is a cue or scene default", () => {
+    expect(
+      resolveSceneBackgroundMusic({
+        scene,
+        dialogueIndex: 0
+      })
+    ).toMatchObject({
+      type: "track",
+      source: "scene"
+    });
+    expect(
+      resolveSceneBackgroundMusic({
+        scene,
+        dialogueIndex: 1
+      })
+    ).toMatchObject({
+      type: "track",
+      source: "cue",
+      cueAfterDialogueEntryId: "dialogue_1"
+    });
+    expect(
+      resolveSceneBackgroundMusic({
+        scene,
+        dialogueIndex: 2
+      })
+    ).toMatchObject({
+      type: "silence",
+      source: "cue",
+      cueAfterDialogueEntryId: "dialogue_2"
+    });
   });
 
   it("finds the active track object by id", () => {

@@ -1,73 +1,108 @@
+import { useState } from "react";
 import { StatusBar } from "expo-status-bar";
-import { SafeAreaView, StyleSheet, Text, View } from "react-native";
 
-import { STORY_SCHEMA_VERSION } from "@ocnoer/story-core";
+import { createPlayerSessionClient } from "./src/api/playerSessionClient";
+import type { StoredPlayerSession } from "./src/storage/playerSessionStorage";
+import { usePlayerSession } from "./src/hooks/usePlayerSession";
+import { useRuntimeBootstrap } from "./src/hooks/useRuntimeBootstrap";
+import { BootstrapScreen } from "./src/screens/BootstrapScreen";
+import { ChapterPreviewScreen } from "./src/screens/ChapterPreviewScreen";
+import { RestoreSessionScreen } from "./src/screens/RestoreSessionScreen";
+import { SignInScreen } from "./src/screens/SignInScreen";
 
-export default function App() {
+type AuthenticatedRuntimeShellProps = {
+  storedSession: StoredPlayerSession;
+  isSigningOut: boolean;
+  onPlayerUpdated: (player: StoredPlayerSession["player"]) => Promise<void>;
+  onSignOut: () => void;
+};
+
+function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
+  const { state, reload } = useRuntimeBootstrap();
+  const [previewChapterId, setPreviewChapterId] = useState<string | null>(null);
+  const [catNameError, setCatNameError] = useState<string | null>(null);
+  const [isUpdatingCatName, setIsUpdatingCatName] = useState(false);
+
+  async function updateCatName(catName: string) {
+    setIsUpdatingCatName(true);
+    setCatNameError(null);
+
+    try {
+      const result = await createPlayerSessionClient().updateCatName(
+        props.storedSession.session.token,
+        catName
+      );
+
+      await props.onPlayerUpdated(result.player);
+    } catch (error) {
+      setCatNameError(
+        error instanceof Error ? error.message : "Unable to save cat name."
+      );
+    } finally {
+      setIsUpdatingCatName(false);
+    }
+  }
+
+  if (state.status === "success" && previewChapterId) {
+    return (
+      <ChapterPreviewScreen
+        chapterId={previewChapterId}
+        config={state.config}
+        manifest={state.bootstrap.initialManifest}
+        onBack={() => setPreviewChapterId(null)}
+      />
+    );
+  }
+
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <StatusBar style="light" />
-      <View style={styles.container}>
-        <View style={styles.badge}>
-          <Text style={styles.badgeText}>iOS scaffold</Text>
-        </View>
-
-        <Text style={styles.title}>Ocnoer iOS Player</Text>
-        <Text style={styles.body}>
-          This is the placeholder Expo app shell for the Ocnoer iOS player.
-        </Text>
-        <Text style={styles.note}>
-          The real player reader will be ported from the web app in later steps.
-          Shared story contracts are wired through story-core schema version{" "}
-          {STORY_SCHEMA_VERSION}.
-        </Text>
-      </View>
-    </SafeAreaView>
+    <BootstrapScreen
+      catNameError={catNameError}
+      isUpdatingCatName={isUpdatingCatName}
+      isSigningOut={props.isSigningOut}
+      onOpenPreview={setPreviewChapterId}
+      onRetry={reload}
+      onSignOut={props.onSignOut}
+      onUpdateCatName={updateCatName}
+      player={props.storedSession.player}
+      state={state}
+    />
   );
 }
 
-const styles = StyleSheet.create({
-  safeArea: {
-    flex: 1,
-    backgroundColor: "#05070f"
-  },
-  container: {
-    flex: 1,
-    justifyContent: "center",
-    paddingHorizontal: 28
-  },
-  badge: {
-    alignSelf: "flex-start",
-    borderColor: "rgba(255,255,255,0.16)",
-    borderRadius: 999,
-    borderWidth: 1,
-    marginBottom: 20,
-    paddingHorizontal: 12,
-    paddingVertical: 6
-  },
-  badgeText: {
-    color: "#cbd5e1",
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 1,
-    textTransform: "uppercase"
-  },
-  title: {
-    color: "#f8fafc",
-    fontSize: 34,
-    fontWeight: "700",
-    lineHeight: 40,
-    marginBottom: 14
-  },
-  body: {
-    color: "#dbeafe",
-    fontSize: 18,
-    lineHeight: 27,
-    marginBottom: 14
-  },
-  note: {
-    color: "#94a3b8",
-    fontSize: 15,
-    lineHeight: 23
+export default function App() {
+  const { state, signIn, signOut, replacePlayer } = usePlayerSession();
+
+  if (state.status === "restoring") {
+    return (
+      <>
+        <StatusBar style="light" />
+        <RestoreSessionScreen />
+      </>
+    );
   }
-});
+
+  if (state.status === "signed-out") {
+    return (
+      <>
+        <StatusBar style="light" />
+        <SignInScreen
+          error={state.error}
+          isSubmitting={state.isSubmitting}
+          onSignIn={signIn}
+        />
+      </>
+    );
+  }
+
+  return (
+    <>
+      <StatusBar style="light" />
+      <AuthenticatedRuntimeShell
+        isSigningOut={state.isSubmitting}
+        onPlayerUpdated={replacePlayer}
+        onSignOut={signOut}
+        storedSession={state.storedSession}
+      />
+    </>
+  );
+}

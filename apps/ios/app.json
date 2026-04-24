@@ -12,7 +12,7 @@
       "supportsTablet": false
     },
     "extra": {
-      "portStage": "scaffold"
+      "portStage": "mobile-session-bootstrap"
     }
   }
 }

@@ -30,7 +30,8 @@ Currently shared:
 - wardrobe/dress branch flag logic from `lib/story/wardrobe.ts`
 - primary character staging helper from `lib/story/staging.ts`
 - platform-safe runtime helpers for public storage URLs, scene asset URL
-  resolution, and resume decisions
+  resolution, runtime manifest/chapter fetching, bootstrap loading, and resume
+  decisions
 
 Not shared yet:
 
@@ -40,6 +41,100 @@ Not shared yet:
 - Supabase service-role code
 - DOM, browser, audio, and React UI code
 - localStorage persistence implementation
+
+## iOS Runtime Configuration
+
+The Expo app loads only public runtime files. It does not use Next.js cookies,
+server actions, server-only helpers, Supabase service-role keys, or private
+bucket configuration.
+
+Set these values before starting `apps/ios`:
+
+- `EXPO_PUBLIC_OCNOER_API_BASE_URL`: the public URL for the Next.js backend
+  that serves the mobile player API. In local simulator development this is
+  usually `http://localhost:3000`.
+- `EXPO_PUBLIC_OCNOER_SUPABASE_URL`: the public Supabase project URL, matching
+  the web app's `NEXT_PUBLIC_SUPABASE_URL`.
+- `EXPO_PUBLIC_OCNOER_RUNTIME_MANIFEST_PATH`: the public storage path for the
+  published runtime manifest, for example `runtime/runtime/manifest.json` when
+  the runtime bucket is `runtime`.
+
+`apps/ios/.env.example` contains placeholder values for the required public
+Expo variables.
+
+The mobile app reads those values in `apps/ios/src/config/runtime.ts`, creates a
+runtime repository in `apps/ios/src/runtime/runtimeRepository.ts`, then calls
+the shared `@ocnoer/story-core` loader. The loader turns storage paths from
+`runtime/manifest.json` and chapter bundle entries into Supabase public object
+URLs and fetches the same JSON files used by the web player.
+
+The root web app still derives its manifest path from
+`SUPABASE_RUNTIME_BUCKET` on the server in `lib/story/runtime.ts`. That
+server-only boundary is not imported by the iOS app.
+
+## Current iOS Runtime Bootstrap
+
+`apps/ios` now has a real bootstrap flow:
+
+- loading state while the manifest and first playable bundle are fetched
+- error state for missing public env or failed runtime fetches
+- success state showing manifest version, generated timestamp, chapter count,
+  initial chapter id/title, runtime host, and manifest path
+- chapter preview screen that fetches a real chapter bundle and displays the
+  chapter title, scene id/title, scene count, and the first dialogue entries
+  with speaker names
+
+This is deliberately not the final mobile reader. It proves authenticated
+published data access without implementing save/resume sync, final reader
+animations, music playback, image staging, or the complete player UI.
+
+## iOS Mobile Player Auth
+
+The web player still uses its existing Next.js cookie and server-action flow.
+The iOS app uses separate mobile-safe API routes and never imports Next.js
+cookies, server actions, or server-only helpers.
+
+Added mobile endpoints:
+
+- `POST /api/mobile/player/session`: accepts `{ "secret": "..." }` or
+  `{ "password": "..." }`, validates the same player profile credential used by
+  the web player, and returns a signed bearer token plus minimal player data.
+- `GET /api/mobile/player/session`: validates
+  `Authorization: Bearer <token>` and returns the current mobile session/player
+  payload.
+- `DELETE /api/mobile/player/session`: stateless logout acknowledgement for the
+  mobile client.
+- `GET /api/mobile/player/profile`: validates the bearer token and returns the
+  current player payload.
+- `PATCH /api/mobile/player/profile/cat-name`: validates the bearer token and
+  applies the same one-time cat-name update rule used by the web player.
+
+The signed token is created and validated server-side in
+`lib/auth/player-session.ts`. `lib/auth/player.ts` remains the web cookie
+wrapper, so the current website sign-in flow is preserved.
+
+On iOS:
+
+- `apps/ios/src/api` contains the mobile API client and response types.
+- `apps/ios/src/storage/playerSessionStorage.ts` stores the small mobile
+  session payload in `expo-secure-store`.
+- `apps/ios/src/hooks/usePlayerSession.ts` restores the stored token on launch,
+  validates it with the backend, and clears it if invalid.
+- `apps/ios/src/screens/SignInScreen.tsx` provides the basic player credential
+  sign-in screen.
+
+## iOS Local Progress Storage
+
+`apps/ios/src/storage/playerProgressStorage.ts` defines the local mobile
+progress adapter for the future reader port. It stores `PlayerProgress` records
+from `@ocnoer/story-core` in AsyncStorage by player id:
+
+- `loadProgressByPlayerId(playerId)`
+- `saveProgressByPlayerId(playerId, progress)`
+- `clearProgressByPlayerId(playerId)`
+
+This is local-only persistence. It intentionally does not sync progress to the
+backend yet, and it intentionally keeps progress out of SecureStore.
 
 ## Why The Web UI Cannot Be Copied Directly
 
@@ -57,11 +152,10 @@ adapter, and auth/session flow must be implemented separately for Expo.
 
 1. Add small tests for `packages/story-core` so shared reader behavior is locked
    before the mobile reader is implemented.
-2. Define an iOS persistence adapter to replace the current web-only
-   `localStorage` progress storage.
-3. Define a mobile-safe runtime config path that never ships service-role
-   secrets.
-4. Build a first native reader screen in `apps/ios` using the shared story
-   contracts, starting with static bundled/mock runtime data.
+2. Wire the native reader prototype to the local iOS progress adapter.
+3. Add backend progress sync once the mobile reader has real progression
+   events to save.
+4. Build the first native reader screen in `apps/ios` using the shared story
+   contracts and the public runtime repository.
 5. Add mobile-specific audio and image preloading adapters after the reader
    screen shape is stable.

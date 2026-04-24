@@ -2,12 +2,16 @@ import {
   createReaderStateFromProgress,
   getCurrentDialogue,
   getCurrentScene,
+  getManifestChapterById,
+  resolvePlayableRuntimePosition,
   type PlayerProgress,
-  type ReaderState
+  type ReaderState,
+  type RuntimeChapterLoader
 } from "./reader";
 import type {
   RuntimeChapterBundle,
   RuntimeDialogueEntry,
+  RuntimeManifest,
   RuntimeScene,
   RuntimeStageCharacter
 } from "./types";
@@ -17,6 +21,34 @@ export type PlayerRuntimeAssetUrls = {
   backgroundImageUrl: string | null;
   leftCharacterImageUrl: string | null;
   rightCharacterImageUrl: string | null;
+};
+
+export type RuntimeFetchInit = {
+  cache?: "no-store";
+};
+
+export type RuntimeFetchResponse = {
+  ok: boolean;
+  status: number;
+  json: () => Promise<unknown>;
+};
+
+export type RuntimeJsonFetcher = (
+  url: string,
+  init?: RuntimeFetchInit
+) => Promise<RuntimeFetchResponse>;
+
+export type PlayerRuntimeBootstrap = {
+  initialManifest: RuntimeManifest;
+  initialBundle: RuntimeChapterBundle | null;
+  initialReaderState: ReaderState | null;
+  initialAssetUrls: PlayerRuntimeAssetUrls;
+};
+
+export type PlayerRuntimeSession = {
+  manifest: RuntimeManifest;
+  bundle: RuntimeChapterBundle | null;
+  readerState: ReaderState | null;
 };
 
 export type PlayerResumeAction =
@@ -182,6 +214,149 @@ export function toPublicStorageUrl(
   }
 
   return `${supabaseUrl}/storage/v1/object/public/${bucket}/${rest.join("/")}`;
+}
+
+function getGlobalRuntimeJsonFetcher(): RuntimeJsonFetcher {
+  const fetcher = (globalThis as { fetch?: RuntimeJsonFetcher }).fetch;
+
+  if (!fetcher) {
+    throw new Error("Runtime JSON loading requires a global fetch function.");
+  }
+
+  return fetcher.bind(globalThis);
+}
+
+export async function fetchRuntimeJson<T>(
+  supabaseUrl: string,
+  storagePath: string,
+  options?: {
+    fetcher?: RuntimeJsonFetcher;
+  }
+): Promise<T> {
+  const url = toPublicStorageUrl(supabaseUrl, storagePath);
+
+  if (!url) {
+    throw new Error("Runtime storage path is invalid.");
+  }
+
+  const fetcher = options?.fetcher ?? getGlobalRuntimeJsonFetcher();
+  const response = await fetcher(url, {
+    cache: "no-store"
+  });
+
+  if (!response.ok) {
+    throw new Error(`Unable to load runtime JSON (${response.status}).`);
+  }
+
+  return (await response.json()) as T;
+}
+
+export function createRuntimeChapterLoader(input: {
+  supabaseUrl: string;
+  cache?: Map<string, RuntimeChapterBundle>;
+  fetcher?: RuntimeJsonFetcher;
+}): RuntimeChapterLoader {
+  return async (manifest, chapterId) => {
+    const cached = input.cache?.get(chapterId);
+
+    if (cached) {
+      return cached;
+    }
+
+    const manifestChapter = getManifestChapterById(manifest, chapterId);
+
+    if (!manifestChapter) {
+      throw new Error(
+        "Requested chapter is not available in runtime manifest."
+      );
+    }
+
+    const loadedBundle = await fetchRuntimeJson<RuntimeChapterBundle>(
+      input.supabaseUrl,
+      manifestChapter.bundlePath,
+      {
+        fetcher: input.fetcher
+      }
+    );
+
+    input.cache?.set(chapterId, loadedBundle);
+    return loadedBundle;
+  };
+}
+
+export async function loadPlayerRuntimeSession(input: {
+  manifestPath: string;
+  supabaseUrl: string;
+  progress: Pick<
+    PlayerProgress,
+    "chapterId" | "sceneId" | "dialogueEntryId"
+  > | null;
+  initialManifest?: RuntimeManifest | null;
+  loadChapter?: RuntimeChapterLoader;
+  fetcher?: RuntimeJsonFetcher;
+}): Promise<PlayerRuntimeSession> {
+  const manifest =
+    input.initialManifest ??
+    (await fetchRuntimeJson<RuntimeManifest>(
+      input.supabaseUrl,
+      input.manifestPath,
+      {
+        fetcher: input.fetcher
+      }
+    ));
+
+  if (!manifest.firstChapterId) {
+    return {
+      manifest,
+      bundle: null,
+      readerState: null
+    };
+  }
+
+  const loadChapter =
+    input.loadChapter ??
+    createRuntimeChapterLoader({
+      supabaseUrl: input.supabaseUrl,
+      fetcher: input.fetcher
+    });
+  const resolvedRuntime = await resolvePlayableRuntimePosition({
+    manifest,
+    loadChapter,
+    progress: input.progress,
+    startChapterId: manifest.firstChapterId
+  });
+
+  return {
+    manifest,
+    bundle: resolvedRuntime?.bundle ?? null,
+    readerState: resolvedRuntime?.state ?? null
+  };
+}
+
+export async function loadPlayerRuntimeBootstrap(input: {
+  manifestPath: string;
+  supabaseUrl: string;
+  loadChapter?: RuntimeChapterLoader;
+  fetcher?: RuntimeJsonFetcher;
+}): Promise<PlayerRuntimeBootstrap> {
+  const initialSession = await loadPlayerRuntimeSession({
+    manifestPath: input.manifestPath,
+    supabaseUrl: input.supabaseUrl,
+    progress: null,
+    loadChapter: input.loadChapter,
+    fetcher: input.fetcher
+  });
+
+  return {
+    initialManifest: initialSession.manifest,
+    initialBundle: initialSession.bundle,
+    initialReaderState: initialSession.readerState,
+    initialAssetUrls: getPlayerRuntimeAssetUrls({
+      supabaseUrl: input.supabaseUrl,
+      bundle: initialSession.bundle,
+      readerState: initialSession.readerState
+    })
+  };
 }
 
 export function getPlayerRuntimeAssetUrls(input: {

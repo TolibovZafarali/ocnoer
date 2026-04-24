@@ -42,7 +42,7 @@ Not shared yet:
 - cookie-based auth/session code
 - Supabase service-role code
 - DOM, browser audio elements, native audio managers, and React UI code
-- localStorage persistence implementation
+- localStorage and AsyncStorage persistence implementations
 
 ## iOS Runtime Configuration
 
@@ -130,15 +130,72 @@ On iOS:
 ## iOS Local Progress Storage
 
 `apps/ios/src/storage/playerProgressStorage.ts` defines the local mobile
-progress adapter used by the native reader MVP. It stores `PlayerProgress` records
+progress cache used by the native reader. It stores `PlayerProgress` records
 from `@ocnoer/story-core` in AsyncStorage by player id:
 
 - `loadProgressByPlayerId(playerId)`
 - `saveProgressByPlayerId(playerId, progress)`
 - `clearProgressByPlayerId(playerId)`
 
-This is local-only persistence. It intentionally does not sync progress to the
-backend yet, and it intentionally keeps progress out of SecureStore.
+This cache intentionally stays out of SecureStore because it is story position
+state, not a credential.
+
+## Canonical Backend Progress Sync
+
+Player reading progress now has one canonical server-side record per active
+player profile. The database table is `PlayerReadingProgress`, linked to
+`PlayerProfile` by `playerId` with a unique constraint. It stores the portable
+`@ocnoer/story-core` progress shape:
+
+- `schemaVersion`
+- `chapterId`
+- `sceneId`
+- `dialogueEntryId`
+- `branchFlags`
+- `progressUpdatedAt`, returned to clients as `progress.updatedAt`
+
+The table also has normal database `createdAt` and `updatedAt` timestamps. The
+older `ReadingProgress` table tied to `User` remains untouched for legacy data,
+but the current web player and iOS player use `PlayerProfile` auth and the new
+progress table.
+
+Progress API surface:
+
+- `GET /api/player/progress`: returns `{ progress }`
+- `PUT /api/player/progress`: saves `{ progress }`
+- `POST /api/player/progress`: same save behavior as `PUT`
+- `DELETE /api/player/progress`: clears the current player's progress
+
+The same route supports both existing auth modes:
+
+- the web player sends the existing `ocnoer_player_session` cookie
+- iOS sends `Authorization: Bearer <token>` from the mobile session flow
+
+Validation and conflict rules live in shared code where possible:
+
+- `@ocnoer/story-core` validates the progress schema, required ids,
+  branch-flag value types, and parseable `updatedAt`
+- invalid API save payloads return `400` instead of being accepted
+- iOS clears invalid local cache records when loading them
+- when both local and backend progress are present, the newer valid
+  `updatedAt` wins
+- ties prefer the backend record, so the rule is deterministic
+- if iOS cannot reach the backend during startup, it uses the local cache and
+  surfaces a warning instead of blocking the reader
+
+iOS startup now fetches backend progress after authenticated session restore,
+compares it with AsyncStorage, caches the winner locally, and uploads a newer
+local-only record to the backend. Reader advancement saves local progress first
+and then attempts backend sync asynchronously, so a backend outage does not make
+the reader unusable. Reset/restart actions call the backend clear endpoint and
+then clear the local cache.
+
+The web player now participates in the same sync path. On reader load it
+compares localStorage progress with `GET /api/player/progress`, resumes from
+the newest valid record, and refreshes localStorage as a cache. As the reader
+advances, it keeps localStorage updated and saves the same `PlayerProgress`
+record through `PUT /api/player/progress`. If backend save fails, localStorage
+remains as the fallback so the current browser session keeps working.
 
 ## iOS Native Reader MVP
 
@@ -146,12 +203,13 @@ backend yet, and it intentionally keeps progress out of SecureStore.
 
 - the authenticated player lands on a simple home screen
 - the home screen shows player identity, cat-name status, runtime metadata, and
-  local saved progress when present
+  synced saved progress when present
 - `Start Reading` opens the reader at the initial playable runtime position
-- `Continue Reading` resumes from the saved local `PlayerProgress`
-- `Restart From Beginning` clears local progress and opens the initial runtime
+- `Continue Reading` resumes from the newest valid backend/local
+  `PlayerProgress`
+- `Restart From Beginning` clears backend and local progress and opens the initial runtime
   position
-- `Clear Local Progress` resets local progress without signing the player out
+- `Clear Progress` resets backend and local progress without signing the player out
 - the chapter preview remains available as a development/debug view
 
 The native reader uses the same published manifest/chapter bundle source as the
@@ -263,7 +321,6 @@ Still missing before rough parity with the web reader:
 - Framer Motion parity, typed text timing, scene blackout choreography, and map
   UI
 - next-chapter asset preloading before a chapter bundle has been loaded
-- backend progress sync
 - full mobile-specific handling for any future branch or prompt types beyond the
   four supported MVP entry types
 - sound effects and a production-level audio mixing/settings system
@@ -300,8 +357,9 @@ adapter, and auth/session flow must be implemented separately for Expo.
    current public runtime and adjust layout only where real content breaks it.
 3. Manually test native background music cue changes and app lifecycle behavior
    on an iOS simulator/device with the current published runtime.
-4. Add backend progress sync once the mobile reader has real progression
-   events to save.
-5. Revisit map UI, typed text, lighting, sound effects, and richer scene
+4. Revisit map UI, typed text, lighting, sound effects, and richer scene
    transitions after the
    native reader can complete the currently published chapter comfortably.
+5. Before TestFlight/App Store preparation, still complete production mobile
+   configuration, signing/bundle identifiers, app icons/splash assets,
+   privacy/data disclosures, distribution builds, and device-level QA.

@@ -7,7 +7,7 @@ import {
   resolvePlayerSessionToken
 } from "@/lib/auth/player-session";
 
-const PLAYER_SESSION_COOKIE_NAME = "ocnoer_player_session";
+export const PLAYER_SESSION_COOKIE_NAME = "ocnoer_player_session";
 
 async function setPlayerSessionCookie(playerId: string) {
   const cookieStore = await cookies();

@@ -19,6 +19,11 @@ import { signOutPlayerAction } from "@/app/(player)/play/actions";
 import { Button } from "@/components/ui/button";
 import { ChapterCardHandwriting } from "@/app/(player)/play/chapter-card-handwriting";
 import {
+  loadPlayerProgressForReader,
+  persistCachedPlayerProgress,
+  saveServerPlayerProgress
+} from "@/app/(player)/play/player-progress-client";
+import {
   createChapterCardRevealPlan,
   CONTINUE_BUTTON_ENTER_DURATION_MS,
   DEFAULT_LINE_ENTER_DURATION_MS,
@@ -61,7 +66,6 @@ import {
   findSceneBackgroundMusicById,
   getCurrentDialogue,
   getCurrentScene,
-  type PlayerProgress,
   type ReaderState,
   resolveReaderStateSceneBackgroundMusicTrackId,
   resolveSceneBackgroundMusicTrackId,
@@ -231,47 +235,6 @@ function reconcileCatNameBranchFlags(input: {
 
   delete nextBranchFlags[CAT_NAME_LOCKED_BRANCH_FLAG_KEY];
   return nextBranchFlags;
-}
-
-function readStoredProgress(storageKey: string) {
-  if (typeof window === "undefined") {
-    return null;
-  }
-
-  const raw = window.localStorage.getItem(storageKey);
-
-  if (!raw) {
-    return null;
-  }
-
-  try {
-    const parsed = JSON.parse(raw) as PlayerProgress;
-
-    if (
-      typeof parsed.chapterId !== "string" ||
-      typeof parsed.sceneId !== "string" ||
-      typeof parsed.dialogueEntryId !== "string"
-    ) {
-      return null;
-    }
-
-    return parsed;
-  } catch {
-    return null;
-  }
-}
-
-function persistProgress(storageKey: string, progress: PlayerProgress | null) {
-  if (typeof window === "undefined") {
-    return;
-  }
-
-  if (!progress) {
-    window.localStorage.removeItem(storageKey);
-    return;
-  }
-
-  window.localStorage.setItem(storageKey, JSON.stringify(progress));
 }
 
 function getRuntimeAvailability(input: {
@@ -544,7 +507,14 @@ export function PlayerStoryReader({
       setError(null);
 
       try {
-        const storedProgress = readStoredProgress(progressStorageKey);
+        const progressLoadResult =
+          await loadPlayerProgressForReader(progressStorageKey);
+        const storedProgress = progressLoadResult.progress;
+
+        if (progressLoadResult.warning) {
+          console.warn(progressLoadResult.warning);
+        }
+
         const loadedRuntime = await loadPlayerRuntimeSession({
           manifestPath,
           supabaseUrl,
@@ -619,68 +589,81 @@ export function PlayerStoryReader({
     }
 
     initialResumeResolvedRef.current = true;
-
-    if (!initialManifest.firstChapterId) {
-      setIsPersistenceReady(true);
-      return;
-    }
-
-    const storedProgress = readStoredProgress(progressStorageKey);
-    const resumeAction = decidePlayerResumeAction({
-      initialBundle,
-      storedProgress
-    });
-
-    setBranchFlags(
-      reconcileCatNameBranchFlags({
-        branchFlags: resumeAction.branchFlags,
-        catName: initialCatNameState.catName,
-        catNameLocked: initialCatNameState.catNameLocked
-      })
-    );
-
-    if (resumeAction.type === "use-initial-state") {
-      setBoundaryState(
-        initialBundle
-          ? getChapterOpeningBoundaryState({
-              chapter: initialBundle.chapter,
-              reason: "initial-entry"
-            })
-          : null
-      );
-      setIsPersistenceReady(true);
-      return;
-    }
-
-    if (resumeAction.type === "resume-from-initial-bundle") {
-      previousNormalEntryRef.current = null;
-      setReaderState(resumeAction.readerState);
-      setSceneBackgroundMusicTrackId(
-        resolveReaderStateSceneBackgroundMusicTrackId({
-          bundle: initialBundle,
-          state: resumeAction.readerState
-        })
-      );
-      setPendingSceneState(null);
-      setPendingInSceneMusicTransition(null);
-      setBoundaryState(null);
-      setIsPersistenceReady(true);
-      return;
-    }
-
+    const manifestForResume = initialManifest;
     let cancelled = false;
 
-    setIsResolvingResume(true);
-    setError(null);
+    async function resolveInitialResume() {
+      if (!manifestForResume.firstChapterId) {
+        setIsPersistenceReady(true);
+        return;
+      }
 
-    void loadPlayerRuntimeSession({
-      manifestPath,
-      supabaseUrl,
-      progress: storedProgress,
-      initialManifest,
-      loadChapter: loadBundle
-    })
-      .then((loadedRuntime) => {
+      setIsResolvingResume(true);
+      setError(null);
+
+      try {
+        const progressLoadResult =
+          await loadPlayerProgressForReader(progressStorageKey);
+
+        if (cancelled) {
+          return;
+        }
+
+        if (progressLoadResult.warning) {
+          console.warn(progressLoadResult.warning);
+        }
+
+        const storedProgress = progressLoadResult.progress;
+        const resumeAction = decidePlayerResumeAction({
+          initialBundle,
+          storedProgress
+        });
+
+        setBranchFlags(
+          reconcileCatNameBranchFlags({
+            branchFlags: resumeAction.branchFlags,
+            catName: initialCatNameState.catName,
+            catNameLocked: initialCatNameState.catNameLocked
+          })
+        );
+
+        if (resumeAction.type === "use-initial-state") {
+          setBoundaryState(
+            initialBundle
+              ? getChapterOpeningBoundaryState({
+                  chapter: initialBundle.chapter,
+                  reason: "initial-entry"
+                })
+              : null
+          );
+          setIsPersistenceReady(true);
+          return;
+        }
+
+        if (resumeAction.type === "resume-from-initial-bundle") {
+          previousNormalEntryRef.current = null;
+          setReaderState(resumeAction.readerState);
+          setSceneBackgroundMusicTrackId(
+            resolveReaderStateSceneBackgroundMusicTrackId({
+              bundle: initialBundle,
+              state: resumeAction.readerState
+            })
+          );
+          setPendingSceneState(null);
+          setPendingInSceneMusicTransition(null);
+          setBoundaryState(null);
+          setIsPersistenceReady(true);
+          return;
+        }
+
+        const loadedRuntime = await loadPlayerRuntimeSession({
+          manifestPath,
+          supabaseUrl,
+          progress: storedProgress,
+          initialManifest: manifestForResume,
+          loadChapter: loadBundle
+        });
+
         if (cancelled) {
           return;
         }
@@ -705,8 +688,7 @@ export function PlayerStoryReader({
         setPendingInSceneMusicTransition(null);
         setBoundaryState(resumedBoundaryState);
         setIsPersistenceReady(true);
-      })
-      .catch((caughtError) => {
+      } catch (caughtError) {
         if (cancelled) {
           return;
         }
@@ -716,14 +698,16 @@ export function PlayerStoryReader({
             ? caughtError.message
             : "Unable to load the story runtime."
         );
-      })
-      .finally(() => {
+      } finally {
         if (cancelled) {
           return;
         }
 
         setIsResolvingResume(false);
-      });
+      }
+    }
+
+    void resolveInitialResume();
 
     return () => {
       cancelled = true;
@@ -983,7 +967,19 @@ export function PlayerStoryReader({
       return;
     }
 
-    persistProgress(progressStorageKey, storedProgress);
+    persistCachedPlayerProgress(progressStorageKey, storedProgress);
+
+    if (!storedProgress) {
+      return;
+    }
+
+    void saveServerPlayerProgress(storedProgress).catch((caughtError) => {
+      console.warn(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unable to save backend player progress."
+      );
+    });
   }, [isPersistenceReady, progressStorageKey, storedProgress]);
 
   useEffect(() => {

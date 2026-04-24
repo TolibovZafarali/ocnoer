@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
   KeyboardAvoidingView,
@@ -11,6 +11,9 @@ import {
   View
 } from "react-native";
 
+import { OcnoerScreenBackground } from "../ui/primitives";
+import { ocnoerTheme } from "../ui/theme";
+
 type SignInScreenProps = {
   error: string | null;
   isSubmitting: boolean;
@@ -18,130 +21,178 @@ type SignInScreenProps = {
 };
 
 export function SignInScreen(props: SignInScreenProps) {
+  const inputRef = useRef<TextInput>(null);
   const [secret, setSecret] = useState("");
+  const [expanded, setExpanded] = useState(false);
   const canSubmit = secret.trim().length > 0 && !props.isSubmitting;
+
+  useEffect(() => {
+    if (props.error) {
+      setExpanded(true);
+    }
+  }, [props.error]);
+
+  function focusInput() {
+    setTimeout(() => {
+      inputRef.current?.focus();
+    }, 80);
+  }
+
+  function handleArrowPress() {
+    if (!expanded) {
+      setExpanded(true);
+      focusInput();
+      return;
+    }
+
+    if (canSubmit) {
+      props.onSignIn(secret);
+    }
+  }
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.container}
-      >
-        <View>
-          <Text style={styles.eyebrow}>Ocnoer iOS</Text>
-          <Text style={styles.title}>Player Sign In</Text>
-          <Text style={styles.body}>
-            Enter the player access credential from the existing Ocnoer player
-            profile.
-          </Text>
+      <OcnoerScreenBackground>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.container}
+        >
+          <View style={styles.gateWrap}>
+            <View
+              style={[
+                styles.gatePill,
+                expanded ? styles.gatePillExpanded : styles.gatePillCollapsed,
+                props.error ? styles.gatePillError : null
+              ]}
+            >
+              {expanded ? (
+                <TextInput
+                  ref={inputRef}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  editable={!props.isSubmitting}
+                  onChangeText={setSecret}
+                  onSubmitEditing={() => {
+                    if (canSubmit) {
+                      props.onSignIn(secret);
+                    }
+                  }}
+                  placeholder="Player credential"
+                  placeholderTextColor={ocnoerTheme.colors.textFaint}
+                  returnKeyType="go"
+                  secureTextEntry
+                  selectionColor={ocnoerTheme.colors.text}
+                  style={styles.input}
+                  value={secret}
+                />
+              ) : null}
 
-          <TextInput
-            autoCapitalize="none"
-            autoCorrect={false}
-            editable={!props.isSubmitting}
-            onChangeText={setSecret}
-            onSubmitEditing={() => {
-              if (canSubmit) {
-                props.onSignIn(secret);
-              }
-            }}
-            placeholder="Player credential"
-            placeholderTextColor="#64748b"
-            returnKeyType="go"
-            secureTextEntry
-            style={styles.input}
-            value={secret}
-          />
+              <Pressable
+                accessibilityLabel={
+                  expanded ? "Submit credential" : "Open credential field"
+                }
+                accessibilityRole="button"
+                disabled={props.isSubmitting}
+                onPress={handleArrowPress}
+                style={({ pressed }) => [
+                  styles.arrowButton,
+                  pressed && !props.isSubmitting ? styles.pressed : null,
+                  props.isSubmitting ? styles.disabled : null
+                ]}
+              >
+                {props.isSubmitting ? (
+                  <ActivityIndicator color={ocnoerTheme.colors.stageDeep} />
+                ) : (
+                  <Text style={styles.arrowText}>{">"}</Text>
+                )}
+              </Pressable>
+            </View>
 
-          {props.error ? <Text style={styles.error}>{props.error}</Text> : null}
-
-          <Pressable
-            accessibilityRole="button"
-            disabled={!canSubmit}
-            onPress={() => props.onSignIn(secret)}
-            style={({ pressed }) => [
-              styles.button,
-              !canSubmit ? styles.buttonDisabled : null,
-              pressed && canSubmit ? styles.buttonPressed : null
-            ]}
-          >
-            {props.isSubmitting ? (
-              <ActivityIndicator color="#021617" />
-            ) : (
-              <Text style={styles.buttonText}>Sign In</Text>
-            )}
-          </Pressable>
-        </View>
-      </KeyboardAvoidingView>
+            {props.error ? (
+              <Text style={styles.error}>{props.error}</Text>
+            ) : null}
+          </View>
+        </KeyboardAvoidingView>
+      </OcnoerScreenBackground>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: {
-    flex: 1,
-    backgroundColor: "#071014"
+    backgroundColor: ocnoerTheme.colors.night,
+    flex: 1
   },
   container: {
     flex: 1,
     justifyContent: "center",
-    paddingHorizontal: 24
+    paddingHorizontal: ocnoerTheme.spacing.lg
   },
-  eyebrow: {
-    color: "#67e8f9",
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 1,
-    marginBottom: 10,
-    textTransform: "uppercase"
+  gateWrap: {
+    alignItems: "center",
+    width: "100%"
   },
-  title: {
-    color: "#f8fafc",
-    fontSize: 34,
-    fontWeight: "800",
-    lineHeight: 40,
-    marginBottom: 12
+  gatePill: {
+    ...ocnoerTheme.shadows.card,
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.36)",
+    borderColor: ocnoerTheme.colors.border,
+    borderRadius: ocnoerTheme.radii.pill,
+    borderWidth: 1,
+    flexDirection: "row",
+    height: 72,
+    overflow: "hidden",
+    padding: ocnoerTheme.spacing.sm
   },
-  body: {
-    color: "#cbd5e1",
-    fontSize: 16,
-    lineHeight: 24,
-    marginBottom: 22
+  gatePillExpanded: {
+    maxWidth: 416,
+    width: "100%"
+  },
+  gatePillCollapsed: {
+    width: 72
+  },
+  gatePillError: {
+    borderColor: "rgba(253, 164, 175, 0.36)"
   },
   input: {
-    backgroundColor: "#102027",
-    borderColor: "#284450",
-    borderRadius: 8,
-    borderWidth: 1,
-    color: "#f8fafc",
+    color: ocnoerTheme.colors.text,
+    flex: 1,
     fontSize: 17,
-    minHeight: 52,
-    paddingHorizontal: 14
+    minWidth: 0,
+    paddingHorizontal: ocnoerTheme.spacing.lg
+  },
+  arrowButton: {
+    ...ocnoerTheme.shadows.glow,
+    alignItems: "center",
+    backgroundColor: ocnoerTheme.colors.text,
+    borderRadius: ocnoerTheme.radii.pill,
+    height: 56,
+    justifyContent: "center",
+    width: 56
+  },
+  arrowText: {
+    color: ocnoerTheme.colors.stageDeep,
+    fontSize: 24,
+    fontWeight: "900",
+    lineHeight: 28
   },
   error: {
-    color: "#fca5a5",
+    color: ocnoerTheme.colors.rose,
     fontSize: 14,
     lineHeight: 20,
-    marginTop: 12
+    marginTop: ocnoerTheme.spacing.lg,
+    maxWidth: 360,
+    textAlign: "center"
   },
-  button: {
-    alignItems: "center",
-    backgroundColor: "#14b8a6",
-    borderRadius: 8,
-    justifyContent: "center",
-    marginTop: 18,
-    minHeight: 50,
-    paddingHorizontal: 18
+  pressed: {
+    opacity: ocnoerTheme.opacity.pressed,
+    transform: [
+      {
+        scale: 0.98
+      }
+    ]
   },
-  buttonDisabled: {
-    backgroundColor: "#334155"
-  },
-  buttonPressed: {
-    opacity: 0.82
-  },
-  buttonText: {
-    color: "#021617",
-    fontSize: 16,
-    fontWeight: "800"
+  disabled: {
+    opacity: ocnoerTheme.opacity.disabled
   }
 });

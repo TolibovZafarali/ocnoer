@@ -28,10 +28,8 @@ import {
 import type { MobilePlayer } from "../api/playerSessionTypes";
 import type { MobileRuntimeConfig } from "../config/runtime";
 import { createMobileRuntimeRepository } from "../runtime/runtimeRepository";
-import {
-  loadProgressByPlayerId,
-  saveProgressByPlayerId
-} from "../storage/playerProgressStorage";
+import { loadProgressByPlayerId } from "../storage/playerProgressStorage";
+import { saveSyncedPlayerProgress } from "../sync/playerProgressSync";
 import { createNativeReaderBoundaryPresentation } from "./boundaryPresentation";
 import { createNativeReaderPresentation } from "./readerPresentation";
 
@@ -65,6 +63,7 @@ type UseNativeReaderControllerInput = {
   bootstrap: PlayerRuntimeBootstrap;
   config: MobileRuntimeConfig;
   player: MobilePlayer;
+  sessionToken: string;
   onProgressSaved?: () => void;
   onUpdateCatName: (catName: string) => Promise<void>;
 };
@@ -134,6 +133,7 @@ export function useNativeReaderController(
   input: UseNativeReaderControllerInput
 ) {
   const { bootstrap, config, onProgressSaved, onUpdateCatName, player } = input;
+  const sessionToken = input.sessionToken;
   const repository = useMemo(
     () => createMobileRuntimeRepository(config),
     [config]
@@ -315,13 +315,17 @@ export function useNativeReaderController(
 
     let cancelled = false;
 
-    void saveProgressByPlayerId(player.id, progress)
-      .then(() => {
+    void saveSyncedPlayerProgress({
+      playerId: player.id,
+      token: sessionToken,
+      progress
+    })
+      .then((result) => {
         if (cancelled) {
           return;
         }
 
-        setPersistenceError(null);
+        setPersistenceError(result.warning);
         onProgressSaved?.();
       })
       .catch((error) => {
@@ -337,7 +341,7 @@ export function useNativeReaderController(
     return () => {
       cancelled = true;
     };
-  }, [branchFlags, onProgressSaved, player.id, runtimeState]);
+  }, [branchFlags, onProgressSaved, player.id, runtimeState, sessionToken]);
 
   const presentation = useMemo(() => {
     if (runtimeState.status !== "ready" && runtimeState.status !== "finished") {

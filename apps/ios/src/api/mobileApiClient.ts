@@ -11,7 +11,7 @@ export class MobileApiError extends Error {
 
 type JsonBody = Record<string, unknown>;
 type RequestJsonOptions = {
-  method?: "GET" | "POST" | "PATCH" | "DELETE";
+  method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   token?: string | null;
   body?: JsonBody;
 };

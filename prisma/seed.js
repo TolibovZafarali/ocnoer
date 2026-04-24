@@ -14,6 +14,7 @@ function createPublicId(prefix) {
 
 async function main() {
   await prisma.readingProgress.deleteMany();
+  await prisma.playerReadingProgress.deleteMany();
   await prisma.playerResponse.deleteMany();
   await prisma.sceneCharacterAppearance.deleteMany();
   await prisma.dialogueEntry.deleteMany();

@@ -1,12 +1,10 @@
 import { useState } from "react";
 import {
   ActivityIndicator,
-  Pressable,
   SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View
 } from "react-native";
 
@@ -20,6 +18,14 @@ import type { MobilePlayer } from "../api/playerSessionTypes";
 import type { PlayerProgress } from "@ocnoer/story-core";
 import { AudioStatusPanel } from "../audio/AudioControls";
 import type { NativeAudioPreferences } from "../storage/audioPreferenceStorage";
+import {
+  OcnoerButton,
+  OcnoerInfoRow,
+  OcnoerScreenBackground,
+  OcnoerSurface,
+  OcnoerTextInput
+} from "../ui/primitives";
+import { ocnoerTheme } from "../ui/theme";
 
 type BootstrapScreenProps = {
   state: RuntimeBootstrapState;
@@ -32,6 +38,7 @@ type BootstrapScreenProps = {
   isLoadingProgress: boolean;
   isResettingProgress: boolean;
   catNameError: string | null;
+  progressSyncError: string | null;
   savedProgress: PlayerProgress | null;
   onContinueReading: () => void;
   onRetry: () => void;
@@ -53,54 +60,34 @@ function formatDate(value: string) {
   return date.toLocaleString();
 }
 
-function InfoRow(props: { label: string; value: string }) {
+function SectionHeader(props: {
+  eyebrow?: string;
+  title: string;
+  body?: string;
+}) {
   return (
-    <View style={styles.infoRow}>
-      <Text style={styles.infoLabel}>{props.label}</Text>
-      <Text style={styles.infoValue}>{props.value}</Text>
+    <View style={styles.sectionHeader}>
+      {props.eyebrow ? (
+        <Text style={styles.eyebrow}>{props.eyebrow}</Text>
+      ) : null}
+      <Text style={styles.sectionTitle}>{props.title}</Text>
+      {props.body ? <Text style={styles.body}>{props.body}</Text> : null}
     </View>
   );
 }
 
-function PrimaryButton(props: {
-  label: string;
-  disabled?: boolean;
-  onPress: () => void;
-}) {
+function LoadingState() {
   return (
-    <Pressable
-      accessibilityRole="button"
-      disabled={props.disabled}
-      onPress={props.onPress}
-      style={({ pressed }) => [
-        styles.primaryButton,
-        props.disabled ? styles.primaryButtonDisabled : null,
-        pressed && !props.disabled ? styles.primaryButtonPressed : null
-      ]}
-    >
-      <Text style={styles.primaryButtonText}>{props.label}</Text>
-    </Pressable>
-  );
-}
-
-function SecondaryButton(props: {
-  label: string;
-  disabled?: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      accessibilityRole="button"
-      disabled={props.disabled}
-      onPress={props.onPress}
-      style={({ pressed }) => [
-        styles.secondaryButton,
-        props.disabled ? styles.secondaryButtonDisabled : null,
-        pressed && !props.disabled ? styles.secondaryButtonPressed : null
-      ]}
-    >
-      <Text style={styles.secondaryButtonText}>{props.label}</Text>
-    </Pressable>
+    <SafeAreaView style={styles.safeArea}>
+      <OcnoerScreenBackground>
+        <View style={styles.centered}>
+          <OcnoerSurface style={styles.centerPanel} variant="glass">
+            <ActivityIndicator color={ocnoerTheme.colors.text} size="large" />
+            <Text style={styles.loadingText}>Loading published runtime</Text>
+          </OcnoerSurface>
+        </View>
+      </OcnoerScreenBackground>
+    </SafeAreaView>
   );
 }
 
@@ -112,47 +99,47 @@ export function BootstrapScreen(props: BootstrapScreenProps) {
     !props.isUpdatingCatName;
 
   if (props.state.status === "loading") {
-    return (
-      <SafeAreaView style={styles.safeArea}>
-        <View style={styles.centered}>
-          <ActivityIndicator color="#67e8f9" size="large" />
-          <Text style={styles.loadingText}>Loading published runtime</Text>
-        </View>
-      </SafeAreaView>
-    );
+    return <LoadingState />;
   }
 
   if (props.state.status === "error") {
     return (
       <SafeAreaView style={styles.safeArea}>
-        <ScrollView contentContainerStyle={styles.content}>
-          <Text style={styles.eyebrow}>Ocnoer iOS</Text>
-          <Text style={styles.title}>Runtime load failed</Text>
-          <View style={styles.panel}>
-            <InfoRow label="Signed in as" value={props.player.firstName} />
-            <InfoRow
-              label="Cat name"
-              value={props.player.catName ?? "Not set"}
+        <OcnoerScreenBackground>
+          <ScrollView contentContainerStyle={styles.content}>
+            <SectionHeader
+              eyebrow="Ocnoer"
+              title="Runtime load failed"
+              body={props.state.message}
             />
-          </View>
-          <Text style={styles.body}>{props.state.message}</Text>
-          <View style={styles.panel}>
-            <Text style={styles.panelTitle}>Required public config</Text>
-            {MOBILE_RUNTIME_ENV_VARS.map((name) => (
-              <Text key={name} style={styles.codeText}>
-                {name}
-              </Text>
-            ))}
-          </View>
-          <PrimaryButton label="Retry" onPress={props.onRetry} />
-          <View style={styles.buttonSpacer}>
-            <SecondaryButton
+            <OcnoerSurface style={styles.card} variant="glass">
+              <OcnoerInfoRow
+                label="Signed in as"
+                value={props.player.firstName}
+              />
+              <OcnoerInfoRow
+                label="Cat name"
+                value={props.player.catName ?? "Not set"}
+              />
+            </OcnoerSurface>
+            <OcnoerSurface style={styles.card} variant="quiet">
+              <Text style={styles.cardTitle}>Required public config</Text>
+              {MOBILE_RUNTIME_ENV_VARS.map((name) => (
+                <Text key={name} style={styles.codeText}>
+                  {name}
+                </Text>
+              ))}
+            </OcnoerSurface>
+            <OcnoerButton label="Retry" onPress={props.onRetry} />
+            <OcnoerButton
               disabled={props.isSigningOut}
               label={props.isSigningOut ? "Signing Out" : "Sign Out"}
               onPress={props.onSignOut}
+              style={styles.stackedButton}
+              variant="secondary"
             />
-          </View>
-        </ScrollView>
+          </ScrollView>
+        </OcnoerScreenBackground>
       </SafeAreaView>
     );
   }
@@ -172,337 +159,258 @@ export function BootstrapScreen(props: BootstrapScreenProps) {
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView contentContainerStyle={styles.content}>
-        <Text style={styles.eyebrow}>Ocnoer iOS</Text>
-        <Text style={styles.title}>{storyTitle}</Text>
-        <Text style={styles.body}>
-          Published runtime data is ready for native reading.
-        </Text>
-
-        <View style={styles.panel}>
-          <InfoRow label="Signed in as" value={props.player.firstName} />
-          <InfoRow label="Player id" value={props.player.id} />
-          <InfoRow label="Cat name" value={props.player.catName ?? "Not set"} />
-          <InfoRow
-            label="Cat name status"
-            value={props.player.catNameLocked ? "Locked" : "Available"}
+      <OcnoerScreenBackground>
+        <ScrollView contentContainerStyle={styles.content}>
+          <SectionHeader
+            eyebrow="Ocnoer"
+            title={storyTitle}
+            body="Continue the published story in the native reader."
           />
-          {!props.player.catNameLocked ? (
-            <View style={styles.catNameForm}>
-              <TextInput
-                autoCapitalize="words"
-                editable={!props.isUpdatingCatName}
-                onChangeText={setCatNameInput}
-                placeholder="Set cat name"
-                placeholderTextColor="#64748b"
-                style={styles.input}
-                value={catNameInput}
-              />
-              {props.catNameError ? (
-                <Text style={styles.error}>{props.catNameError}</Text>
-              ) : null}
-              <Pressable
-                accessibilityRole="button"
-                disabled={!canSubmitCatName}
-                onPress={() => props.onUpdateCatName(catNameInput)}
-                style={({ pressed }) => [
-                  styles.inlineButton,
-                  !canSubmitCatName ? styles.inlineButtonDisabled : null,
-                  pressed && canSubmitCatName
-                    ? styles.inlineButtonPressed
-                    : null
-                ]}
-              >
-                {props.isUpdatingCatName ? (
-                  <ActivityIndicator color="#021617" />
-                ) : (
-                  <Text style={styles.inlineButtonText}>Save Cat Name</Text>
-                )}
-              </Pressable>
-            </View>
-          ) : null}
-        </View>
 
-        <View style={styles.panel}>
-          <Text style={styles.panelTitle}>Reading</Text>
-          {props.isLoadingProgress ? (
-            <Text style={styles.body}>Checking local progress...</Text>
-          ) : props.savedProgress ? (
-            <>
-              <InfoRow
-                label="Saved chapter"
-                value={props.savedProgress.chapterId}
-              />
-              <InfoRow
-                label="Saved scene"
-                value={props.savedProgress.sceneId}
-              />
-              <InfoRow
-                label="Saved entry"
-                value={props.savedProgress.dialogueEntryId}
-              />
-              <InfoRow
-                label="Saved"
-                value={formatDate(props.savedProgress.updatedAt)}
-              />
-            </>
-          ) : (
-            <Text style={styles.body}>No local reading progress yet.</Text>
-          )}
+          <OcnoerSurface style={styles.card} variant="glass">
+            <Text style={styles.cardTitle}>Profile</Text>
+            <OcnoerInfoRow
+              label="Signed in as"
+              value={props.player.firstName}
+            />
+            <OcnoerInfoRow
+              label="Cat name"
+              value={props.player.catName ?? "Not set"}
+            />
+            <OcnoerInfoRow
+              label="Cat name status"
+              value={props.player.catNameLocked ? "Locked" : "Available"}
+            />
+            {!props.player.catNameLocked ? (
+              <View style={styles.catNameForm}>
+                <OcnoerTextInput
+                  autoCapitalize="words"
+                  editable={!props.isUpdatingCatName}
+                  onChangeText={setCatNameInput}
+                  placeholder="Set cat name"
+                  value={catNameInput}
+                />
+                {props.catNameError ? (
+                  <Text style={styles.error}>{props.catNameError}</Text>
+                ) : null}
+                <OcnoerButton
+                  disabled={!canSubmitCatName}
+                  label={props.isUpdatingCatName ? "Saving" : "Save Cat Name"}
+                  loading={props.isUpdatingCatName}
+                  onPress={() => props.onUpdateCatName(catNameInput)}
+                  style={styles.inlineButton}
+                />
+              </View>
+            ) : null}
+          </OcnoerSurface>
 
-          <PrimaryButton
-            disabled={props.isLoadingProgress}
-            label={props.savedProgress ? "Continue Reading" : "Start Reading"}
-            onPress={props.onContinueReading}
-          />
-          {props.savedProgress ? (
-            <>
-              <View style={styles.buttonSpacer}>
-                <SecondaryButton
+          <OcnoerSurface style={styles.card} variant="glass">
+            <Text style={styles.cardTitle}>Reading</Text>
+            {props.isLoadingProgress ? (
+              <Text style={styles.body}>Checking synced progress...</Text>
+            ) : props.savedProgress ? (
+              <>
+                <OcnoerInfoRow
+                  label="Saved chapter"
+                  value={props.savedProgress.chapterId}
+                />
+                <OcnoerInfoRow
+                  label="Saved scene"
+                  value={props.savedProgress.sceneId}
+                />
+                <OcnoerInfoRow
+                  label="Saved entry"
+                  value={props.savedProgress.dialogueEntryId}
+                />
+                <OcnoerInfoRow
+                  label="Saved"
+                  value={formatDate(props.savedProgress.updatedAt)}
+                />
+              </>
+            ) : (
+              <Text style={styles.body}>No saved reading progress yet.</Text>
+            )}
+            {props.progressSyncError ? (
+              <Text style={styles.warning}>{props.progressSyncError}</Text>
+            ) : null}
+
+            <OcnoerButton
+              disabled={props.isLoadingProgress}
+              label={props.savedProgress ? "Continue Reading" : "Start Reading"}
+              onPress={props.onContinueReading}
+              style={styles.primaryAction}
+            />
+            {props.savedProgress ? (
+              <>
+                <OcnoerButton
                   disabled={
                     props.isLoadingProgress || props.isResettingProgress
                   }
                   label="Restart From Beginning"
                   onPress={props.onRestartReading}
+                  style={styles.stackedButton}
+                  variant="secondary"
                 />
-              </View>
-              <View style={styles.buttonSpacer}>
-                <SecondaryButton
+                <OcnoerButton
                   disabled={
                     props.isLoadingProgress || props.isResettingProgress
                   }
                   label={
                     props.isResettingProgress
                       ? "Clearing Progress"
-                      : "Clear Local Progress"
+                      : "Clear Progress"
                   }
                   onPress={props.onResetProgress}
+                  style={styles.stackedButton}
+                  variant="danger"
                 />
-              </View>
-            </>
-          ) : null}
-        </View>
+              </>
+            ) : null}
+          </OcnoerSurface>
 
-        <View style={styles.panel}>
-          <AudioStatusPanel
-            error={props.audioPreferenceError}
-            isLoading={props.isLoadingAudioPreferences}
-            preferences={props.audioPreferences}
-            onToggleMuted={props.onToggleAudioMuted}
-          />
-        </View>
+          <OcnoerSurface style={styles.card} variant="glass">
+            <AudioStatusPanel
+              error={props.audioPreferenceError}
+              isLoading={props.isLoadingAudioPreferences}
+              preferences={props.audioPreferences}
+              onToggleMuted={props.onToggleAudioMuted}
+            />
+          </OcnoerSurface>
 
-        <View style={styles.panel}>
-          <Text style={styles.panelTitle}>Runtime</Text>
-          <InfoRow
-            label="Manifest version"
-            value={String(manifest.schemaVersion)}
-          />
-          <InfoRow label="Generated" value={formatDate(manifest.generatedAt)} />
-          <InfoRow
-            label="Chapter count"
-            value={String(manifest.chapters.length)}
-          />
-          <InfoRow
-            label="Initial chapter"
-            value={
-              initialChapter?.title ??
-              manifestChapter?.title ??
-              previewChapterId ??
-              "Unavailable"
-            }
-          />
-          <InfoRow
-            label="Initial chapter id"
-            value={previewChapterId ?? "Unavailable"}
-          />
-        </View>
+          <OcnoerSurface style={styles.card} variant="quiet">
+            <Text style={styles.cardTitle}>Runtime</Text>
+            <OcnoerInfoRow
+              label="Manifest version"
+              value={String(manifest.schemaVersion)}
+            />
+            <OcnoerInfoRow
+              label="Generated"
+              value={formatDate(manifest.generatedAt)}
+            />
+            <OcnoerInfoRow
+              label="Chapter count"
+              value={String(manifest.chapters.length)}
+            />
+            <OcnoerInfoRow
+              label="Initial chapter"
+              value={
+                initialChapter?.title ??
+                manifestChapter?.title ??
+                previewChapterId ??
+                "Unavailable"
+              }
+            />
+            <OcnoerInfoRow
+              label="Initial chapter id"
+              value={previewChapterId ?? "Unavailable"}
+            />
+            <OcnoerInfoRow label="Runtime host" value={config.supabaseUrl} />
+            <OcnoerInfoRow label="Manifest path" value={config.manifestPath} />
+          </OcnoerSurface>
 
-        <View style={styles.panel}>
-          <InfoRow label="Runtime host" value={config.supabaseUrl} />
-          <InfoRow label="Manifest path" value={config.manifestPath} />
-        </View>
-
-        <SecondaryButton
-          disabled={!previewChapterId}
-          label="Open Chapter Preview"
-          onPress={() => {
-            if (previewChapterId) {
-              props.onOpenPreview(previewChapterId);
-            }
-          }}
-        />
-        <View style={styles.buttonSpacer}>
-          <SecondaryButton
+          <OcnoerButton
+            disabled={!previewChapterId}
+            label="Open Chapter Preview"
+            onPress={() => {
+              if (previewChapterId) {
+                props.onOpenPreview(previewChapterId);
+              }
+            }}
+            variant="secondary"
+          />
+          <OcnoerButton
             disabled={props.isSigningOut}
             label={props.isSigningOut ? "Signing Out" : "Sign Out"}
             onPress={props.onSignOut}
+            style={styles.stackedButton}
+            variant="secondary"
           />
-        </View>
-      </ScrollView>
+        </ScrollView>
+      </OcnoerScreenBackground>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: {
-    flex: 1,
-    backgroundColor: "#071014"
+    backgroundColor: ocnoerTheme.colors.night,
+    flex: 1
   },
   centered: {
     alignItems: "center",
     flex: 1,
     justifyContent: "center",
-    paddingHorizontal: 28
+    paddingHorizontal: ocnoerTheme.spacing.xxl
+  },
+  centerPanel: {
+    alignItems: "center",
+    width: "100%"
   },
   content: {
-    padding: 24,
-    paddingBottom: 40
+    padding: ocnoerTheme.spacing.xl,
+    paddingBottom: 44
+  },
+  sectionHeader: {
+    marginBottom: ocnoerTheme.spacing.xl,
+    paddingTop: ocnoerTheme.spacing.lg
   },
   eyebrow: {
-    color: "#67e8f9",
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 1,
-    marginBottom: 10,
-    textTransform: "uppercase"
+    ...ocnoerTheme.text.eyebrow,
+    color: ocnoerTheme.colors.cyan,
+    marginBottom: ocnoerTheme.spacing.sm
   },
-  title: {
-    color: "#f8fafc",
-    fontSize: 34,
-    fontWeight: "700",
-    lineHeight: 40,
-    marginBottom: 12
+  sectionTitle: {
+    color: ocnoerTheme.colors.text,
+    fontSize: ocnoerTheme.typography.size.title,
+    fontWeight: "800",
+    lineHeight: ocnoerTheme.typography.lineHeight.title,
+    marginBottom: ocnoerTheme.spacing.sm
   },
   body: {
-    color: "#cbd5e1",
-    fontSize: 16,
-    lineHeight: 24,
-    marginBottom: 18
+    ...ocnoerTheme.text.body
   },
   loadingText: {
-    color: "#dbeafe",
+    color: ocnoerTheme.colors.textMuted,
     fontSize: 17,
-    marginTop: 18
+    marginTop: ocnoerTheme.spacing.lg
   },
-  panel: {
-    backgroundColor: "#102027",
-    borderColor: "#284450",
-    borderRadius: 8,
-    borderWidth: 1,
-    marginBottom: 16,
-    paddingHorizontal: 16,
-    paddingVertical: 14
+  card: {
+    marginBottom: ocnoerTheme.spacing.lg
   },
-  panelTitle: {
-    color: "#f8fafc",
-    fontSize: 16,
-    fontWeight: "700",
-    marginBottom: 10
-  },
-  infoRow: {
-    borderBottomColor: "#20343d",
-    borderBottomWidth: 1,
-    paddingVertical: 10
-  },
-  infoLabel: {
-    color: "#94a3b8",
-    fontSize: 12,
-    fontWeight: "700",
-    letterSpacing: 0.7,
-    marginBottom: 4,
-    textTransform: "uppercase"
-  },
-  infoValue: {
-    color: "#f8fafc",
-    fontSize: 16,
-    lineHeight: 23
-  },
-  codeText: {
-    color: "#bae6fd",
-    fontFamily: "Courier",
-    fontSize: 13,
-    marginTop: 8
-  },
-  primaryButton: {
-    alignItems: "center",
-    backgroundColor: "#14b8a6",
-    borderRadius: 8,
-    minHeight: 48,
-    justifyContent: "center",
-    paddingHorizontal: 18
-  },
-  primaryButtonDisabled: {
-    backgroundColor: "#334155"
-  },
-  primaryButtonPressed: {
-    opacity: 0.82
-  },
-  primaryButtonText: {
-    color: "#021617",
-    fontSize: 16,
-    fontWeight: "800"
-  },
-  buttonSpacer: {
-    marginTop: 12
-  },
-  secondaryButton: {
-    alignItems: "center",
-    borderColor: "#475569",
-    borderRadius: 8,
-    borderWidth: 1,
-    minHeight: 46,
-    justifyContent: "center",
-    paddingHorizontal: 18
-  },
-  secondaryButtonDisabled: {
-    opacity: 0.6
-  },
-  secondaryButtonPressed: {
-    opacity: 0.75
-  },
-  secondaryButtonText: {
-    color: "#e2e8f0",
-    fontSize: 15,
-    fontWeight: "700"
+  cardTitle: {
+    color: ocnoerTheme.colors.text,
+    fontSize: 17,
+    fontWeight: "800",
+    marginBottom: ocnoerTheme.spacing.sm
   },
   catNameForm: {
-    marginTop: 14
-  },
-  input: {
-    backgroundColor: "#071014",
-    borderColor: "#284450",
-    borderRadius: 8,
-    borderWidth: 1,
-    color: "#f8fafc",
-    fontSize: 16,
-    minHeight: 48,
-    paddingHorizontal: 12
-  },
-  error: {
-    color: "#fca5a5",
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 10
+    marginTop: ocnoerTheme.spacing.lg
   },
   inlineButton: {
-    alignItems: "center",
-    backgroundColor: "#14b8a6",
-    borderRadius: 8,
-    justifyContent: "center",
-    marginTop: 12,
-    minHeight: 44,
-    paddingHorizontal: 16
+    marginTop: ocnoerTheme.spacing.md
   },
-  inlineButtonDisabled: {
-    backgroundColor: "#334155"
+  primaryAction: {
+    marginTop: ocnoerTheme.spacing.xl
   },
-  inlineButtonPressed: {
-    opacity: 0.82
+  stackedButton: {
+    marginTop: ocnoerTheme.spacing.md
   },
-  inlineButtonText: {
-    color: "#021617",
-    fontSize: 15,
-    fontWeight: "800"
+  codeText: {
+    color: ocnoerTheme.colors.cyan,
+    fontFamily: ocnoerTheme.typography.family.monospace,
+    fontSize: 13,
+    marginTop: ocnoerTheme.spacing.sm
+  },
+  error: {
+    color: ocnoerTheme.colors.rose,
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: ocnoerTheme.spacing.md
+  },
+  warning: {
+    color: ocnoerTheme.colors.warning,
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: ocnoerTheme.spacing.md
   }
 });

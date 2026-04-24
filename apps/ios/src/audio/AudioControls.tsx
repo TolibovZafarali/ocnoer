@@ -1,11 +1,20 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import {
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  type StyleProp,
+  type ViewStyle
+} from "react-native";
 
 import type { NativeAudioPreferences } from "../storage/audioPreferenceStorage";
 import type { NativeBackgroundMusicStatus } from "./useNativeBackgroundMusic";
+import { ocnoerTheme } from "../ui/theme";
 
 export function AudioToggleButton(props: {
   preferences: NativeAudioPreferences;
   onToggleMuted: () => void;
+  compact?: boolean;
 }) {
   return (
     <Pressable
@@ -18,6 +27,7 @@ export function AudioToggleButton(props: {
       onPress={props.onToggleMuted}
       style={({ pressed }) => [
         styles.toggleButton,
+        props.compact ? styles.toggleButtonCompact : null,
         props.preferences.muted ? styles.toggleButtonMuted : null,
         pressed ? styles.buttonPressed : null
       ]}
@@ -34,6 +44,8 @@ export function AudioStatusPanel(props: {
   status?: NativeBackgroundMusicStatus | null;
   isLoading?: boolean;
   error?: string | null;
+  compact?: boolean;
+  style?: StyleProp<ViewStyle>;
   onToggleMuted: () => void;
 }) {
   const statusLabel = props.status?.label ?? "Audio ready";
@@ -47,9 +59,15 @@ export function AudioStatusPanel(props: {
         : `Volume ${Math.round(props.preferences.volume * 100)}%`);
 
   return (
-    <View style={styles.panel}>
+    <View
+      style={[
+        styles.panel,
+        props.compact ? styles.panelCompact : null,
+        props.style
+      ]}
+    >
       <View style={styles.panelText}>
-        <Text style={styles.panelTitle}>Audio</Text>
+        {props.compact ? null : <Text style={styles.panelTitle}>Audio</Text>}
         <Text numberOfLines={1} style={styles.statusLabel}>
           {statusLabel}
         </Text>
@@ -60,6 +78,7 @@ export function AudioStatusPanel(props: {
         ) : null}
       </View>
       <AudioToggleButton
+        compact={props.compact}
         preferences={props.preferences}
         onToggleMuted={props.onToggleMuted}
       />
@@ -73,12 +92,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between"
   },
+  panelCompact: {
+    gap: 8
+  },
   panelText: {
     flex: 1,
     paddingRight: 12
   },
   panelTitle: {
-    color: "#94a3b8",
+    color: ocnoerTheme.colors.textSubtle,
     fontSize: 12,
     fontWeight: "800",
     letterSpacing: 0.7,
@@ -86,32 +108,37 @@ const styles = StyleSheet.create({
     textTransform: "uppercase"
   },
   statusLabel: {
-    color: "#f8fafc",
+    color: ocnoerTheme.colors.text,
     fontSize: 16,
     fontWeight: "800",
     lineHeight: 22
   },
   statusDetail: {
-    color: "#cbd5e1",
+    color: ocnoerTheme.colors.textMuted,
     fontSize: 13,
     lineHeight: 18,
     marginTop: 2
   },
   toggleButton: {
     alignItems: "center",
-    borderColor: "#67e8f9",
-    borderRadius: 8,
+    backgroundColor: "rgba(0, 0, 0, 0.22)",
+    borderColor: ocnoerTheme.colors.borderStrong,
+    borderRadius: 999,
     borderWidth: 1,
     justifyContent: "center",
     minHeight: 38,
     minWidth: 76,
     paddingHorizontal: 12
   },
+  toggleButtonCompact: {
+    minHeight: 34,
+    minWidth: 68
+  },
   toggleButtonMuted: {
-    borderColor: "#64748b"
+    borderColor: "rgba(148, 163, 184, 0.32)"
   },
   toggleButtonText: {
-    color: "#e2e8f0",
+    color: ocnoerTheme.colors.text,
     fontSize: 13,
     fontWeight: "900"
   },

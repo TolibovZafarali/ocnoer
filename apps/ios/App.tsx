@@ -14,9 +14,9 @@ import { ReaderScreen } from "./src/screens/ReaderScreen";
 import { RestoreSessionScreen } from "./src/screens/RestoreSessionScreen";
 import { SignInScreen } from "./src/screens/SignInScreen";
 import {
-  clearProgressByPlayerId,
-  loadProgressByPlayerId
-} from "./src/storage/playerProgressStorage";
+  clearSyncedPlayerProgress,
+  loadSyncedPlayerProgress
+} from "./src/sync/playerProgressSync";
 
 type AuthenticatedRuntimeShellProps = {
   storedSession: StoredPlayerSession;
@@ -49,29 +49,43 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
   );
   const [isLoadingProgress, setIsLoadingProgress] = useState(true);
   const [isResettingProgress, setIsResettingProgress] = useState(false);
+  const [progressSyncError, setProgressSyncError] = useState<string | null>(
+    null
+  );
   const [catNameError, setCatNameError] = useState<string | null>(null);
   const [isUpdatingCatName, setIsUpdatingCatName] = useState(false);
   const playerId = props.storedSession.player.id;
+  const sessionToken = props.storedSession.session.token;
 
   const refreshSavedProgress = useCallback(async () => {
     setIsLoadingProgress(true);
+    setProgressSyncError(null);
 
     try {
-      const progress = await loadProgressByPlayerId(playerId);
+      const result = await loadSyncedPlayerProgress({
+        playerId,
+        token: sessionToken
+      });
 
       if (mountedRef.current) {
-        setSavedProgress(progress);
+        setSavedProgress(result.progress);
+        setProgressSyncError(result.warning);
       }
-    } catch {
+    } catch (error) {
       if (mountedRef.current) {
         setSavedProgress(null);
+        setProgressSyncError(
+          error instanceof Error
+            ? error.message
+            : "Unable to check saved progress."
+        );
       }
     } finally {
       if (mountedRef.current) {
         setIsLoadingProgress(false);
       }
     }
-  }, [playerId]);
+  }, [playerId, sessionToken]);
 
   useEffect(() => {
     return () => {
@@ -115,10 +129,18 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
 
   async function resetProgress() {
     setIsResettingProgress(true);
+    setProgressSyncError(null);
 
     try {
-      await clearProgressByPlayerId(playerId);
+      await clearSyncedPlayerProgress({
+        playerId,
+        token: sessionToken
+      });
       setSavedProgress(null);
+    } catch (error) {
+      setProgressSyncError(
+        error instanceof Error ? error.message : "Unable to clear progress."
+      );
     } finally {
       setIsResettingProgress(false);
     }
@@ -126,13 +148,21 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
 
   async function restartReading() {
     setIsResettingProgress(true);
+    setProgressSyncError(null);
 
     try {
-      await clearProgressByPlayerId(playerId);
+      await clearSyncedPlayerProgress({
+        playerId,
+        token: sessionToken
+      });
       setSavedProgress(null);
       setActiveScreen({
         type: "reader"
       });
+    } catch (error) {
+      setProgressSyncError(
+        error instanceof Error ? error.message : "Unable to restart reading."
+      );
     } finally {
       setIsResettingProgress(false);
     }
@@ -175,6 +205,7 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
           })
         }
         player={props.storedSession.player}
+        sessionToken={sessionToken}
       />
     );
   }
@@ -189,6 +220,7 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
       isResettingProgress={isResettingProgress}
       isUpdatingCatName={isUpdatingCatName}
       isSigningOut={props.isSigningOut}
+      progressSyncError={progressSyncError}
       onContinueReading={() =>
         setActiveScreen({
           type: "reader"

@@ -16,6 +16,13 @@ export type PlayerProgress = {
   updatedAt: string;
 };
 
+export type PlayerProgressConflictSource = "local" | "server" | "none";
+
+export type PlayerProgressConflictResolution = {
+  progress: PlayerProgress | null;
+  source: PlayerProgressConflictSource;
+};
+
 export type ReaderState = {
   sceneIndex: number;
   dialogueIndex: number;
@@ -68,6 +75,116 @@ export function createInitialReaderState(): ReaderState {
     sceneIndex: 0,
     dialogueIndex: 0,
     isChapterComplete: false
+  };
+}
+
+function isBranchFlagValue(value: unknown) {
+  return (
+    typeof value === "boolean" ||
+    (typeof value === "number" && Number.isFinite(value)) ||
+    typeof value === "string"
+  );
+}
+
+function isBranchFlagsRecord(
+  value: unknown
+): value is PlayerProgress["branchFlags"] {
+  return (
+    typeof value === "object" &&
+    value != null &&
+    !Array.isArray(value) &&
+    Object.values(value).every(isBranchFlagValue)
+  );
+}
+
+function isNonEmptyString(value: unknown): value is string {
+  return typeof value === "string" && value.trim().length > 0;
+}
+
+function isValidProgressUpdatedAt(value: unknown): value is string {
+  return typeof value === "string" && Number.isFinite(Date.parse(value));
+}
+
+export function parsePlayerProgress(value: unknown): PlayerProgress | null {
+  if (typeof value !== "object" || value == null) {
+    return null;
+  }
+
+  const candidate = value as {
+    schemaVersion?: unknown;
+    chapterId?: unknown;
+    sceneId?: unknown;
+    dialogueEntryId?: unknown;
+    branchFlags?: unknown;
+    updatedAt?: unknown;
+  };
+
+  if (
+    candidate.schemaVersion !== PLAYER_PROGRESS_SCHEMA_VERSION ||
+    !isNonEmptyString(candidate.chapterId) ||
+    !isNonEmptyString(candidate.sceneId) ||
+    !isNonEmptyString(candidate.dialogueEntryId) ||
+    !isBranchFlagsRecord(candidate.branchFlags) ||
+    !isValidProgressUpdatedAt(candidate.updatedAt)
+  ) {
+    return null;
+  }
+
+  return {
+    schemaVersion: PLAYER_PROGRESS_SCHEMA_VERSION,
+    chapterId: candidate.chapterId,
+    sceneId: candidate.sceneId,
+    dialogueEntryId: candidate.dialogueEntryId,
+    branchFlags: candidate.branchFlags,
+    updatedAt: candidate.updatedAt
+  };
+}
+
+export function comparePlayerProgressUpdatedAt(
+  left: Pick<PlayerProgress, "updatedAt">,
+  right: Pick<PlayerProgress, "updatedAt">
+) {
+  return Date.parse(left.updatedAt) - Date.parse(right.updatedAt);
+}
+
+export function resolvePlayerProgressConflict(input: {
+  localProgress: PlayerProgress | null;
+  serverProgress: PlayerProgress | null;
+}): PlayerProgressConflictResolution {
+  if (!input.localProgress && !input.serverProgress) {
+    return {
+      progress: null,
+      source: "none"
+    };
+  }
+
+  if (!input.localProgress) {
+    return {
+      progress: input.serverProgress,
+      source: "server"
+    };
+  }
+
+  if (!input.serverProgress) {
+    return {
+      progress: input.localProgress,
+      source: "local"
+    };
+  }
+
+  if (
+    comparePlayerProgressUpdatedAt(input.localProgress, input.serverProgress) >
+    0
+  ) {
+    return {
+      progress: input.localProgress,
+      source: "local"
+    };
+  }
+
+  return {
+    progress: input.serverProgress,
+    source: "server"
   };
 }
 

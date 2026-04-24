@@ -6,6 +6,7 @@ import {
   decidePlayerResumeAction,
   getPlayerRuntimeAssetUrls,
   getPlayerRuntimeSceneAssetUrls,
+  getPlayerRuntimeStageCharacters,
   loadPlayerRuntimeBootstrap,
   loadPlayerRuntimeSession
 } from "@/lib/story/runtime";
@@ -654,6 +655,127 @@ describe("getPlayerRuntimeAssetUrls", () => {
       leftCharacterImageUrl: null,
       rightCharacterImageUrl: null
     });
+  });
+});
+
+describe("getPlayerRuntimeStageCharacters", () => {
+  it("returns both staged characters and marks active speakers", () => {
+    const playableBundle = createBundle({
+      chapterId: "chapter_two",
+      title: "Chapter Two",
+      orderIndex: 2,
+      nextChapterId: null,
+      scenes: [
+        {
+          id: "scene_two",
+          title: "Scene Two",
+          orderIndex: 1,
+          backgroundImage: null,
+          backgroundMusic: null,
+          backgroundMusicCues: [],
+          carryOcnoerDressSelection: true,
+          characterPool: [],
+          dialogue: [
+            {
+              id: "line_two",
+              orderIndex: 1,
+              text: "Choose your dress.",
+              speaker: {
+                type: "dress_prompt",
+                characterId: "character_left",
+                characterName: "Left",
+                characterSlug: "left",
+                dressOptions: []
+              },
+              stage: {
+                left: createStageCharacter({
+                  characterId: "character_left",
+                  characterName: "Left",
+                  characterSlug: "left",
+                  imagePath: "runtime/media/opening-left.png"
+                }),
+                right: createStageCharacter({
+                  characterId: "character_right",
+                  characterName: "Right",
+                  characterSlug: "right",
+                  imagePath: "runtime/media/opening-right.png"
+                })
+              }
+            }
+          ]
+        }
+      ]
+    });
+
+    expect(
+      getPlayerRuntimeStageCharacters({
+        supabaseUrl,
+        bundle: playableBundle,
+        readerState: initialReaderState
+      })
+    ).toEqual([
+      {
+        placement: "left",
+        characterId: "character_left",
+        characterName: "Left",
+        characterSlug: "left",
+        emotionKey: "default",
+        emotionLabel: "Default",
+        imageUrl:
+          "https://example.supabase.co/storage/v1/object/public/runtime/media/opening-left.png",
+        isActiveSpeaker: true
+      },
+      {
+        placement: "right",
+        characterId: "character_right",
+        characterName: "Right",
+        characterSlug: "right",
+        emotionKey: "default",
+        emotionLabel: "Default",
+        imageUrl:
+          "https://example.supabase.co/storage/v1/object/public/runtime/media/opening-right.png",
+        isActiveSpeaker: false
+      }
+    ]);
+  });
+
+  it("keeps narrator staging visible without an active speaker", () => {
+    const playableBundle = createBundle({
+      chapterId: "chapter_two",
+      title: "Chapter Two",
+      orderIndex: 2,
+      nextChapterId: null,
+      scenes: [
+        createScene({
+          id: "scene_two",
+          title: "Scene Two",
+          orderIndex: 1,
+          dialogueIds: ["line_two"],
+          leftImagePath: "runtime/media/opening-left.png",
+          rightImagePath: "runtime/media/opening-right.png"
+        })
+      ]
+    });
+
+    expect(
+      getPlayerRuntimeStageCharacters({
+        supabaseUrl,
+        bundle: playableBundle,
+        readerState: initialReaderState
+      }).map((character) => ({
+        placement: character.placement,
+        isActiveSpeaker: character.isActiveSpeaker
+      }))
+    ).toEqual([
+      {
+        placement: "left",
+        isActiveSpeaker: false
+      },
+      {
+        placement: "right",
+        isActiveSpeaker: false
+      }
+    ]);
   });
 });
 

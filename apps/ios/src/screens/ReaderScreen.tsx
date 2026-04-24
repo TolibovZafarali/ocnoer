@@ -1,5 +1,7 @@
+import { useEffect, useRef, type ReactNode } from "react";
 import {
   ActivityIndicator,
+  Animated,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -16,6 +18,8 @@ import type { PlayerRuntimeBootstrap } from "@ocnoer/story-core";
 
 import type { MobilePlayer } from "../api/playerSessionTypes";
 import type { MobileRuntimeConfig } from "../config/runtime";
+import type { NativeReaderBoundaryPresentation } from "../reader/boundaryPresentation";
+import { useReaderImagePreload } from "../reader/imagePreload";
 import type {
   NativeReaderDressOption,
   NativeReaderPortrait,
@@ -74,6 +78,36 @@ function SecondaryButton(props: {
   );
 }
 
+function FadeInView(props: {
+  animationKey: string;
+  children: ReactNode;
+  durationMs?: number;
+  style?: object;
+}) {
+  const opacity = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    opacity.setValue(0);
+    const animation = Animated.timing(opacity, {
+      toValue: 1,
+      duration: props.durationMs ?? 180,
+      useNativeDriver: true
+    });
+
+    animation.start();
+
+    return () => {
+      animation.stop();
+    };
+  }, [opacity, props.animationKey, props.durationMs]);
+
+  return (
+    <Animated.View style={[props.style, { opacity }]}>
+      {props.children}
+    </Animated.View>
+  );
+}
+
 function ReaderHeader(props: {
   title: string;
   subtitle: string;
@@ -100,14 +134,28 @@ function Portrait(props: { portrait: NativeReaderPortrait | null }) {
   }
 
   return (
-    <View style={styles.portraitSlot}>
-      <Image
-        accessibilityIgnoresInvertColors
-        accessibilityLabel={props.portrait.label}
-        resizeMode="contain"
-        source={{ uri: props.portrait.imageUrl }}
-        style={styles.portraitImage}
-      />
+    <View
+      style={[
+        styles.portraitSlot,
+        props.portrait.side === "left"
+          ? styles.portraitSlotLeft
+          : styles.portraitSlotRight
+      ]}
+    >
+      <FadeInView animationKey={props.portrait.key} style={styles.portraitFade}>
+        <Image
+          accessibilityIgnoresInvertColors
+          accessibilityLabel={props.portrait.label}
+          resizeMode="contain"
+          source={{ uri: props.portrait.imageUrl }}
+          style={[
+            styles.portraitImage,
+            props.portrait.isActiveSpeaker
+              ? styles.portraitImageActive
+              : styles.portraitImageInactive
+          ]}
+        />
+      </FadeInView>
     </View>
   );
 }
@@ -116,12 +164,18 @@ function ReaderStage(props: { presentation: NativeReaderPresentation }) {
   return (
     <View style={styles.stage}>
       {props.presentation.backgroundImageUrl ? (
-        <Image
-          accessibilityIgnoresInvertColors
-          resizeMode="cover"
-          source={{ uri: props.presentation.backgroundImageUrl }}
-          style={styles.stageBackground}
-        />
+        <FadeInView
+          animationKey={props.presentation.backgroundImageUrl}
+          durationMs={260}
+          style={styles.stageBackgroundFade}
+        >
+          <Image
+            accessibilityIgnoresInvertColors
+            resizeMode="cover"
+            source={{ uri: props.presentation.backgroundImageUrl }}
+            style={styles.stageBackground}
+          />
+        </FadeInView>
       ) : null}
       <View style={styles.stageOverlay} />
       <View style={styles.sceneBadge}>
@@ -281,6 +335,59 @@ function ReaderDialogue(props: {
   );
 }
 
+function ReaderBoundaryCard(props: {
+  boundary: NativeReaderBoundaryPresentation;
+  actionError: string | null;
+  persistenceError: string | null;
+  isMoving: boolean;
+  canRetreat: boolean;
+  onAdvance: () => void;
+  onRetreat: () => void;
+}) {
+  const canAdvance =
+    props.boundary.primaryActionLabel != null && !props.isMoving;
+
+  return (
+    <FadeInView
+      animationKey={`${props.boundary.type}:${props.boundary.title}:${props.boundary.body}`}
+      durationMs={220}
+      style={styles.boundaryPanel}
+    >
+      <Text style={styles.boundaryEyebrow}>{props.boundary.eyebrow}</Text>
+      <Text style={styles.boundaryTitle}>{props.boundary.title}</Text>
+      {props.boundary.meta ? (
+        <Text style={styles.boundaryMeta}>{props.boundary.meta}</Text>
+      ) : null}
+      <Text style={styles.boundaryBody}>{props.boundary.body}</Text>
+
+      {props.actionError ? (
+        <Text style={styles.errorText}>{props.actionError}</Text>
+      ) : null}
+      {props.persistenceError ? (
+        <Text style={styles.warningText}>{props.persistenceError}</Text>
+      ) : null}
+
+      <View style={styles.actions}>
+        <SecondaryButton
+          disabled={!props.canRetreat || props.isMoving}
+          label="Back"
+          onPress={props.onRetreat}
+        />
+        <View style={styles.actionSpacer} />
+        {props.boundary.primaryActionLabel ? (
+          <PrimaryButton
+            disabled={!canAdvance}
+            label={
+              props.isMoving ? "Loading" : props.boundary.primaryActionLabel
+            }
+            onPress={props.onAdvance}
+          />
+        ) : null}
+      </View>
+    </FadeInView>
+  );
+}
+
 function ReaderActions(props: {
   canAdvance: boolean;
   canRetreat: boolean;
@@ -314,6 +421,9 @@ export function ReaderScreen(props: ReaderScreenProps) {
     onUpdateCatName: props.onUpdateCatName
   });
   const presentation = reader.presentation;
+  const boundaryPresentation = reader.boundaryPresentation;
+
+  useReaderImagePreload(reader.preloadImageUrls);
 
   if (reader.state.status === "loading") {
     return (
@@ -384,6 +494,32 @@ export function ReaderScreen(props: ReaderScreenProps) {
     );
   }
 
+  if (boundaryPresentation) {
+    return (
+      <SafeAreaView style={styles.safeArea}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          style={styles.content}
+        >
+          <ReaderHeader
+            title={presentation.chapterTitle}
+            subtitle={boundaryPresentation.eyebrow}
+            onBackHome={props.onBackHome}
+          />
+          <ReaderBoundaryCard
+            actionError={reader.actionError}
+            boundary={boundaryPresentation}
+            canRetreat={reader.canRetreat}
+            isMoving={reader.isMoving}
+            persistenceError={reader.persistenceError}
+            onAdvance={reader.advance}
+            onRetreat={reader.retreat}
+          />
+        </KeyboardAvoidingView>
+      </SafeAreaView>
+    );
+  }
+
   if (reader.state.status === "finished") {
     return (
       <SafeAreaView style={styles.safeArea}>
@@ -422,21 +558,26 @@ export function ReaderScreen(props: ReaderScreenProps) {
           onBackHome={props.onBackHome}
         />
         <ReaderStage presentation={presentation} />
-        <ReaderDialogue
-          actionError={reader.actionError}
-          canRetreat={reader.canRetreat}
-          catNameInputError={reader.catNameInputError}
-          catNameInputValue={reader.catNameInputValue}
-          isMoving={reader.isMoving}
-          isSavingCatName={reader.isSavingCatName}
-          persistenceError={reader.persistenceError}
-          presentation={presentation}
-          onAdvance={reader.advance}
-          onCatNameInputChange={reader.setCatNameInputValue}
-          onRetreat={reader.retreat}
-          onSelectDressOption={reader.selectDressOption}
-          onSubmitCatName={reader.submitCatName}
-        />
+        <FadeInView
+          animationKey={`${presentation.status}:${presentation.dialogueEntryId}`}
+          durationMs={160}
+        >
+          <ReaderDialogue
+            actionError={reader.actionError}
+            canRetreat={reader.canRetreat}
+            catNameInputError={reader.catNameInputError}
+            catNameInputValue={reader.catNameInputValue}
+            isMoving={reader.isMoving}
+            isSavingCatName={reader.isSavingCatName}
+            persistenceError={reader.persistenceError}
+            presentation={presentation}
+            onAdvance={reader.advance}
+            onCatNameInputChange={reader.setCatNameInputValue}
+            onRetreat={reader.retreat}
+            onSelectDressOption={reader.selectDressOption}
+            onSubmitCatName={reader.submitCatName}
+          />
+        </FadeInView>
       </KeyboardAvoidingView>
     </SafeAreaView>
   );
@@ -495,6 +636,9 @@ const styles = StyleSheet.create({
   stageBackground: {
     ...StyleSheet.absoluteFillObject
   },
+  stageBackgroundFade: {
+    ...StyleSheet.absoluteFillObject
+  },
   stageOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(2, 6, 23, 0.30)"
@@ -532,10 +676,30 @@ const styles = StyleSheet.create({
     height: "100%",
     justifyContent: "flex-end"
   },
+  portraitSlotLeft: {
+    alignItems: "flex-start"
+  },
+  portraitSlotRight: {
+    alignItems: "flex-end"
+  },
+  portraitFade: {
+    alignItems: "center",
+    height: "100%",
+    justifyContent: "flex-end",
+    width: "100%"
+  },
   portraitImage: {
     height: "96%",
     maxWidth: 210,
     width: "100%"
+  },
+  portraitImageActive: {
+    opacity: 1,
+    transform: [{ scale: 1.03 }]
+  },
+  portraitImageInactive: {
+    opacity: 0.78,
+    transform: [{ scale: 0.98 }]
   },
   dialoguePanel: {
     backgroundColor: "#111827",
@@ -544,6 +708,43 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     marginTop: 12,
     padding: 16
+  },
+  boundaryPanel: {
+    backgroundColor: "#0b1220",
+    borderColor: "#273244",
+    borderRadius: 8,
+    borderWidth: 1,
+    flex: 1,
+    justifyContent: "center",
+    marginTop: 12,
+    padding: 20
+  },
+  boundaryEyebrow: {
+    color: "#67e8f9",
+    fontSize: 12,
+    fontWeight: "900",
+    letterSpacing: 0.8,
+    marginBottom: 12,
+    textTransform: "uppercase"
+  },
+  boundaryTitle: {
+    color: "#f8fafc",
+    fontSize: 28,
+    fontWeight: "900",
+    lineHeight: 34,
+    marginBottom: 10
+  },
+  boundaryMeta: {
+    color: "#94a3b8",
+    fontSize: 13,
+    fontWeight: "800",
+    marginBottom: 14,
+    textTransform: "uppercase"
+  },
+  boundaryBody: {
+    color: "#dbeafe",
+    fontSize: 19,
+    lineHeight: 29
   },
   speaker: {
     color: "#facc15",

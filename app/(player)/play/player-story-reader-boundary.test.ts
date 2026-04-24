@@ -222,4 +222,15 @@ describe("player story reader boundary helpers", () => {
       text: "Open chapter two."
     });
   });
+
+  it("clears scene-transition boundaries after they are acknowledged", () => {
+    expect(
+      resolveBoundaryAdvance({
+        boundaryState: {
+          type: "scene-transition"
+        },
+        currentChapter: chapterOne
+      })
+    ).toBeNull();
+  });
 });

@@ -1,15 +1,16 @@
 import {
+  findNextPlayableReaderState,
   getCurrentDialogue,
   getCurrentScene,
   getDressBranchFlagKey,
   getPlayerRuntimeAssetUrls,
+  getPlayerRuntimeStageCharacters,
   resolveDialogueTextTemplate,
   toPublicStorageUrl,
   type PlayerProgress,
   type ReaderState,
   type RuntimeChapterBundle,
-  type RuntimeDialogueEntry,
-  type RuntimeStageCharacter
+  type RuntimeDialogueEntry
 } from "@ocnoer/story-core";
 
 export const SUPPORTED_NATIVE_READER_ENTRY_TYPES = [
@@ -27,6 +28,7 @@ export type NativeReaderPortrait = {
   imageUrl: string;
   label: string;
   side: "left" | "right";
+  isActiveSpeaker: boolean;
 };
 
 export type NativeReaderDressOption = {
@@ -48,6 +50,8 @@ type NativeReaderPresentationBase = {
   backgroundImageUrl: string | null;
   leftPortrait: NativeReaderPortrait | null;
   rightPortrait: NativeReaderPortrait | null;
+  stageCharacters: NativeReaderPortrait[];
+  preloadImageUrls: string[];
 };
 
 export type NativeReaderPresentation =
@@ -79,24 +83,6 @@ function isSupportedNativeReaderEntryType(
   return SUPPORTED_NATIVE_READER_ENTRY_TYPES.some(
     (supportedType) => supportedType === entryType
   );
-}
-
-function createPortrait(input: {
-  imageUrl: string | null;
-  side: "left" | "right";
-  stageCharacter: RuntimeStageCharacter | null;
-  fallbackLabel: string;
-}) {
-  if (!input.imageUrl) {
-    return null;
-  }
-
-  return {
-    key: `${input.side}:${input.stageCharacter?.characterId ?? input.fallbackLabel}`,
-    imageUrl: input.imageUrl,
-    label: input.stageCharacter?.characterName ?? input.fallbackLabel,
-    side: input.side
-  } satisfies NativeReaderPortrait;
 }
 
 function getSpeakerName(input: {
@@ -162,6 +148,56 @@ function getSelectedDressOptionKey(input: {
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
+function createNativeReaderPortrait(input: {
+  catName: string | null;
+  character: ReturnType<typeof getPlayerRuntimeStageCharacters>[number];
+}): NativeReaderPortrait {
+  return {
+    key: `${input.character.placement}:${input.character.characterId}:${input.character.emotionKey}:${input.character.imageUrl}`,
+    imageUrl: input.character.imageUrl,
+    label: resolveDialogueTextTemplate(
+      input.character.characterName,
+      input.catName
+    ),
+    side: input.character.placement,
+    isActiveSpeaker: input.character.isActiveSpeaker
+  };
+}
+
+function uniqueImageUrls(imageUrls: Array<string | null | undefined>) {
+  return Array.from(
+    new Set(
+      imageUrls.filter(
+        (imageUrl): imageUrl is string =>
+          typeof imageUrl === "string" && imageUrl.length > 0
+      )
+    )
+  );
+}
+
+function getNextBackgroundImageUrl(input: {
+  supabaseUrl: string;
+  bundle: RuntimeChapterBundle;
+  readerState: ReaderState;
+  branchFlags: PlayerProgress["branchFlags"];
+}) {
+  const nextState = findNextPlayableReaderState(
+    input.bundle.chapter,
+    input.readerState
+  );
+
+  if (!nextState) {
+    return null;
+  }
+
+  return getPlayerRuntimeAssetUrls({
+    supabaseUrl: input.supabaseUrl,
+    bundle: input.bundle,
+    readerState: nextState.state,
+    branchFlags: input.branchFlags
+  }).backgroundImageUrl;
+}
+
 export function createNativeReaderPresentation(input: {
   supabaseUrl: string;
   bundle: RuntimeChapterBundle;
@@ -189,18 +225,37 @@ export function createNativeReaderPresentation(input: {
         catName: input.catName
       })
     : "Unsupported";
-  const leftPortrait = createPortrait({
-    imageUrl: assetUrls.leftCharacterImageUrl,
-    side: "left",
-    stageCharacter: entry.stage.left,
-    fallbackLabel: speakerName
+  const stageCharacters = getPlayerRuntimeStageCharacters({
+    supabaseUrl: input.supabaseUrl,
+    bundle: input.bundle,
+    readerState: input.readerState,
+    branchFlags: input.branchFlags
+  }).map((character) =>
+    createNativeReaderPortrait({
+      catName: input.catName,
+      character
+    })
+  );
+  const leftPortrait =
+    stageCharacters.find((portrait) => portrait.side === "left") ?? null;
+  const rightPortrait =
+    stageCharacters.find((portrait) => portrait.side === "right") ?? null;
+  const nextBackgroundImageUrl = getNextBackgroundImageUrl({
+    supabaseUrl: input.supabaseUrl,
+    bundle: input.bundle,
+    readerState: input.readerState,
+    branchFlags: input.branchFlags
   });
-  const rightPortrait = createPortrait({
-    imageUrl: assetUrls.rightCharacterImageUrl,
-    side: "right",
-    stageCharacter: entry.stage.right,
-    fallbackLabel: speakerName
+  const dressOptions = getDressOptions({
+    supabaseUrl: input.supabaseUrl,
+    entry
   });
+  const preloadImageUrls = uniqueImageUrls([
+    assetUrls.backgroundImageUrl,
+    nextBackgroundImageUrl,
+    ...stageCharacters.map((portrait) => portrait.imageUrl),
+    ...dressOptions.map((option) => option.previewImageUrl)
+  ]);
   const base = {
     chapterId: input.bundle.chapter.id,
     chapterTitle: input.bundle.chapter.title,
@@ -213,7 +268,9 @@ export function createNativeReaderPresentation(input: {
     dialogueCount: scene.dialogue.length,
     backgroundImageUrl: assetUrls.backgroundImageUrl,
     leftPortrait,
-    rightPortrait
+    rightPortrait,
+    stageCharacters,
+    preloadImageUrls
   } satisfies NativeReaderPresentationBase;
   if (!isSupportedNativeReaderEntryType(entryType)) {
     return {
@@ -235,10 +292,7 @@ export function createNativeReaderPresentation(input: {
     entryType,
     speakerName,
     dialogueText: resolveDialogueTextTemplate(entry.text, input.catName),
-    dressOptions: getDressOptions({
-      supabaseUrl: input.supabaseUrl,
-      entry
-    }),
+    dressOptions,
     selectedDressOptionKey,
     needsCatNameInput: entryType === "cat_name_prompt" && input.catName == null,
     needsDressSelection:

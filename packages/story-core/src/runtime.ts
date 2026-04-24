@@ -23,6 +23,19 @@ export type PlayerRuntimeAssetUrls = {
   rightCharacterImageUrl: string | null;
 };
 
+export type PlayerRuntimeStagePlacement = "left" | "right";
+
+export type PlayerRuntimeStageCharacter = {
+  placement: PlayerRuntimeStagePlacement;
+  characterId: string;
+  characterName: string;
+  characterSlug: string;
+  emotionKey: string;
+  emotionLabel: string;
+  imageUrl: string;
+  isActiveSpeaker: boolean;
+};
+
 export type RuntimeFetchInit = {
   cache?: "no-store";
 };
@@ -193,6 +206,17 @@ function getVisiblePlayerStageImagePaths(input: {
           })
         : null
   };
+}
+
+function getActiveSpeakerCharacterId(entry: RuntimeDialogueEntry) {
+  switch (entry.speaker.type) {
+    case "character":
+    case "dress_prompt":
+    case "cat_name_prompt":
+      return entry.speaker.characterId;
+    case "narrator":
+      return null;
+  }
 }
 
 export function toPublicStorageUrl(
@@ -396,6 +420,65 @@ export function getPlayerRuntimeAssetUrls(input: {
       visibleStageImagePaths.rightImagePath
     )
   };
+}
+
+export function getPlayerRuntimeStageCharacters(input: {
+  supabaseUrl: string;
+  bundle: RuntimeChapterBundle | null;
+  readerState: ReaderState | null;
+  branchFlags?: PlayerProgress["branchFlags"];
+}): PlayerRuntimeStageCharacter[] {
+  if (!input.bundle || !input.readerState) {
+    return [];
+  }
+
+  const scene = getCurrentScene(input.bundle.chapter, input.readerState);
+  const entry = getCurrentDialogue(input.bundle.chapter, input.readerState);
+
+  if (!scene || !entry) {
+    return [];
+  }
+
+  const branchFlags = input.branchFlags ?? {};
+  const activeSpeakerCharacterId = getActiveSpeakerCharacterId(entry);
+  const stageCharacters: PlayerRuntimeStageCharacter[] = [];
+  const addStageCharacter = (
+    placement: PlayerRuntimeStagePlacement,
+    stageCharacter: RuntimeStageCharacter | null
+  ) => {
+    if (!stageCharacter) {
+      return;
+    }
+
+    const imageUrl = toPublicStorageUrl(
+      input.supabaseUrl,
+      resolveStageCharacterImagePath({
+        scene,
+        stageCharacter,
+        branchFlags
+      })
+    );
+
+    if (!imageUrl) {
+      return;
+    }
+
+    stageCharacters.push({
+      placement,
+      characterId: stageCharacter.characterId,
+      characterName: stageCharacter.characterName,
+      characterSlug: stageCharacter.characterSlug,
+      emotionKey: stageCharacter.emotionKey,
+      emotionLabel: stageCharacter.emotionLabel,
+      imageUrl,
+      isActiveSpeaker: stageCharacter.characterId === activeSpeakerCharacterId
+    });
+  };
+
+  addStageCharacter("left", entry.stage.left);
+  addStageCharacter("right", entry.stage.right);
+
+  return stageCharacters;
 }
 
 export function getPlayerRuntimeSceneAssetUrls(input: {

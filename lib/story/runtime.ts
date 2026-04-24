@@ -6,11 +6,14 @@ export {
   fetchRuntimeJson,
   getPlayerRuntimeAssetUrls,
   getPlayerRuntimeSceneAssetUrls,
+  getPlayerRuntimeStageCharacters,
   loadPlayerRuntimeBootstrap,
   loadPlayerRuntimeSession,
   toPublicStorageUrl
 } from "@ocnoer/story-core";
 export type {
+  PlayerRuntimeStageCharacter,
+  PlayerRuntimeStagePlacement,
   PlayerResumeAction,
   PlayerRuntimeAssetUrls,
   PlayerRuntimeBootstrap,

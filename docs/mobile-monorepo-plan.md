@@ -155,36 +155,73 @@ web player and calls shared `@ocnoer/story-core` helpers for runtime loading,
 resume decisions, chapter-to-chapter advance/retreat, progress serialization,
 public media URL resolution, and wardrobe branch flags.
 
+The current public runtime audited for this parity step was generated on
+2026-04-23 and contains one published chapter, 14 playable scenes, and these
+entry types: `narrator`, `character`, `cat_name_prompt`, and `dress_prompt`.
+The native reader does not fake content for any other entry type.
+
 Supported native reader presentation types:
 
 - `narrator`: renders narrator label and dialogue text
-- `character`: renders speaker name, dialogue text, scene background, and the
-  active speaker portrait when the runtime provides one
+- `character`: renders speaker name, dialogue text, scene background, active
+  speaker emphasis, and visible staged portraits when the runtime provides them
 - `cat_name_prompt`: renders a basic native cat-name input and persists through
-  the existing mobile profile API before continuing
+  the existing mobile profile API before continuing; staged scene characters
+  remain visible when present
 - `dress_prompt`: renders basic selectable outfit options and stores the chosen
-  dress key in local progress branch flags
+  dress key in local progress branch flags; the prompt also uses the simplified
+  native staging renderer
 
 The reader deliberately surfaces unsupported future runtime entry types as an
 in-reader error instead of silently skipping them.
 
+Supported native boundary states:
+
+- chapter opening card for a fresh start or restart when the chapter has
+  authored opening text
+- chapter ending card when the chapter has authored ending text
+- scene-transition card when shared progression reports a scene transition
+- chapter-break card when progression enters another published chapter
+- story-finished card after the final published entry or after a terminal
+  chapter ending card
+
 Basic immersion support in this MVP:
 
 - scene background images render with a simple dark overlay when available
-- active left/right speaker portraits render when the shared runtime asset
-  resolver can identify them
+- up to two staged characters render in native left/right slots using runtime
+  `stage.left` and `stage.right`
+- active character/dress-prompt speakers are emphasized when they match a
+  staged character
+- narrator entries keep authored staged characters visible instead of blanking
+  the stage
 - dress option previews render when runtime preview image paths are available
+- current background, next same-chapter background, current staged portraits,
+  and current dress previews are preloaded with a short, non-blocking native
+  image prefetch
+- background, boundary, portrait, and dialogue changes use small native fades
 
 Still missing before rough parity with the web reader:
 
-- opening and ending chapter cards
-- full stage positioning rules for non-speaking characters
-- Framer Motion parity, typed text timing, scene blackout transitions, and map UI
+- full web stage positioning, lighting analysis, and DOM-style portrait motion
+- Framer Motion parity, typed text timing, scene blackout choreography, and map
+  UI
 - background music/audio playback
-- image preloading and lighting analysis
+- next-chapter asset preloading before a chapter bundle has been loaded
 - backend progress sync
 - full mobile-specific handling for any future branch or prompt types beyond the
   four supported MVP entry types
+
+Native staging simplification versus web:
+
+- iOS reads the portable runtime stage data and preserves only left/right
+  placement. It does not import Tailwind, DOM measurements, object-position
+  rules, Framer Motion variants, or canvas lighting analysis.
+- The web player still owns final visual choreography. The iOS reader currently
+  uses a stable two-slot native layout with active-speaker emphasis and graceful
+  fallback when a stage side has no image.
+- Runtime data currently exposes left/right placement, not an authored center
+  slot. Center placement remains a future native-only simplification if content
+  requires it.
 
 ## Why The Web UI Cannot Be Copied Directly
 
@@ -200,12 +237,13 @@ adapter, and auth/session flow must be implemented separately for Expo.
 
 ## Next Likely Engineering Steps
 
-1. Add small tests for `packages/story-core` so shared reader behavior is locked
-   before the mobile reader is implemented.
-2. Wire the native reader prototype to the local iOS progress adapter.
+1. Add focused tests for newly shared `@ocnoer/story-core` boundary and staging
+   helpers as the shared surface grows.
+2. Exercise the native boundary/staging pass in the simulator against the
+   current public runtime and adjust layout only where real content breaks it.
 3. Add backend progress sync once the mobile reader has real progression
    events to save.
-4. Build the first native reader screen in `apps/ios` using the shared story
-   contracts and the public runtime repository.
-5. Add mobile-specific audio and image preloading adapters after the reader
-   screen shape is stable.
+4. Add mobile-specific audio/music playback after visual reader parity is
+   stable.
+5. Revisit map UI, typed text, lighting, and richer scene transitions after the
+   native reader can complete the currently published chapter comfortably.

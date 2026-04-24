@@ -3,17 +3,21 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   advanceRuntimePosition,
   applySceneDressCarrySelection,
+  createBoundaryStateForAdvance,
   createStoredProgress,
   decidePlayerResumeAction,
   findPreviousPlayableReaderState,
   getCurrentDialogue,
   getCurrentScene,
+  getChapterOpeningBoundaryState,
   getDressBranchFlagKey,
   normalizeCatNameInput,
   reconcileCatNameBranchFlags,
+  resolveBoundaryAdvance,
   resolveInitialCatNameState,
   retreatRuntimePosition,
   validateCatNameInput,
+  type PlayerBoundaryState,
   type PlayerProgress,
   type PlayerRuntimeBootstrap,
   type ReaderState,
@@ -28,6 +32,7 @@ import {
   loadProgressByPlayerId,
   saveProgressByPlayerId
 } from "../storage/playerProgressStorage";
+import { createNativeReaderBoundaryPresentation } from "./boundaryPresentation";
 import { createNativeReaderPresentation } from "./readerPresentation";
 
 type NativeReaderRuntimeState =
@@ -103,6 +108,24 @@ function createReadyState(input: {
   };
 }
 
+function getInitialBoundaryState(input: {
+  bundle: RuntimeChapterBundle | null;
+  storedProgress: PlayerProgress | null;
+  resumeActionType: ReturnType<typeof decidePlayerResumeAction>["type"];
+}) {
+  if (!input.bundle) {
+    return null;
+  }
+
+  return getChapterOpeningBoundaryState({
+    chapter: input.bundle.chapter,
+    reason:
+      input.resumeActionType === "use-initial-state" && !input.storedProgress
+        ? "initial-entry"
+        : "resume"
+  });
+}
+
 function getChapterIndex(manifest: RuntimeManifest, chapterId: string) {
   return manifest.chapters.findIndex((chapter) => chapter.id === chapterId);
 }
@@ -126,6 +149,8 @@ export function useNativeReaderController(
   const [runtimeState, setRuntimeState] = useState<NativeReaderRuntimeState>({
     status: "loading"
   });
+  const [boundaryState, setBoundaryState] =
+    useState<PlayerBoundaryState | null>(null);
   const [branchFlags, setBranchFlags] = useState<PlayerProgress["branchFlags"]>(
     {}
   );
@@ -155,6 +180,7 @@ export function useNativeReaderController(
       setRuntimeState({
         status: "loading"
       });
+      setBoundaryState(null);
       setActionError(null);
 
       try {
@@ -189,24 +215,44 @@ export function useNativeReaderController(
             return;
           }
 
-          setRuntimeState(
-            createReadyState({
-              manifest: loadedRuntime.manifest,
-              bundle: loadedRuntime.bundle,
-              readerState: loadedRuntime.readerState
+          const nextRuntimeState = createReadyState({
+            manifest: loadedRuntime.manifest,
+            bundle: loadedRuntime.bundle,
+            readerState: loadedRuntime.readerState
+          });
+
+          setRuntimeState(nextRuntimeState);
+          setBoundaryState(
+            getInitialBoundaryState({
+              bundle:
+                nextRuntimeState.status === "ready"
+                  ? nextRuntimeState.bundle
+                  : loadedRuntime.bundle,
+              storedProgress,
+              resumeActionType: resumeAction.type
             })
           );
           return;
         }
 
-        setRuntimeState(
-          createReadyState({
-            manifest: bootstrap.initialManifest,
-            bundle: bootstrap.initialBundle,
-            readerState:
-              resumeAction.type === "resume-from-initial-bundle"
-                ? resumeAction.readerState
-                : bootstrap.initialReaderState
+        const nextRuntimeState = createReadyState({
+          manifest: bootstrap.initialManifest,
+          bundle: bootstrap.initialBundle,
+          readerState:
+            resumeAction.type === "resume-from-initial-bundle"
+              ? resumeAction.readerState
+              : bootstrap.initialReaderState
+        });
+
+        setRuntimeState(nextRuntimeState);
+        setBoundaryState(
+          getInitialBoundaryState({
+            bundle:
+              nextRuntimeState.status === "ready"
+                ? nextRuntimeState.bundle
+                : bootstrap.initialBundle,
+            storedProgress,
+            resumeActionType: resumeAction.type
           })
         );
       } catch (error) {
@@ -307,6 +353,20 @@ export function useNativeReaderController(
     });
   }, [branchFlags, catName, config.supabaseUrl, runtimeState]);
 
+  const boundaryPresentation = useMemo(
+    () =>
+      createNativeReaderBoundaryPresentation({
+        boundaryState,
+        presentation
+      }),
+    [boundaryState, presentation]
+  );
+
+  const preloadImageUrls = useMemo(
+    () => presentation?.preloadImageUrls ?? [],
+    [presentation]
+  );
+
   const canRetreat = useMemo(() => {
     if (runtimeState.status === "finished") {
       return true;
@@ -392,7 +452,42 @@ export function useNativeReaderController(
   }, [catNameInputValue, onUpdateCatName]);
 
   const advance = useCallback(async () => {
-    if (runtimeState.status !== "ready" || isMoving) {
+    if (
+      (runtimeState.status !== "ready" && runtimeState.status !== "finished") ||
+      isMoving
+    ) {
+      return;
+    }
+
+    if (boundaryState) {
+      setActionError(null);
+
+      if (
+        boundaryState.type === "chapter-ending-card" &&
+        boundaryState.nextState.type === "story-finished"
+      ) {
+        setBoundaryState(boundaryState.nextState);
+        setRuntimeState({
+          status: "finished",
+          manifest: runtimeState.manifest,
+          bundle: runtimeState.bundle,
+          readerState: {
+            ...runtimeState.readerState,
+            isChapterComplete: true
+          }
+        });
+        return;
+      }
+
+      const nextBoundaryState = resolveBoundaryAdvance({
+        boundaryState,
+        currentChapter: runtimeState.bundle.chapter
+      });
+
+      if (nextBoundaryState !== boundaryState) {
+        setBoundaryState(nextBoundaryState);
+      }
+
       return;
     }
 
@@ -428,6 +523,14 @@ export function useNativeReaderController(
       });
 
       if (result.type === "story-finished") {
+        const nextBoundaryState = createBoundaryStateForAdvance({
+          manifest: runtimeState.manifest,
+          currentChapter: runtimeState.bundle.chapter,
+          action: {
+            type: "story-finished"
+          }
+        });
+
         setRuntimeState({
           status: "finished",
           manifest: runtimeState.manifest,
@@ -437,16 +540,46 @@ export function useNativeReaderController(
             isChapterComplete: true
           }
         });
+        setBoundaryState(nextBoundaryState);
         return;
       }
 
       if (result.type === "chapter-break") {
+        const nextBoundaryState = createBoundaryStateForAdvance({
+          manifest: runtimeState.manifest,
+          currentChapter: runtimeState.bundle.chapter,
+          action: {
+            type: "chapter-break",
+            nextChapter: result.bundle.chapter
+          }
+        });
+
         setRuntimeState({
           status: "ready",
           manifest: runtimeState.manifest,
           bundle: result.bundle,
           readerState: result.state
         });
+        setBoundaryState(nextBoundaryState);
+        return;
+      }
+
+      if (result.type === "scene-transition") {
+        setRuntimeState({
+          status: "ready",
+          manifest: runtimeState.manifest,
+          bundle: runtimeState.bundle,
+          readerState: result.state
+        });
+        setBoundaryState(
+          createBoundaryStateForAdvance({
+            manifest: runtimeState.manifest,
+            currentChapter: runtimeState.bundle.chapter,
+            action: {
+              type: "scene-transition"
+            }
+          })
+        );
         return;
       }
 
@@ -456,12 +589,19 @@ export function useNativeReaderController(
         bundle: runtimeState.bundle,
         readerState: result.state
       });
+      setBoundaryState(null);
     } catch (error) {
       setActionError(getErrorMessage(error, "Unable to advance the story."));
     } finally {
       setIsMoving(false);
     }
-  }, [isMoving, presentation, repository.loadChapter, runtimeState]);
+  }, [
+    boundaryState,
+    isMoving,
+    presentation,
+    repository.loadChapter,
+    runtimeState
+  ]);
 
   const retreat = useCallback(async () => {
     if (
@@ -475,6 +615,14 @@ export function useNativeReaderController(
     setActionError(null);
 
     try {
+      if (
+        boundaryState?.type === "chapter-opening-card" ||
+        boundaryState?.type === "scene-transition"
+      ) {
+        setBoundaryState(null);
+        return;
+      }
+
       const result = await retreatRuntimePosition({
         manifest: runtimeState.manifest,
         bundle: runtimeState.bundle,
@@ -486,6 +634,8 @@ export function useNativeReaderController(
         setActionError("Already at the beginning of the story.");
         return;
       }
+
+      setBoundaryState(null);
 
       if (result.type === "chapter-return") {
         setRuntimeState({
@@ -508,11 +658,14 @@ export function useNativeReaderController(
     } finally {
       setIsMoving(false);
     }
-  }, [isMoving, repository.loadChapter, runtimeState]);
+  }, [boundaryState, isMoving, repository.loadChapter, runtimeState]);
 
   return {
     state: runtimeState,
     presentation,
+    boundaryState,
+    boundaryPresentation,
+    preloadImageUrls,
     isMoving,
     actionError,
     persistenceError,

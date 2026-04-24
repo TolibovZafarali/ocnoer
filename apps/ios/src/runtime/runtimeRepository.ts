@@ -1,7 +1,10 @@
 import {
   createRuntimeChapterLoader,
   loadPlayerRuntimeBootstrap,
+  loadPlayerRuntimeSession,
+  type PlayerProgress,
   type PlayerRuntimeBootstrap,
+  type PlayerRuntimeSession,
   type RuntimeChapterBundle,
   type RuntimeJsonFetcher,
   type RuntimeManifest
@@ -19,6 +22,13 @@ export type MobileRuntimeRepository = {
     manifest: RuntimeManifest,
     chapterId: string
   ) => Promise<RuntimeChapterBundle>;
+  loadSession: (input: {
+    progress: Pick<
+      PlayerProgress,
+      "chapterId" | "sceneId" | "dialogueEntryId"
+    > | null;
+    initialManifest?: RuntimeManifest | null;
+  }) => Promise<PlayerRuntimeSession>;
 };
 
 const mobileRuntimeFetcher: RuntimeJsonFetcher = async (url) => fetch(url);
@@ -42,6 +52,15 @@ export function createMobileRuntimeRepository(
         loadChapter,
         fetcher: mobileRuntimeFetcher
       }),
-    loadChapter
+    loadChapter,
+    loadSession: (input) =>
+      loadPlayerRuntimeSession({
+        manifestPath: config.manifestPath,
+        supabaseUrl: config.supabaseUrl,
+        progress: input.progress,
+        initialManifest: input.initialManifest,
+        loadChapter,
+        fetcher: mobileRuntimeFetcher
+      })
   };
 }

@@ -17,14 +17,21 @@ import {
   resolvePreviewChapterId
 } from "../runtime/preview";
 import type { MobilePlayer } from "../api/playerSessionTypes";
+import type { PlayerProgress } from "@ocnoer/story-core";
 
 type BootstrapScreenProps = {
   state: RuntimeBootstrapState;
   player: MobilePlayer;
   isSigningOut: boolean;
   isUpdatingCatName: boolean;
+  isLoadingProgress: boolean;
+  isResettingProgress: boolean;
   catNameError: string | null;
+  savedProgress: PlayerProgress | null;
+  onContinueReading: () => void;
   onRetry: () => void;
+  onRestartReading: () => void;
+  onResetProgress: () => void;
   onSignOut: () => void;
   onUpdateCatName: (catName: string) => void;
   onOpenPreview: (chapterId: string) => void;
@@ -163,7 +170,7 @@ export function BootstrapScreen(props: BootstrapScreenProps) {
         <Text style={styles.eyebrow}>Ocnoer iOS</Text>
         <Text style={styles.title}>{storyTitle}</Text>
         <Text style={styles.body}>
-          Published runtime data loaded from Supabase public storage.
+          Published runtime data is ready for native reading.
         </Text>
 
         <View style={styles.panel}>
@@ -211,6 +218,67 @@ export function BootstrapScreen(props: BootstrapScreenProps) {
         </View>
 
         <View style={styles.panel}>
+          <Text style={styles.panelTitle}>Reading</Text>
+          {props.isLoadingProgress ? (
+            <Text style={styles.body}>Checking local progress...</Text>
+          ) : props.savedProgress ? (
+            <>
+              <InfoRow
+                label="Saved chapter"
+                value={props.savedProgress.chapterId}
+              />
+              <InfoRow
+                label="Saved scene"
+                value={props.savedProgress.sceneId}
+              />
+              <InfoRow
+                label="Saved entry"
+                value={props.savedProgress.dialogueEntryId}
+              />
+              <InfoRow
+                label="Saved"
+                value={formatDate(props.savedProgress.updatedAt)}
+              />
+            </>
+          ) : (
+            <Text style={styles.body}>No local reading progress yet.</Text>
+          )}
+
+          <PrimaryButton
+            disabled={props.isLoadingProgress}
+            label={props.savedProgress ? "Continue Reading" : "Start Reading"}
+            onPress={props.onContinueReading}
+          />
+          {props.savedProgress ? (
+            <>
+              <View style={styles.buttonSpacer}>
+                <SecondaryButton
+                  disabled={
+                    props.isLoadingProgress || props.isResettingProgress
+                  }
+                  label="Restart From Beginning"
+                  onPress={props.onRestartReading}
+                />
+              </View>
+              <View style={styles.buttonSpacer}>
+                <SecondaryButton
+                  disabled={
+                    props.isLoadingProgress || props.isResettingProgress
+                  }
+                  label={
+                    props.isResettingProgress
+                      ? "Clearing Progress"
+                      : "Clear Local Progress"
+                  }
+                  onPress={props.onResetProgress}
+                />
+              </View>
+            </>
+          ) : null}
+        </View>
+
+        <View style={styles.panel}>
+          <Text style={styles.panelTitle}>Runtime</Text>
           <InfoRow
             label="Manifest version"
             value={String(manifest.schemaVersion)}
@@ -240,7 +308,7 @@ export function BootstrapScreen(props: BootstrapScreenProps) {
           <InfoRow label="Manifest path" value={config.manifestPath} />
         </View>
 
-        <PrimaryButton
+        <SecondaryButton
           disabled={!previewChapterId}
           label="Open Chapter Preview"
           onPress={() => {

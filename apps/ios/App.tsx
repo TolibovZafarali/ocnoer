@@ -1,5 +1,7 @@
-import { useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { StatusBar } from "expo-status-bar";
+
+import type { PlayerProgress } from "@ocnoer/story-core";
 
 import { createPlayerSessionClient } from "./src/api/playerSessionClient";
 import type { StoredPlayerSession } from "./src/storage/playerSessionStorage";
@@ -7,8 +9,13 @@ import { usePlayerSession } from "./src/hooks/usePlayerSession";
 import { useRuntimeBootstrap } from "./src/hooks/useRuntimeBootstrap";
 import { BootstrapScreen } from "./src/screens/BootstrapScreen";
 import { ChapterPreviewScreen } from "./src/screens/ChapterPreviewScreen";
+import { ReaderScreen } from "./src/screens/ReaderScreen";
 import { RestoreSessionScreen } from "./src/screens/RestoreSessionScreen";
 import { SignInScreen } from "./src/screens/SignInScreen";
+import {
+  clearProgressByPlayerId,
+  loadProgressByPlayerId
+} from "./src/storage/playerProgressStorage";
 
 type AuthenticatedRuntimeShellProps = {
   storedSession: StoredPlayerSession;
@@ -17,13 +24,69 @@ type AuthenticatedRuntimeShellProps = {
   onSignOut: () => void;
 };
 
+type AuthenticatedScreen =
+  | {
+      type: "home";
+    }
+  | {
+      type: "preview";
+      chapterId: string;
+    }
+  | {
+      type: "reader";
+    };
+
 function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
   const { state, reload } = useRuntimeBootstrap();
-  const [previewChapterId, setPreviewChapterId] = useState<string | null>(null);
+  const mountedRef = useRef(true);
+  const [activeScreen, setActiveScreen] = useState<AuthenticatedScreen>({
+    type: "home"
+  });
+  const [savedProgress, setSavedProgress] = useState<PlayerProgress | null>(
+    null
+  );
+  const [isLoadingProgress, setIsLoadingProgress] = useState(true);
+  const [isResettingProgress, setIsResettingProgress] = useState(false);
   const [catNameError, setCatNameError] = useState<string | null>(null);
   const [isUpdatingCatName, setIsUpdatingCatName] = useState(false);
+  const playerId = props.storedSession.player.id;
 
-  async function updateCatName(catName: string) {
+  const refreshSavedProgress = useCallback(async () => {
+    setIsLoadingProgress(true);
+
+    try {
+      const progress = await loadProgressByPlayerId(playerId);
+
+      if (mountedRef.current) {
+        setSavedProgress(progress);
+      }
+    } catch {
+      if (mountedRef.current) {
+        setSavedProgress(null);
+      }
+    } finally {
+      if (mountedRef.current) {
+        setIsLoadingProgress(false);
+      }
+    }
+  }, [playerId]);
+
+  useEffect(() => {
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    void refreshSavedProgress();
+  }, [refreshSavedProgress]);
+
+  async function updateCatName(
+    catName: string,
+    options: {
+      rethrow?: boolean;
+    } = {}
+  ) {
     setIsUpdatingCatName(true);
     setCatNameError(null);
 
@@ -35,21 +98,79 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
 
       await props.onPlayerUpdated(result.player);
     } catch (error) {
-      setCatNameError(
-        error instanceof Error ? error.message : "Unable to save cat name."
-      );
+      const message =
+        error instanceof Error ? error.message : "Unable to save cat name.";
+
+      setCatNameError(message);
+
+      if (options.rethrow) {
+        throw new Error(message);
+      }
     } finally {
       setIsUpdatingCatName(false);
     }
   }
 
-  if (state.status === "success" && previewChapterId) {
+  async function resetProgress() {
+    setIsResettingProgress(true);
+
+    try {
+      await clearProgressByPlayerId(playerId);
+      setSavedProgress(null);
+    } finally {
+      setIsResettingProgress(false);
+    }
+  }
+
+  async function restartReading() {
+    setIsResettingProgress(true);
+
+    try {
+      await clearProgressByPlayerId(playerId);
+      setSavedProgress(null);
+      setActiveScreen({
+        type: "reader"
+      });
+    } finally {
+      setIsResettingProgress(false);
+    }
+  }
+
+  function returnHomeFromReader() {
+    setActiveScreen({
+      type: "home"
+    });
+    void refreshSavedProgress();
+  }
+
+  if (state.status === "success" && activeScreen.type === "preview") {
     return (
       <ChapterPreviewScreen
-        chapterId={previewChapterId}
+        chapterId={activeScreen.chapterId}
         config={state.config}
         manifest={state.bootstrap.initialManifest}
-        onBack={() => setPreviewChapterId(null)}
+        onBack={() =>
+          setActiveScreen({
+            type: "home"
+          })
+        }
+      />
+    );
+  }
+
+  if (state.status === "success" && activeScreen.type === "reader") {
+    return (
+      <ReaderScreen
+        bootstrap={state.bootstrap}
+        config={state.config}
+        onBackHome={returnHomeFromReader}
+        onProgressSaved={() => undefined}
+        onUpdateCatName={(catName) =>
+          updateCatName(catName, {
+            rethrow: true
+          })
+        }
+        player={props.storedSession.player}
       />
     );
   }
@@ -57,13 +178,30 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
   return (
     <BootstrapScreen
       catNameError={catNameError}
+      isLoadingProgress={isLoadingProgress}
+      isResettingProgress={isResettingProgress}
       isUpdatingCatName={isUpdatingCatName}
       isSigningOut={props.isSigningOut}
-      onOpenPreview={setPreviewChapterId}
+      onContinueReading={() =>
+        setActiveScreen({
+          type: "reader"
+        })
+      }
+      onOpenPreview={(chapterId) =>
+        setActiveScreen({
+          type: "preview",
+          chapterId
+        })
+      }
       onRetry={reload}
+      onRestartReading={restartReading}
+      onResetProgress={resetProgress}
       onSignOut={props.onSignOut}
-      onUpdateCatName={updateCatName}
+      onUpdateCatName={(catName) => {
+        void updateCatName(catName);
+      }}
       player={props.storedSession.player}
+      savedProgress={savedProgress}
       state={state}
     />
   );

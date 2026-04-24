@@ -126,7 +126,7 @@ On iOS:
 ## iOS Local Progress Storage
 
 `apps/ios/src/storage/playerProgressStorage.ts` defines the local mobile
-progress adapter for the future reader port. It stores `PlayerProgress` records
+progress adapter used by the native reader MVP. It stores `PlayerProgress` records
 from `@ocnoer/story-core` in AsyncStorage by player id:
 
 - `loadProgressByPlayerId(playerId)`
@@ -135,6 +135,56 @@ from `@ocnoer/story-core` in AsyncStorage by player id:
 
 This is local-only persistence. It intentionally does not sync progress to the
 backend yet, and it intentionally keeps progress out of SecureStore.
+
+## iOS Native Reader MVP
+
+`apps/ios` now has a first playable native reader flow after mobile sign-in:
+
+- the authenticated player lands on a simple home screen
+- the home screen shows player identity, cat-name status, runtime metadata, and
+  local saved progress when present
+- `Start Reading` opens the reader at the initial playable runtime position
+- `Continue Reading` resumes from the saved local `PlayerProgress`
+- `Restart From Beginning` clears local progress and opens the initial runtime
+  position
+- `Clear Local Progress` resets local progress without signing the player out
+- the chapter preview remains available as a development/debug view
+
+The native reader uses the same published manifest/chapter bundle source as the
+web player and calls shared `@ocnoer/story-core` helpers for runtime loading,
+resume decisions, chapter-to-chapter advance/retreat, progress serialization,
+public media URL resolution, and wardrobe branch flags.
+
+Supported native reader presentation types:
+
+- `narrator`: renders narrator label and dialogue text
+- `character`: renders speaker name, dialogue text, scene background, and the
+  active speaker portrait when the runtime provides one
+- `cat_name_prompt`: renders a basic native cat-name input and persists through
+  the existing mobile profile API before continuing
+- `dress_prompt`: renders basic selectable outfit options and stores the chosen
+  dress key in local progress branch flags
+
+The reader deliberately surfaces unsupported future runtime entry types as an
+in-reader error instead of silently skipping them.
+
+Basic immersion support in this MVP:
+
+- scene background images render with a simple dark overlay when available
+- active left/right speaker portraits render when the shared runtime asset
+  resolver can identify them
+- dress option previews render when runtime preview image paths are available
+
+Still missing before rough parity with the web reader:
+
+- opening and ending chapter cards
+- full stage positioning rules for non-speaking characters
+- Framer Motion parity, typed text timing, scene blackout transitions, and map UI
+- background music/audio playback
+- image preloading and lighting analysis
+- backend progress sync
+- full mobile-specific handling for any future branch or prompt types beyond the
+  four supported MVP entry types
 
 ## Why The Web UI Cannot Be Copied Directly
 

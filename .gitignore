@@ -1,5 +1,6 @@
 # dependencies
 /node_modules
+**/node_modules
 
 # next.js
 /.next
@@ -10,6 +11,7 @@
 
 # misc
 .DS_Store
+**/.expo
 *.pem
 tsconfig.tsbuildinfo
 

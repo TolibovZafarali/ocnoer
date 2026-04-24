@@ -1,4 +1,4 @@
-import type { RuntimeDialogueEntry } from "@/lib/story/types";
+import type { RuntimeDialogueEntry } from "@ocnoer/story-core";
 
 export const DEFAULT_LINE_ENTER_DURATION_MS = 300;
 export const DEFAULT_LINE_EXIT_DURATION_MS = 240;

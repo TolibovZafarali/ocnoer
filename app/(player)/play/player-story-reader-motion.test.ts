@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { RuntimeDialogueEntry } from "@/lib/story/types";
+import type { RuntimeDialogueEntry } from "@ocnoer/story-core";
 
 import {
   CHAPTER_CARD_PAUSE_DURATION_MS,

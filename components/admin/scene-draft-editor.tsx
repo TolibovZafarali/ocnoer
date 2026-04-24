@@ -100,11 +100,7 @@ type SaveDraftActionResult =
     };
 
 type DialogueFormValues = {
-  speakerType:
-    | "narrator"
-    | "character"
-    | "dress_prompt"
-    | "cat_name_prompt";
+  speakerType: "narrator" | "character" | "dress_prompt" | "cat_name_prompt";
   characterId: string | null;
   emotionKey: string | null;
   dressOptionKeys: string[];
@@ -297,6 +293,42 @@ function getDialogueIssue(
   return null;
 }
 
+function getDialogueCueSpeakerLabel(
+  entry: SceneDraftPayload["dialogue"][number],
+  charactersById: Map<string, CharacterOption>
+) {
+  if (entry.speakerType === "narrator") {
+    return "Narrator";
+  }
+
+  if (!entry.characterId) {
+    return "Missing speaker";
+  }
+
+  return charactersById.get(entry.characterId)?.name ?? "Missing speaker";
+}
+
+function truncateDialogueCueText(text: string) {
+  const normalized = text.trim().replace(/\s+/g, " ");
+
+  if (normalized.length === 0) {
+    return "Untitled dialogue";
+  }
+
+  return normalized.length > 48 ? `${normalized.slice(0, 45)}...` : normalized;
+}
+
+function getDialogueCueOptionLabel(input: {
+  entry: SceneDraftPayload["dialogue"][number];
+  index: number;
+  charactersById: Map<string, CharacterOption>;
+}) {
+  return `D ${input.index + 1} - ${getDialogueCueSpeakerLabel(
+    input.entry,
+    input.charactersById
+  )} - ${truncateDialogueCueText(input.entry.text)}`;
+}
+
 function DialogueDraftForm(props: {
   allCharacters: CharacterOption[];
   sceneCharacterIds: string[];
@@ -310,7 +342,10 @@ function DialogueDraftForm(props: {
   const isEditMode = Boolean(props.initial);
   const initialCharacterId = props.initial?.characterId ?? null;
   const allCharactersById = useMemo(
-    () => new Map(props.allCharacters.map((character) => [character.id, character])),
+    () =>
+      new Map(
+        props.allCharacters.map((character) => [character.id, character])
+      ),
     [props.allCharacters]
   );
   const initialSceneCharacters = useMemo(
@@ -340,7 +375,11 @@ function DialogueDraftForm(props: {
   const availableCharacters = useMemo(() => {
     const characters = [...initialSceneCharacters];
 
-    if (isEditMode && characterId && !characters.some((item) => item.id === characterId)) {
+    if (
+      isEditMode &&
+      characterId &&
+      !characters.some((item) => item.id === characterId)
+    ) {
       const currentCharacter = allCharactersById.get(characterId);
 
       characters.push(
@@ -459,7 +498,9 @@ function DialogueDraftForm(props: {
       return;
     }
 
-    if (!availableCharacters.some((character) => character.id === characterId)) {
+    if (
+      !availableCharacters.some((character) => character.id === characterId)
+    ) {
       const fallbackCharacter = availableCharacters[0] ?? null;
       setCharacterId(fallbackCharacter?.id ?? null);
       setEmotionKey(fallbackCharacter?.emotions[0]?.key ?? null);
@@ -496,8 +537,7 @@ function DialogueDraftForm(props: {
           ? characterId
           : null,
       emotionKey: speakerType === "character" ? emotionKey : null,
-      dressOptionKeys:
-        speakerType === "dress_prompt" ? dressOptionKeys : [],
+      dressOptionKeys: speakerType === "dress_prompt" ? dressOptionKeys : [],
       text,
       orderIndex: isEditMode ? Number.parseInt(orderIndex, 10) || 1 : undefined
     });
@@ -515,7 +555,10 @@ function DialogueDraftForm(props: {
             : "md:grid-cols-[180px_1fr]"
         }`}
       >
-        <Field label="Speaker" htmlFor={`dialogue-speaker-${props.resetVersion ?? "0"}`}>
+        <Field
+          label="Speaker"
+          htmlFor={`dialogue-speaker-${props.resetVersion ?? "0"}`}
+        >
           <SelectInput
             id={`dialogue-speaker-${props.resetVersion ?? "0"}`}
             value={speakerType}
@@ -533,7 +576,8 @@ function DialogueDraftForm(props: {
             {availableCharacters.length > 0 || speakerType === "character" ? (
               <option value="character">Character</option>
             ) : null}
-            {availableCharacters.length > 0 || speakerType === "cat_name_prompt" ? (
+            {availableCharacters.length > 0 ||
+            speakerType === "cat_name_prompt" ? (
               <option value="cat_name_prompt">Cat Name Prompt</option>
             ) : null}
             {dressPromptCharacter ? (
@@ -543,7 +587,10 @@ function DialogueDraftForm(props: {
         </Field>
 
         {speakerType === "character" || speakerType === "cat_name_prompt" ? (
-          <Field label="Scene Character" htmlFor={`dialogue-character-${props.resetVersion ?? "0"}`}>
+          <Field
+            label="Scene Character"
+            htmlFor={`dialogue-character-${props.resetVersion ?? "0"}`}
+          >
             <SelectInput
               id={`dialogue-character-${props.resetVersion ?? "0"}`}
               value={characterId ?? ""}
@@ -560,7 +607,10 @@ function DialogueDraftForm(props: {
       </div>
 
       {speakerType === "character" ? (
-        <Field label="Emotion" htmlFor={`dialogue-emotion-${props.resetVersion ?? "0"}`}>
+        <Field
+          label="Emotion"
+          htmlFor={`dialogue-emotion-${props.resetVersion ?? "0"}`}
+        >
           <SelectInput
             id={`dialogue-emotion-${props.resetVersion ?? "0"}`}
             value={emotionKey ?? ""}
@@ -622,7 +672,11 @@ function DialogueDraftForm(props: {
       ) : null}
 
       {isEditMode ? (
-        <Field label="Order" htmlFor={`dialogue-order-${props.resetVersion ?? "0"}`} hint="1 is first in scene order.">
+        <Field
+          label="Order"
+          htmlFor={`dialogue-order-${props.resetVersion ?? "0"}`}
+          hint="1 is first in scene order."
+        >
           <TextInput
             id={`dialogue-order-${props.resetVersion ?? "0"}`}
             type="number"
@@ -634,7 +688,10 @@ function DialogueDraftForm(props: {
         </Field>
       ) : null}
 
-      <Field label="Dialogue Text" htmlFor={`dialogue-text-${props.resetVersion ?? "0"}`}>
+      <Field
+        label="Dialogue Text"
+        htmlFor={`dialogue-text-${props.resetVersion ?? "0"}`}
+      >
         <TextArea
           id={`dialogue-text-${props.resetVersion ?? "0"}`}
           rows={5}
@@ -676,7 +733,10 @@ function SortableDialogueDraftCard(props: {
     transition
   };
   const allCharactersById = useMemo(
-    () => new Map(props.allCharacters.map((character) => [character.id, character])),
+    () =>
+      new Map(
+        props.allCharacters.map((character) => [character.id, character])
+      ),
     [props.allCharacters]
   );
   const issue = getDialogueIssue(
@@ -692,10 +752,10 @@ function SortableDialogueDraftCard(props: {
             allCharactersById.get(props.item.characterId)?.name ??
             `${props.item.characterId} (missing)`
           }`
-      : props.item.speakerType === "character" && props.item.characterId
-      ? (allCharactersById.get(props.item.characterId)?.name ??
-        `${props.item.characterId} (missing)`)
-      : "Narrator";
+        : props.item.speakerType === "character" && props.item.characterId
+          ? (allCharactersById.get(props.item.characterId)?.name ??
+            `${props.item.characterId} (missing)`)
+          : "Narrator";
   const dressOptionLabels =
     props.item.speakerType === "dress_prompt" && props.item.characterId
       ? (props.item.dressOptionKeys ?? []).map((dressKey) => {
@@ -708,8 +768,8 @@ function SortableDialogueDraftCard(props: {
           return (
             allCharactersById
               .get(promptCharacterId)
-              ?.dresses.find((dress) => dress.key === dressKey)
-              ?.label ?? `${dressKey} (missing)`
+              ?.dresses.find((dress) => dress.key === dressKey)?.label ??
+            `${dressKey} (missing)`
           );
         })
       : [];
@@ -717,12 +777,10 @@ function SortableDialogueDraftCard(props: {
     props.item.speakerType === "character" &&
     props.item.characterId &&
     props.item.emotionKey
-      ? (
-          allCharactersById
-            .get(props.item.characterId)
-            ?.emotions.find((emotion) => emotion.key === props.item.emotionKey)
-            ?.label ?? `${props.item.emotionKey} (missing)`
-        )
+      ? (allCharactersById
+          .get(props.item.characterId)
+          ?.emotions.find((emotion) => emotion.key === props.item.emotionKey)
+          ?.label ?? `${props.item.emotionKey} (missing)`)
       : null;
 
   return (
@@ -750,7 +808,9 @@ function SortableDialogueDraftCard(props: {
         eyebrow={`Dialogue ${props.orderIndex}`}
         description={
           <div className="space-y-4">
-            <p className="whitespace-pre-wrap text-slate-700">{props.item.text}</p>
+            <p className="whitespace-pre-wrap text-slate-700">
+              {props.item.text}
+            </p>
 
             {issue ? <Notice kind="error">{issue}</Notice> : null}
 
@@ -813,7 +873,8 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
     [props.chapterId, props.sceneId]
   );
   const charactersById = useMemo(
-    () => new Map(props.characters.map((character) => [character.id, character])),
+    () =>
+      new Map(props.characters.map((character) => [character.id, character])),
     [props.characters]
   );
   const backgroundImagesById = useMemo(
@@ -876,6 +937,42 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
       ),
     [draft.scene.characterIds, props.characters]
   );
+  const backgroundMusicCueDialogueOptions = useMemo(
+    () =>
+      draft.dialogue.slice(0, -1).map((entry, index) => ({
+        id: entry.id,
+        label: getDialogueCueOptionLabel({
+          entry,
+          index,
+          charactersById
+        })
+      })),
+    [charactersById, draft.dialogue]
+  );
+  const backgroundMusicCueDialogueIds = useMemo(
+    () => new Set(draft.dialogue.map((entry) => entry.id)),
+    [draft.dialogue]
+  );
+  const backgroundMusicCueIssues = useMemo(() => {
+    const lastDialogueId =
+      draft.dialogue[draft.dialogue.length - 1]?.id ?? null;
+
+    return draft.scene.backgroundMusicCues.map((cue) => {
+      if (!backgroundMusicCueDialogueIds.has(cue.afterDialogueEntryId)) {
+        return "Dialogue row no longer exists.";
+      }
+
+      if (cue.afterDialogueEntryId === lastDialogueId) {
+        return "Cue triggers after the final dialogue row, so it will never play.";
+      }
+
+      return null;
+    });
+  }, [
+    backgroundMusicCueDialogueIds,
+    draft.dialogue,
+    draft.scene.backgroundMusicCues
+  ]);
 
   draftRef.current = draft;
 
@@ -1011,7 +1108,10 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
 
   useEffect(() => {
     function handleVisibilityChange() {
-      if (document.visibilityState === "hidden" && getDraftHash(draftRef.current) !== lastSyncedHash) {
+      if (
+        document.visibilityState === "hidden" &&
+        getDraftHash(draftRef.current) !== lastSyncedHash
+      ) {
         void persistDraft(draftRef.current);
       }
     }
@@ -1045,6 +1145,65 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
     }));
   }
 
+  function handleAddBackgroundMusicCue() {
+    const defaultDialogueId = backgroundMusicCueDialogueOptions[0]?.id ?? null;
+
+    if (!defaultDialogueId) {
+      return;
+    }
+
+    setActionError(null);
+    setDraft((currentDraft) => ({
+      ...currentDraft,
+      scene: {
+        ...currentDraft.scene,
+        backgroundMusicCues: [
+          ...currentDraft.scene.backgroundMusicCues,
+          {
+            afterDialogueEntryId: defaultDialogueId,
+            backgroundMusicAssetId: null
+          }
+        ]
+      }
+    }));
+  }
+
+  function updateBackgroundMusicCue(
+    cueIndex: number,
+    field: "afterDialogueEntryId" | "backgroundMusicAssetId",
+    value: string | null
+  ) {
+    setActionError(null);
+    setDraft((currentDraft) => ({
+      ...currentDraft,
+      scene: {
+        ...currentDraft.scene,
+        backgroundMusicCues: currentDraft.scene.backgroundMusicCues.map(
+          (cue, index) =>
+            index === cueIndex
+              ? {
+                  ...cue,
+                  [field]: value
+                }
+              : cue
+        )
+      }
+    }));
+  }
+
+  function removeBackgroundMusicCue(cueIndex: number) {
+    setActionError(null);
+    setDraft((currentDraft) => ({
+      ...currentDraft,
+      scene: {
+        ...currentDraft.scene,
+        backgroundMusicCues: currentDraft.scene.backgroundMusicCues.filter(
+          (_, index) => index !== cueIndex
+        )
+      }
+    }));
+  }
+
   function handleAddDialogueEntry(values: DialogueFormValues) {
     setActionError(null);
     setDraft((currentDraft) => ({
@@ -1060,11 +1219,10 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
             values.speakerType === "cat_name_prompt"
               ? values.characterId
               : null,
-          emotionKey: values.speakerType === "character" ? values.emotionKey : null,
+          emotionKey:
+            values.speakerType === "character" ? values.emotionKey : null,
           dressOptionKeys:
-            values.speakerType === "dress_prompt"
-              ? values.dressOptionKeys
-              : [],
+            values.speakerType === "dress_prompt" ? values.dressOptionKeys : [],
           text: values.text
         }
       ]
@@ -1072,7 +1230,10 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
     setCreateResetVersion((value) => value + 1);
   }
 
-  function handleUpdateDialogueEntry(entryId: string, values: DialogueFormValues) {
+  function handleUpdateDialogueEntry(
+    entryId: string,
+    values: DialogueFormValues
+  ) {
     setActionError(null);
     setDraft((currentDraft) => {
       const nextDialogue = currentDraft.dialogue.map((entry) =>
@@ -1254,7 +1415,9 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
               <Pill tone={sceneReadiness.tone}>{sceneReadiness.label}</Pill>
             </div>
 
-            <p className="text-sm text-slate-600">{sceneReadiness.description}</p>
+            <p className="text-sm text-slate-600">
+              {sceneReadiness.description}
+            </p>
 
             <div className="grid gap-4 md:grid-cols-[1fr_140px]">
               <Field label="Scene Title" htmlFor="scene-draft-title">
@@ -1337,6 +1500,131 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
             </Field>
 
             <Field
+              label="Music Cues"
+              htmlFor="scene-draft-background-music-cues"
+              hint="Switch music or fade to silence after a selected dialogue row. The player uses a short black-screen transition."
+            >
+              <div
+                id="scene-draft-background-music-cues"
+                className="space-y-3 rounded-xl border border-slate-200 bg-slate-50 p-3"
+              >
+                {draft.dialogue.length < 2 ? (
+                  <p className="text-sm text-slate-500">
+                    Add at least two dialogue rows before configuring in-scene
+                    music cues.
+                  </p>
+                ) : draft.scene.backgroundMusicCues.length === 0 ? (
+                  <p className="text-sm text-slate-500">
+                    No in-scene music cues yet. The scene will keep the base
+                    track until the scene changes.
+                  </p>
+                ) : (
+                  draft.scene.backgroundMusicCues.map((cue, cueIndex) => {
+                    const cueIssue = backgroundMusicCueIssues[cueIndex] ?? null;
+
+                    return (
+                      <div
+                        key={`${cue.afterDialogueEntryId}-${cueIndex}`}
+                        className="space-y-3 rounded-xl border border-slate-200 bg-white p-3"
+                      >
+                        <div className="grid gap-3 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
+                          <Field
+                            label="After Dialogue"
+                            htmlFor={`scene-draft-music-cue-dialogue-${cueIndex}`}
+                          >
+                            <SelectInput
+                              id={`scene-draft-music-cue-dialogue-${cueIndex}`}
+                              value={cue.afterDialogueEntryId}
+                              onChange={(event) =>
+                                updateBackgroundMusicCue(
+                                  cueIndex,
+                                  "afterDialogueEntryId",
+                                  event.target.value
+                                )
+                              }
+                            >
+                              {backgroundMusicCueDialogueOptions.map(
+                                (option) => (
+                                  <option key={option.id} value={option.id}>
+                                    {option.label}
+                                  </option>
+                                )
+                              )}
+                              {!backgroundMusicCueDialogueOptions.some(
+                                (option) =>
+                                  option.id === cue.afterDialogueEntryId
+                              ) ? (
+                                <option value={cue.afterDialogueEntryId}>
+                                  Missing dialogue reference
+                                </option>
+                              ) : null}
+                            </SelectInput>
+                          </Field>
+
+                          <Field
+                            label="Next Music"
+                            htmlFor={`scene-draft-music-cue-track-${cueIndex}`}
+                          >
+                            <SelectInput
+                              id={`scene-draft-music-cue-track-${cueIndex}`}
+                              value={cue.backgroundMusicAssetId ?? ""}
+                              onChange={(event) =>
+                                updateBackgroundMusicCue(
+                                  cueIndex,
+                                  "backgroundMusicAssetId",
+                                  event.target.value || null
+                                )
+                              }
+                            >
+                              <option value="">Fade to silence</option>
+                              {props.backgroundMusicTracks.map((asset) => (
+                                <option key={asset.id} value={asset.id}>
+                                  {asset.label}
+                                </option>
+                              ))}
+                            </SelectInput>
+                          </Field>
+
+                          <div className="flex items-end">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="outline"
+                              onClick={() => removeBackgroundMusicCue(cueIndex)}
+                            >
+                              Remove Cue
+                            </Button>
+                          </div>
+                        </div>
+
+                        {cueIssue ? (
+                          <p className="text-sm text-amber-700">{cueIssue}</p>
+                        ) : (
+                          <p className="text-sm text-slate-500">
+                            The change happens on the next dialogue row after
+                            the selected card.
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })
+                )}
+
+                <div className="flex justify-end">
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant="outline"
+                    onClick={handleAddBackgroundMusicCue}
+                    disabled={draft.dialogue.length < 2}
+                  >
+                    Add Music Cue
+                  </Button>
+                </div>
+              </div>
+            </Field>
+
+            <Field
               label="Dress Carry"
               htmlFor="scene-draft-carry-ocnoer-dress"
               hint="When disabled, this scene resets Ocnoer to the default dress at scene start."
@@ -1383,7 +1671,9 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
                     >
                       <input
                         type="checkbox"
-                        checked={draft.scene.characterIds.includes(character.id)}
+                        checked={draft.scene.characterIds.includes(
+                          character.id
+                        )}
                         onChange={(event) => {
                           const nextCharacterIds = event.target.checked
                             ? [...draft.scene.characterIds, character.id]
@@ -1486,8 +1776,8 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
               <p>No unpublished draft changes.</p>
             )}
             <p>
-              Saving the scene updates JSON and runtime once for this scene&apos;s
-              chapter.
+              Saving the scene updates JSON and runtime once for this
+              scene&apos;s chapter.
             </p>
           </div>
 
@@ -1502,7 +1792,11 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
             >
               {isDiscardingDraft ? "Discarding..." : "Discard Draft"}
             </Button>
-            <Button type="button" disabled={isSavingScene} onClick={handleSaveScene}>
+            <Button
+              type="button"
+              disabled={isSavingScene}
+              onClick={handleSaveScene}
+            >
               {isSavingScene ? "Saving Scene..." : "Save Scene"}
             </Button>
           </div>

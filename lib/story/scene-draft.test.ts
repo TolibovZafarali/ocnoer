@@ -14,6 +14,7 @@ describe("scene draft helpers", () => {
       orderIndex: 1,
       backgroundImageAssetId: "bg_1",
       backgroundMusicAssetId: null,
+      backgroundMusicCues: [],
       carryOcnoerDressSelection: true,
       characterIds: ["character_1"],
       dialogue: [
@@ -73,6 +74,7 @@ describe("scene draft helpers", () => {
         orderIndex: 1,
         backgroundImageAssetId: "bg_1",
         backgroundMusicAssetId: null,
+        backgroundMusicCues: [],
         carryOcnoerDressSelection: true,
         characterIds: ["character_1"]
       },
@@ -121,6 +123,7 @@ describe("scene draft helpers", () => {
           orderIndex: 1,
           backgroundImageAssetId: "bg_1",
           backgroundMusicAssetId: null,
+          backgroundMusicCues: [],
           carryOcnoerDressSelection: false,
           characterIds: ["character_1"]
         },
@@ -157,6 +160,7 @@ describe("scene draft helpers", () => {
         orderIndex: 1,
         backgroundImageAssetId: "bg_1",
         backgroundMusicAssetId: null,
+        backgroundMusicCues: [],
         carryOcnoerDressSelection: false,
         characterIds: ["character_1"]
       },
@@ -195,6 +199,7 @@ describe("scene draft helpers", () => {
           orderIndex: 2,
           backgroundImageAssetId: "bg_1",
           backgroundMusicAssetId: null,
+          backgroundMusicCues: [],
           characterIds: ["character_1"]
         },
         dialogue: [
@@ -214,6 +219,7 @@ describe("scene draft helpers", () => {
         orderIndex: 2,
         backgroundImageAssetId: "bg_1",
         backgroundMusicAssetId: null,
+        backgroundMusicCues: [],
         carryOcnoerDressSelection: true,
         characterIds: ["character_1"]
       },
@@ -236,6 +242,7 @@ describe("scene draft helpers", () => {
           orderIndex: 3,
           backgroundImageAssetId: null,
           backgroundMusicAssetId: null,
+          backgroundMusicCues: [],
           characterIds: []
         },
         dialogue: []
@@ -246,6 +253,7 @@ describe("scene draft helpers", () => {
         orderIndex: 3,
         backgroundImageAssetId: null,
         backgroundMusicAssetId: null,
+        backgroundMusicCues: [],
         carryOcnoerDressSelection: true,
         characterIds: []
       },
@@ -269,6 +277,70 @@ describe("scene draft helpers", () => {
         ]
       })
     ).toBeNull();
+  });
+
+  it("preserves background music cues in scene drafts", () => {
+    expect(
+      parseSceneDraftPayload({
+        scene: {
+          title: "Scene With Music Cues",
+          orderIndex: 4,
+          backgroundImageAssetId: "bg_1",
+          backgroundMusicAssetId: "music_1",
+          backgroundMusicCues: [
+            {
+              afterDialogueEntryId: "dialogue_1",
+              backgroundMusicAssetId: "music_2"
+            },
+            {
+              afterDialogueEntryId: "dialogue_2",
+              backgroundMusicAssetId: null
+            }
+          ],
+          characterIds: ["character_1"]
+        },
+        dialogue: [
+          {
+            id: "dialogue_1",
+            speakerType: "narrator",
+            characterId: null,
+            emotionKey: null,
+            dressOptionKeys: [],
+            text: "Line one"
+          },
+          {
+            id: "dialogue_2",
+            speakerType: "narrator",
+            characterId: null,
+            emotionKey: null,
+            dressOptionKeys: [],
+            text: "Line two"
+          },
+          {
+            id: "dialogue_3",
+            speakerType: "narrator",
+            characterId: null,
+            emotionKey: null,
+            dressOptionKeys: [],
+            text: "Line three"
+          }
+        ]
+      })
+    ).toMatchObject({
+      scene: {
+        backgroundMusicAssetId: "music_1",
+        backgroundMusicCues: [
+          {
+            afterDialogueEntryId: "dialogue_1",
+            backgroundMusicAssetId: "music_2"
+          },
+          {
+            afterDialogueEntryId: "dialogue_2",
+            backgroundMusicAssetId: null
+          }
+        ]
+      }
+    });
   });
 
   it("identifies temp dialogue ids", () => {

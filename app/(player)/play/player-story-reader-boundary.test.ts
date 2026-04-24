@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import type { RuntimeManifest } from "@/lib/story/types";
+import type { RuntimeManifest } from "@ocnoer/story-core";
 
 import {
   createBoundaryStateForAdvance,

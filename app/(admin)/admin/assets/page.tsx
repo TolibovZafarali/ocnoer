@@ -67,8 +67,13 @@ function countBackgroundMusicUsage(
     return (
       count +
       (chapter.endingCardBackgroundMusicAssetId === assetId ? 1 : 0) +
-      chapter.scenes.filter((scene) => scene.backgroundMusicAssetId === assetId)
-        .length
+      chapter.scenes.filter(
+        (scene) =>
+          scene.backgroundMusicAssetId === assetId ||
+          (scene.backgroundMusicCues ?? []).some(
+            (cue) => cue.backgroundMusicAssetId === assetId
+          )
+      ).length
     );
   }, 0);
 }

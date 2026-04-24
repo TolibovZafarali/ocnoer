@@ -373,6 +373,7 @@ function seedAuthoringStorage() {
               orderIndex: 1,
               backgroundImageAssetId: "bg_1",
               backgroundMusicAssetId: null,
+              backgroundMusicCues: [],
               carryOcnoerDressSelection: true,
               characterIds: ["character_1"],
               dialogue: [
@@ -418,6 +419,7 @@ function seedAuthoringStorage() {
               orderIndex: 2,
               backgroundImageAssetId: "bg_2",
               backgroundMusicAssetId: null,
+              backgroundMusicCues: [],
               carryOcnoerDressSelection: true,
               characterIds: [],
               dialogue: [],
@@ -463,6 +465,10 @@ function getPersistedStory() {
         orderIndex: number;
         backgroundImageAssetId: string | null;
         backgroundMusicAssetId: string | null;
+        backgroundMusicCues: Array<{
+          afterDialogueEntryId: string;
+          backgroundMusicAssetId: string | null;
+        }>;
         carryOcnoerDressSelection: boolean;
         characterIds: string[];
         dialogue: Array<{
@@ -579,7 +585,8 @@ function createDraftPayload(overrides?: {
       backgroundMusicAssetId: "music_1",
       carryOcnoerDressSelection: true,
       characterIds: ["character_1"],
-      ...overrides?.scene
+      ...overrides?.scene,
+      backgroundMusicCues: overrides?.scene?.backgroundMusicCues ?? []
     },
     dialogue: overrides?.dialogue ?? [
       {
@@ -727,6 +734,7 @@ describe("authoring snapshot loading", () => {
                     orderIndex: 1,
                     backgroundImageAssetId: "bg_local_1",
                     backgroundMusicAssetId: "music_local_1",
+                    backgroundMusicCues: [],
                     characterIds: ["character_local_1"],
                     dialogue: [
                       {
@@ -1150,6 +1158,73 @@ describe("saveSceneDraft", () => {
     ).toBe(false);
     expect(adminSceneDraftStore.has("scene_1")).toBe(false);
     expectChapterScopedWrites();
+  });
+
+  it("persists in-scene background music cues and rewrites temp dialogue ids", async () => {
+    setStoredSceneDraft({
+      sceneId: "scene_1",
+      payload: createDraftPayload({
+        scene: {
+          backgroundMusicCues: [
+            {
+              afterDialogueEntryId: "dialogue_1",
+              backgroundMusicAssetId: "music_1"
+            },
+            {
+              afterDialogueEntryId: `${SCENE_DRAFT_TEMP_ID_PREFIX}music-cue`,
+              backgroundMusicAssetId: null
+            }
+          ]
+        },
+        dialogue: [
+          {
+            id: "dialogue_1",
+            speakerType: "narrator",
+            characterId: null,
+            emotionKey: null,
+            text: "First revised"
+          },
+          {
+            id: `${SCENE_DRAFT_TEMP_ID_PREFIX}music-cue`,
+            speakerType: "narrator",
+            characterId: null,
+            emotionKey: null,
+            text: "Second revised"
+          },
+          {
+            id: "dialogue_3",
+            speakerType: "character",
+            characterId: "character_1",
+            emotionKey: "angry",
+            text: "Third revised"
+          }
+        ]
+      })
+    });
+
+    const result = await saveSceneDraft({
+      chapterId: "chapter_1",
+      sceneId: "scene_1"
+    });
+
+    expect(result.payload.scene.backgroundMusicCues[0]).toEqual({
+      afterDialogueEntryId: "dialogue_1",
+      backgroundMusicAssetId: "music_1"
+    });
+    expect(
+      result.payload.scene.backgroundMusicCues[1]?.backgroundMusicAssetId
+    ).toBeNull();
+    expect(
+      result.payload.scene.backgroundMusicCues[1]?.afterDialogueEntryId
+    ).toMatch(/^dialogue_[a-f0-9]+$/i);
+    expect(
+      result.payload.scene.backgroundMusicCues[1]?.afterDialogueEntryId.startsWith(
+        SCENE_DRAFT_TEMP_ID_PREFIX
+      )
+    ).toBe(false);
+    expect(getPersistedScene("scene_1")?.backgroundMusicCues).toEqual(
+      result.payload.scene.backgroundMusicCues
+    );
   });
 
   it("saves from provided payload when draft storage is unavailable", async () => {

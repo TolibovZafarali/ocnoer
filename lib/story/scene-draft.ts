@@ -1,5 +1,7 @@
 import type {
+  SceneBackgroundMusicCue,
   SceneDefinition,
+  SceneDraftBackgroundMusicCue,
   SceneDraftDialogueEntry,
   SceneDraftPayload
 } from "@/lib/story/types";
@@ -70,6 +72,34 @@ function parseSceneDraftDialogueEntry(
   };
 }
 
+function parseSceneDraftBackgroundMusicCue(
+  value: unknown
+): SceneDraftBackgroundMusicCue | null {
+  if (!isRecord(value)) {
+    return null;
+  }
+
+  const afterDialogueEntryId = asString(value.afterDialogueEntryId);
+
+  if (!afterDialogueEntryId) {
+    return null;
+  }
+
+  return {
+    afterDialogueEntryId,
+    backgroundMusicAssetId: asNullableString(value.backgroundMusicAssetId)
+  };
+}
+
+function cloneSceneBackgroundMusicCues(
+  backgroundMusicCues: SceneBackgroundMusicCue[] | undefined
+) {
+  return (backgroundMusicCues ?? []).map((cue) => ({
+    afterDialogueEntryId: cue.afterDialogueEntryId,
+    backgroundMusicAssetId: cue.backgroundMusicAssetId
+  }));
+}
+
 export function createSceneDraftPayload(
   scene: SceneDefinition
 ): SceneDraftPayload {
@@ -79,6 +109,9 @@ export function createSceneDraftPayload(
       orderIndex: scene.orderIndex,
       backgroundImageAssetId: scene.backgroundImageAssetId,
       backgroundMusicAssetId: scene.backgroundMusicAssetId,
+      backgroundMusicCues: cloneSceneBackgroundMusicCues(
+        scene.backgroundMusicCues
+      ),
       carryOcnoerDressSelection: scene.carryOcnoerDressSelection ?? true,
       characterIds: [...scene.characterIds]
     },
@@ -105,7 +138,11 @@ export function createSceneDraftPayload(
 export function parseSceneDraftPayload(
   value: unknown
 ): SceneDraftPayload | null {
-  if (!isRecord(value) || !isRecord(value.scene) || !Array.isArray(value.dialogue)) {
+  if (
+    !isRecord(value) ||
+    !isRecord(value.scene) ||
+    !Array.isArray(value.dialogue)
+  ) {
     return null;
   }
 
@@ -117,23 +154,32 @@ export function parseSceneDraftPayload(
   const backgroundMusicAssetId = asNullableString(
     value.scene.backgroundMusicAssetId
   );
+  const rawBackgroundMusicCues = value.scene.backgroundMusicCues;
   const carryOcnoerDressSelection =
     value.scene.carryOcnoerDressSelection == null
       ? true
       : asBoolean(value.scene.carryOcnoerDressSelection);
   const characterIds = asStringArray(value.scene.characterIds);
+  const backgroundMusicCues =
+    rawBackgroundMusicCues == null
+      ? []
+      : Array.isArray(rawBackgroundMusicCues)
+        ? rawBackgroundMusicCues
+            .map(parseSceneDraftBackgroundMusicCue)
+            .filter((cue): cue is SceneDraftBackgroundMusicCue => cue !== null)
+        : null;
   const dialogue = value.dialogue
     .map(parseSceneDraftDialogueEntry)
-    .filter(
-      (entry): entry is SceneDraftDialogueEntry =>
-        entry !== null
-    );
+    .filter((entry): entry is SceneDraftDialogueEntry => entry !== null);
 
   if (
     title == null ||
     orderIndex == null ||
     carryOcnoerDressSelection == null ||
     characterIds == null ||
+    backgroundMusicCues == null ||
+    (Array.isArray(rawBackgroundMusicCues) &&
+      backgroundMusicCues.length !== rawBackgroundMusicCues.length) ||
     dialogue.length !== value.dialogue.length
   ) {
     return null;
@@ -145,6 +191,7 @@ export function parseSceneDraftPayload(
       orderIndex,
       backgroundImageAssetId,
       backgroundMusicAssetId,
+      backgroundMusicCues,
       carryOcnoerDressSelection,
       characterIds
     },

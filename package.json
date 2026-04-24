@@ -4,11 +4,18 @@
   "private": true,
   "scripts": {
     "dev": "next dev --hostname localhost",
+    "dev:web": "next dev --hostname localhost",
+    "dev:ios": "corepack pnpm --filter @ocnoer/ios start",
     "build": "next build",
+    "build:web": "next build",
     "start": "next start",
+    "start:web": "next start",
     "lint": "next lint",
+    "lint:web": "next lint",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit",
+    "test:web": "vitest run",
+    "typecheck": "corepack pnpm typecheck:web && corepack pnpm --filter @ocnoer/story-core typecheck && corepack pnpm --filter @ocnoer/ios typecheck",
+    "typecheck:web": "tsc --noEmit",
     "backup:storage": "node scripts/backup-storage.mjs",
     "backup:db": "node scripts/backup-postgres.mjs",
     "backup:all": "node scripts/backup-storage.mjs && node scripts/backup-postgres.mjs",
@@ -17,13 +24,14 @@
     "prisma:migrate:dev": "prisma migrate dev",
     "prisma:migrate:deploy": "prisma migrate deploy",
     "prisma:seed": "prisma db seed",
-    "format": "prettier --write \"app/**/*.{ts,tsx,css}\" \"components/**/*.{ts,tsx}\" \"lib/**/*.ts\" \"*.{json,mjs,ts,md}\"",
-    "format:check": "prettier --check \"app/**/*.{ts,tsx,css}\" \"components/**/*.{ts,tsx}\" \"lib/**/*.ts\" \"*.{json,mjs,ts,md}\""
+    "format": "prettier --write \"app/**/*.{ts,tsx,css}\" \"apps/**/*.{ts,tsx,js,json,md}\" \"components/**/*.{ts,tsx}\" \"docs/**/*.md\" \"lib/**/*.ts\" \"packages/**/*.{ts,tsx,json,md}\" \"*.{json,mjs,ts,md,yaml}\"",
+    "format:check": "prettier --check \"app/**/*.{ts,tsx,css}\" \"apps/**/*.{ts,tsx,js,json,md}\" \"components/**/*.{ts,tsx}\" \"docs/**/*.md\" \"lib/**/*.ts\" \"packages/**/*.{ts,tsx,json,md}\" \"*.{json,mjs,ts,md,yaml}\""
   },
   "prisma": {
     "seed": "node prisma/seed.js"
   },
   "dependencies": {
+    "@ocnoer/story-core": "workspace:*",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",

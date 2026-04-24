@@ -42,10 +42,16 @@ import {
   type PlayerBoundaryState
 } from "@/app/(player)/play/player-story-reader-boundary";
 import {
+  fadeBackgroundMusicTo,
   fadeOutBackgroundMusic,
   restartBackgroundMusic,
   resumePausedBackgroundMusic
 } from "@/app/(player)/play/player-story-reader-audio";
+import {
+  findSceneBackgroundMusicById,
+  resolveReaderStateSceneBackgroundMusicTrackId,
+  resolveSceneBackgroundMusicTrackId
+} from "@/app/(player)/play/player-story-reader-background-music";
 import {
   analyzeSceneLightingFromImageData,
   buildSceneOverlayBackground,
@@ -63,13 +69,13 @@ import {
   type PlayerProgress,
   type ReaderState,
   retreatRuntimePosition
-} from "@/lib/story/reader";
+} from "@ocnoer/story-core";
 import type {
   RuntimeChapterBundle,
   RuntimeDialogueEntry,
   RuntimeManifest,
   RuntimeStageCharacter
-} from "@/lib/story/types";
+} from "@ocnoer/story-core";
 import {
   createRuntimeChapterLoader,
   decidePlayerResumeAction,
@@ -82,7 +88,7 @@ import {
   applySceneDressCarrySelection,
   getDressBranchFlagKey,
   BASE_DRESS_OPTION_KEY
-} from "@/lib/story/wardrobe";
+} from "@ocnoer/story-core";
 
 type PlayerStoryReaderProps = {
   manifestPath: string;
@@ -109,6 +115,7 @@ type OpeningSceneFadePhase =
   | "hidden";
 
 type SceneTransitionOverlayPhase = "hidden" | "covering" | "revealing";
+type SceneTransitionOverlayProfile = "scene" | "inline-music" | "ending-card";
 
 type ResolvedAdvanceAction =
   | {
@@ -137,6 +144,11 @@ type PendingEndingCardTransition = {
   boundaryState: Extract<PlayerBoundaryState, { type: "chapter-ending-card" }>;
 };
 
+type PendingInSceneMusicTransition = {
+  state: ReaderState;
+  sceneBackgroundMusicTrackId: string | null;
+};
+
 const DEFAULT_STAGE_ASPECT_RATIO = 9 / 16;
 const MOTION_EASE_OUT = [0.22, 1, 0.36, 1] as const;
 const MOTION_EASE_IN = [0.4, 0, 1, 1] as const;
@@ -145,6 +157,17 @@ const SCENE_TRANSITION_MIN_BLACKOUT_MS = 1400;
 const SCENE_TRANSITION_POST_SWAP_HOLD_MS = 380;
 const SCENE_TRANSITION_REVEAL_DURATION_MS = 880;
 const SCENE_TRANSITION_ASSET_TIMEOUT_MS = 6000;
+const ENDING_CARD_TRANSITION_COVER_DURATION_MS = 1600;
+const ENDING_CARD_TRANSITION_MIN_BLACKOUT_MS = 400;
+const ENDING_CARD_TRANSITION_POST_SWAP_HOLD_MS = 220;
+const ENDING_CARD_BACKGROUND_MUSIC_DELAY_MS = 3000;
+const ENDING_CARD_BACKGROUND_MUSIC_FADE_IN_MS = 2200;
+const ENDING_CARD_BACKGROUND_MUSIC_START_VOLUME = 0.2;
+const INLINE_MUSIC_TRANSITION_LEAD_OUT_MS = 120;
+const INLINE_MUSIC_TRANSITION_COVER_DURATION_MS = 180;
+const INLINE_MUSIC_TRANSITION_MIN_BLACKOUT_MS = 180;
+const INLINE_MUSIC_TRANSITION_POST_SWAP_HOLD_MS = 90;
+const INLINE_MUSIC_TRANSITION_REVEAL_DURATION_MS = 180;
 const OPENING_SCENE_FADE_DURATION_MS = 1200;
 const CHAPTER_CARD_TYPING_DURATION_MULTIPLIER = 2;
 const CHAPTER_CARD_TEXT_APPEAR_DELAY_MS = 2000;
@@ -380,6 +403,13 @@ export function PlayerStoryReader({
   const [readerState, setReaderState] = useState<ReaderState | null>(
     initialReaderState
   );
+  const [sceneBackgroundMusicTrackId, setSceneBackgroundMusicTrackId] =
+    useState<string | null>(() =>
+      resolveReaderStateSceneBackgroundMusicTrackId({
+        bundle: initialBundle,
+        state: initialReaderState
+      })
+    );
   const [branchFlags, setBranchFlags] = useState<
     Record<string, boolean | number | string>
   >({});
@@ -387,6 +417,8 @@ export function PlayerStoryReader({
     useState<PlayerBoundaryState | null>(null);
   const [pendingSceneState, setPendingSceneState] =
     useState<ReaderState | null>(null);
+  const [pendingInSceneMusicTransition, setPendingInSceneMusicTransition] =
+    useState<PendingInSceneMusicTransition | null>(null);
   const [pendingEndingCardTransition, setPendingEndingCardTransition] =
     useState<PendingEndingCardTransition | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -412,6 +444,8 @@ export function PlayerStoryReader({
     useState<OpeningSceneFadePhase>("pending");
   const [sceneTransitionOverlayPhase, setSceneTransitionOverlayPhase] =
     useState<SceneTransitionOverlayPhase>("hidden");
+  const [sceneTransitionOverlayProfile, setSceneTransitionOverlayProfile] =
+    useState<SceneTransitionOverlayProfile>("scene");
   const [desktopNavGutterWidth, setDesktopNavGutterWidth] = useState(0);
   const [dressPromptIndex, setDressPromptIndex] = useState(0);
   const [dressPromptMotionDirection, setDressPromptMotionDirection] = useState<
@@ -461,6 +495,36 @@ export function PlayerStoryReader({
   const sceneTransitionRevealDurationMs = prefersReducedMotion
     ? REDUCED_MOTION_DURATION_MS
     : SCENE_TRANSITION_REVEAL_DURATION_MS;
+  const endingCardTransitionCoverDurationMs = prefersReducedMotion
+    ? 0
+    : ENDING_CARD_TRANSITION_COVER_DURATION_MS;
+  const endingCardTransitionMinimumBlackoutMs = prefersReducedMotion
+    ? 0
+    : ENDING_CARD_TRANSITION_MIN_BLACKOUT_MS;
+  const endingCardTransitionPostSwapHoldMs = prefersReducedMotion
+    ? 0
+    : ENDING_CARD_TRANSITION_POST_SWAP_HOLD_MS;
+  const endingCardBackgroundMusicDelayMs = prefersReducedMotion
+    ? 0
+    : ENDING_CARD_BACKGROUND_MUSIC_DELAY_MS;
+  const endingCardBackgroundMusicFadeInMs = prefersReducedMotion
+    ? 0
+    : ENDING_CARD_BACKGROUND_MUSIC_FADE_IN_MS;
+  const inlineMusicTransitionLeadOutMs = prefersReducedMotion
+    ? 0
+    : Math.min(lineExitDurationMs, INLINE_MUSIC_TRANSITION_LEAD_OUT_MS);
+  const inlineMusicTransitionCoverDurationMs = prefersReducedMotion
+    ? 0
+    : INLINE_MUSIC_TRANSITION_COVER_DURATION_MS;
+  const inlineMusicTransitionMinimumBlackoutMs = prefersReducedMotion
+    ? 0
+    : INLINE_MUSIC_TRANSITION_MIN_BLACKOUT_MS;
+  const inlineMusicTransitionPostSwapHoldMs = prefersReducedMotion
+    ? 0
+    : INLINE_MUSIC_TRANSITION_POST_SWAP_HOLD_MS;
+  const inlineMusicTransitionRevealDurationMs = prefersReducedMotion
+    ? REDUCED_MOTION_DURATION_MS
+    : INLINE_MUSIC_TRANSITION_REVEAL_DURATION_MS;
 
   const loadBundle = useMemo(
     () =>
@@ -505,7 +569,14 @@ export function PlayerStoryReader({
         setManifest(loadedRuntime.manifest);
         setBundle(loadedRuntime.bundle);
         setReaderState(loadedRuntime.readerState);
+        setSceneBackgroundMusicTrackId(
+          resolveReaderStateSceneBackgroundMusicTrackId({
+            bundle: loadedRuntime.bundle,
+            state: loadedRuntime.readerState
+          })
+        );
         setPendingSceneState(null);
+        setPendingInSceneMusicTransition(null);
         setBoundaryState(initialBoundaryState);
         setBranchFlags(
           reconcileCatNameBranchFlags({
@@ -587,7 +658,14 @@ export function PlayerStoryReader({
     if (resumeAction.type === "resume-from-initial-bundle") {
       previousNormalEntryRef.current = null;
       setReaderState(resumeAction.readerState);
+      setSceneBackgroundMusicTrackId(
+        resolveReaderStateSceneBackgroundMusicTrackId({
+          bundle: initialBundle,
+          state: resumeAction.readerState
+        })
+      );
       setPendingSceneState(null);
+      setPendingInSceneMusicTransition(null);
       setBoundaryState(null);
       setIsPersistenceReady(true);
       return;
@@ -620,7 +698,14 @@ export function PlayerStoryReader({
         setManifest(loadedRuntime.manifest);
         setBundle(loadedRuntime.bundle);
         setReaderState(loadedRuntime.readerState);
+        setSceneBackgroundMusicTrackId(
+          resolveReaderStateSceneBackgroundMusicTrackId({
+            bundle: loadedRuntime.bundle,
+            state: loadedRuntime.readerState
+          })
+        );
         setPendingSceneState(null);
+        setPendingInSceneMusicTransition(null);
         setBoundaryState(resumedBoundaryState);
         setIsPersistenceReady(true);
       })
@@ -664,6 +749,14 @@ export function PlayerStoryReader({
       ? getCurrentDialogue(bundle.chapter, readerState)
       : null;
   const hasPlayableSceneReady = Boolean(scene && entry);
+  const resolvedSceneBackgroundMusicTrackId = useMemo(
+    () =>
+      resolveSceneBackgroundMusicTrackId({
+        scene,
+        dialogueIndex: readerState?.dialogueIndex ?? null
+      }),
+    [readerState?.dialogueIndex, scene]
+  );
 
   useEffect(() => {
     if (!scene) {
@@ -677,6 +770,18 @@ export function PlayerStoryReader({
       });
     });
   }, [scene]);
+
+  useEffect(() => {
+    if (pendingInSceneMusicTransition) {
+      return;
+    }
+
+    setSceneBackgroundMusicTrackId((currentValue) =>
+      currentValue === resolvedSceneBackgroundMusicTrackId
+        ? currentValue
+        : resolvedSceneBackgroundMusicTrackId
+    );
+  }, [pendingInSceneMusicTransition, resolvedSceneBackgroundMusicTrackId]);
 
   useEffect(() => {
     const storedCatName =
@@ -732,14 +837,6 @@ export function PlayerStoryReader({
       }),
     [branchFlags, pendingScene]
   );
-  const pendingSceneBackgroundMusicUrl = useMemo(
-    () =>
-      toPublicStorageUrl(
-        supabaseUrl,
-        pendingScene?.backgroundMusic?.filePath ?? null
-      ),
-    [pendingScene?.backgroundMusic?.filePath, supabaseUrl]
-  );
   const activeAssetUrls = useMemo(
     () =>
       getPlayerRuntimeAssetUrls({
@@ -770,32 +867,53 @@ export function PlayerStoryReader({
       }),
     [bundle, effectivePendingSceneBranchFlags, pendingSceneState, supabaseUrl]
   );
+  const resolvedSceneBackgroundMusic = useMemo(
+    () => findSceneBackgroundMusicById(scene, sceneBackgroundMusicTrackId),
+    [scene, sceneBackgroundMusicTrackId]
+  );
   const backgroundImageUrl = activeAssetUrls.backgroundImageUrl;
   const chapterOpeningCardState =
     boundaryState?.type === "chapter-opening-card" ? boundaryState : null;
   const chapterEndingCardState =
     boundaryState?.type === "chapter-ending-card" ? boundaryState : null;
-  const backgroundMusicUrl = useMemo(() => {
-    const sceneBackgroundMusicFilePath =
-      scene?.backgroundMusic?.filePath ?? null;
+  const pendingSceneBackgroundMusicUrl = useMemo(() => {
+    const pendingSceneBackgroundMusicTrackId =
+      pendingSceneState && bundle
+        ? resolveReaderStateSceneBackgroundMusicTrackId({
+            bundle,
+            state: pendingSceneState
+          })
+        : null;
+    const pendingSceneBackgroundMusic = findSceneBackgroundMusicById(
+      pendingScene,
+      pendingSceneBackgroundMusicTrackId
+    );
 
-    if (!chapterEndingCardState) {
-      return toPublicStorageUrl(supabaseUrl, sceneBackgroundMusicFilePath);
+    return toPublicStorageUrl(
+      supabaseUrl,
+      pendingSceneBackgroundMusic?.filePath ?? null
+    );
+  }, [bundle, pendingScene, pendingSceneState, supabaseUrl]);
+  const backgroundMusicUrl = useMemo(() => {
+    if (chapterEndingCardState) {
+      return toPublicStorageUrl(
+        supabaseUrl,
+        chapterEndingCardState.backgroundMusicFilePath
+      );
     }
 
-    const endingCardBackgroundMusicFilePath =
-      chapterEndingCardState.backgroundMusicFilePath ??
-      (bundle?.chapter.id === chapterEndingCardState.chapterId
-        ? sceneBackgroundMusicFilePath
-        : null);
-
-    return toPublicStorageUrl(supabaseUrl, endingCardBackgroundMusicFilePath);
+    return toPublicStorageUrl(
+      supabaseUrl,
+      resolvedSceneBackgroundMusic?.filePath ?? null
+    );
   }, [
-    bundle?.chapter.id,
     chapterEndingCardState,
-    scene?.backgroundMusic?.filePath,
+    resolvedSceneBackgroundMusic?.filePath,
     supabaseUrl
   ]);
+  const hasDelayedEndingCardBackgroundMusicIntro = Boolean(
+    chapterEndingCardState?.backgroundMusicFilePath && backgroundMusicUrl
+  );
   const stageSizeStyle = useMemo(
     () => ({
       maxWidth: `calc(100dvh * ${stageAspectRatio})`
@@ -813,6 +931,55 @@ export function PlayerStoryReader({
       branchFlags
     });
   }, [branchFlags, bundle, readerState]);
+  const queueInSceneMusicTransition = useCallback(
+    (
+      nextState: ReaderState,
+      nextBundle: RuntimeChapterBundle | null = bundle
+    ) => {
+      if (!bundle || !readerState || !nextBundle) {
+        return false;
+      }
+
+      if (nextBundle.chapter.id !== bundle.chapter.id) {
+        return false;
+      }
+
+      if (nextState.sceneIndex !== readerState.sceneIndex) {
+        return false;
+      }
+
+      const currentScene =
+        bundle.chapter.scenes[readerState.sceneIndex] ?? null;
+      const nextScene = nextBundle.chapter.scenes[nextState.sceneIndex] ?? null;
+
+      if (!currentScene || !nextScene || currentScene.id !== nextScene.id) {
+        return false;
+      }
+
+      const currentTrackId = resolveSceneBackgroundMusicTrackId({
+        scene: currentScene,
+        dialogueIndex: readerState.dialogueIndex
+      });
+      const nextTrackId = resolveSceneBackgroundMusicTrackId({
+        scene: nextScene,
+        dialogueIndex: nextState.dialogueIndex
+      });
+
+      if (currentTrackId === nextTrackId) {
+        return false;
+      }
+
+      setPendingSceneState(null);
+      setPendingEndingCardTransition(null);
+      setPendingInSceneMusicTransition({
+        state: nextState,
+        sceneBackgroundMusicTrackId: nextTrackId
+      });
+      setBoundaryState(null);
+      return true;
+    },
+    [bundle, readerState]
+  );
 
   useEffect(() => {
     if (!isPersistenceReady) {
@@ -1062,12 +1229,65 @@ export function PlayerStoryReader({
   useEffect(() => {
     const audio = audioRef.current;
 
-    if (!audio || !backgroundMusicUrl || isResolvingResume) {
+    if (
+      !audio ||
+      !backgroundMusicUrl ||
+      isResolvingResume ||
+      hasDelayedEndingCardBackgroundMusicIntro
+    ) {
       return;
     }
 
     restartBackgroundMusic(audio);
-  }, [backgroundMusicUrl, isResolvingResume]);
+  }, [
+    backgroundMusicUrl,
+    hasDelayedEndingCardBackgroundMusicIntro,
+    isResolvingResume
+  ]);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+
+    if (
+      !audio ||
+      !backgroundMusicUrl ||
+      !hasDelayedEndingCardBackgroundMusicIntro ||
+      isResolvingResume
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    audio.pause();
+    audio.currentTime = 0;
+    audio.volume = ENDING_CARD_BACKGROUND_MUSIC_START_VOLUME;
+
+    const runIntro = async () => {
+      await waitForDuration(endingCardBackgroundMusicDelayMs);
+
+      if (cancelled) {
+        return;
+      }
+
+      audio.currentTime = 0;
+      void audio.play().catch(() => undefined);
+
+      await fadeBackgroundMusicTo(audio, 1, endingCardBackgroundMusicFadeInMs);
+    };
+
+    void runIntro();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    backgroundMusicUrl,
+    endingCardBackgroundMusicDelayMs,
+    endingCardBackgroundMusicFadeInMs,
+    hasDelayedEndingCardBackgroundMusicIntro,
+    isResolvingResume
+  ]);
 
   const activeScene = scene;
   const activeEntry = entry;
@@ -1139,18 +1359,29 @@ export function PlayerStoryReader({
   const sceneTransitionBackgroundMusicFadeOutMs = prefersReducedMotion
     ? 0
     : sceneTransitionLeadOutMs + sceneTransitionCoverDurationMs;
+  const endingCardTransitionBackgroundMusicFadeOutMs = prefersReducedMotion
+    ? 0
+    : sceneTransitionLeadOutMs + endingCardTransitionCoverDurationMs;
   const showSceneTransitionOverlay = sceneTransitionOverlayPhase !== "hidden";
-  const sceneTransitionOverlayKey = pendingSceneState
-    ? `scene-transition-${pendingSceneState.sceneIndex}-${pendingSceneState.dialogueIndex}`
-    : pendingEndingCardTransition
-      ? `ending-card-transition-${pendingEndingCardTransition.boundaryState.chapterId}`
-      : "scene-transition-overlay";
+  const sceneTransitionOverlayKey = pendingInSceneMusicTransition
+    ? `inline-music-transition-${pendingInSceneMusicTransition.state.sceneIndex}-${pendingInSceneMusicTransition.state.dialogueIndex}-${pendingInSceneMusicTransition.sceneBackgroundMusicTrackId ?? "silence"}`
+    : pendingSceneState
+      ? `scene-transition-${pendingSceneState.sceneIndex}-${pendingSceneState.dialogueIndex}`
+      : pendingEndingCardTransition
+        ? `ending-card-transition-${pendingEndingCardTransition.boundaryState.chapterId}`
+        : "scene-transition-overlay";
   const sceneTransitionOverlayOpacity =
     sceneTransitionOverlayPhase === "revealing" ? 0 : 1;
   const sceneTransitionOverlayDurationMs =
     sceneTransitionOverlayPhase === "revealing"
-      ? sceneTransitionRevealDurationMs
-      : sceneTransitionCoverDurationMs;
+      ? sceneTransitionOverlayProfile === "inline-music"
+        ? inlineMusicTransitionRevealDurationMs
+        : sceneTransitionRevealDurationMs
+      : sceneTransitionOverlayProfile === "inline-music"
+        ? inlineMusicTransitionCoverDurationMs
+        : sceneTransitionOverlayProfile === "ending-card"
+          ? endingCardTransitionCoverDurationMs
+          : sceneTransitionCoverDurationMs;
   const sceneTransitionOverlayEase =
     sceneTransitionOverlayPhase === "revealing"
       ? MOTION_EASE_IN
@@ -1351,6 +1582,81 @@ export function PlayerStoryReader({
   }, [boundaryState, isSavingCatName, pendingCatNameSync]);
 
   useEffect(() => {
+    if (!pendingInSceneMusicTransition) {
+      return;
+    }
+
+    let cancelled = false;
+    const backgroundMusicFadeOutPromise = fadeOutBackgroundMusic(
+      audioRef.current,
+      inlineMusicTransitionLeadOutMs + inlineMusicTransitionCoverDurationMs
+    );
+
+    const runTransition = async () => {
+      await waitForDuration(inlineMusicTransitionLeadOutMs);
+
+      if (cancelled) {
+        return;
+      }
+
+      setSceneTransitionOverlayProfile("inline-music");
+      setSceneTransitionOverlayPhase("covering");
+
+      await Promise.all([
+        backgroundMusicFadeOutPromise,
+        waitForDuration(inlineMusicTransitionCoverDurationMs)
+      ]);
+
+      if (cancelled) {
+        return;
+      }
+
+      await waitForDuration(inlineMusicTransitionMinimumBlackoutMs);
+
+      if (cancelled) {
+        return;
+      }
+
+      startTransition(() => {
+        setSceneBackgroundMusicTrackId(
+          pendingInSceneMusicTransition.sceneBackgroundMusicTrackId
+        );
+        setReaderState(pendingInSceneMusicTransition.state);
+      });
+
+      await waitForDuration(inlineMusicTransitionPostSwapHoldMs);
+
+      if (cancelled) {
+        return;
+      }
+
+      setSceneTransitionOverlayPhase("revealing");
+
+      await waitForDuration(inlineMusicTransitionRevealDurationMs);
+
+      if (cancelled) {
+        return;
+      }
+
+      setSceneTransitionOverlayPhase("hidden");
+      setPendingInSceneMusicTransition(null);
+    };
+
+    void runTransition();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    inlineMusicTransitionCoverDurationMs,
+    inlineMusicTransitionLeadOutMs,
+    inlineMusicTransitionMinimumBlackoutMs,
+    inlineMusicTransitionPostSwapHoldMs,
+    inlineMusicTransitionRevealDurationMs,
+    pendingInSceneMusicTransition
+  ]);
+
+  useEffect(() => {
     if (!isSceneTransition || !pendingSceneState) {
       return;
     }
@@ -1378,6 +1684,7 @@ export function PlayerStoryReader({
         return;
       }
 
+      setSceneTransitionOverlayProfile("scene");
       setSceneTransitionOverlayPhase("covering");
 
       await Promise.all([
@@ -1399,6 +1706,12 @@ export function PlayerStoryReader({
       }
 
       startTransition(() => {
+        setSceneBackgroundMusicTrackId(
+          resolveReaderStateSceneBackgroundMusicTrackId({
+            bundle,
+            state: pendingSceneState
+          })
+        );
         setReaderState(pendingSceneState);
       });
 
@@ -1418,6 +1731,7 @@ export function PlayerStoryReader({
 
       setSceneTransitionOverlayPhase("hidden");
       setPendingSceneState(null);
+      setPendingInSceneMusicTransition(null);
       setBoundaryState((current) =>
         current?.type === "scene-transition" ? null : current
       );
@@ -1430,6 +1744,7 @@ export function PlayerStoryReader({
     };
   }, [
     backgroundMusicUrl,
+    bundle,
     isSceneTransition,
     pendingSceneState,
     sceneTransitionLeadOutMs,
@@ -1448,6 +1763,10 @@ export function PlayerStoryReader({
     }
 
     let cancelled = false;
+    const backgroundMusicFadeOutPromise = fadeOutBackgroundMusic(
+      audioRef.current,
+      endingCardTransitionBackgroundMusicFadeOutMs
+    );
 
     const runTransition = async () => {
       await waitForDuration(sceneTransitionLeadOutMs);
@@ -1456,15 +1775,19 @@ export function PlayerStoryReader({
         return;
       }
 
+      setSceneTransitionOverlayProfile("ending-card");
       setSceneTransitionOverlayPhase("covering");
 
-      await waitForDuration(sceneTransitionCoverDurationMs);
+      await Promise.all([
+        backgroundMusicFadeOutPromise,
+        waitForDuration(endingCardTransitionCoverDurationMs)
+      ]);
 
       if (cancelled) {
         return;
       }
 
-      await waitForDuration(sceneTransitionMinimumBlackoutMs);
+      await waitForDuration(endingCardTransitionMinimumBlackoutMs);
 
       if (cancelled) {
         return;
@@ -1473,16 +1796,23 @@ export function PlayerStoryReader({
       startTransition(() => {
         setBundle(pendingEndingCardTransition.bundle);
         setReaderState(pendingEndingCardTransition.state);
+        setSceneBackgroundMusicTrackId(
+          resolveReaderStateSceneBackgroundMusicTrackId({
+            bundle: pendingEndingCardTransition.bundle,
+            state: pendingEndingCardTransition.state
+          })
+        );
         setBoundaryState(pendingEndingCardTransition.boundaryState);
       });
 
-      await waitForDuration(sceneTransitionPostSwapHoldMs);
+      await waitForDuration(endingCardTransitionPostSwapHoldMs);
 
       if (cancelled) {
         return;
       }
 
       setSceneTransitionOverlayPhase("hidden");
+      setPendingInSceneMusicTransition(null);
       setPendingEndingCardTransition(null);
     };
 
@@ -1492,11 +1822,12 @@ export function PlayerStoryReader({
       cancelled = true;
     };
   }, [
+    endingCardTransitionBackgroundMusicFadeOutMs,
+    endingCardTransitionCoverDurationMs,
+    endingCardTransitionMinimumBlackoutMs,
+    endingCardTransitionPostSwapHoldMs,
     pendingEndingCardTransition,
-    sceneTransitionLeadOutMs,
-    sceneTransitionCoverDurationMs,
-    sceneTransitionMinimumBlackoutMs,
-    sceneTransitionPostSwapHoldMs
+    sceneTransitionLeadOutMs
   ]);
 
   useLayoutEffect(() => {
@@ -1817,6 +2148,7 @@ export function PlayerStoryReader({
       if (openingBoundaryState) {
         setIsTapHeaderVisible(false);
         setPendingSceneState(null);
+        setPendingInSceneMusicTransition(null);
         setBoundaryState(openingBoundaryState);
         return;
       }
@@ -1834,18 +2166,35 @@ export function PlayerStoryReader({
 
       startTransition(() => {
         setPendingSceneState(null);
+        setPendingInSceneMusicTransition(null);
         setBoundaryState(null);
 
         if (
           resolvedRetreat.type === "line" ||
           resolvedRetreat.type === "scene-transition"
         ) {
+          if (queueInSceneMusicTransition(resolvedRetreat.state)) {
+            return;
+          }
+
+          setSceneBackgroundMusicTrackId(
+            resolveReaderStateSceneBackgroundMusicTrackId({
+              bundle,
+              state: resolvedRetreat.state
+            })
+          );
           setReaderState(resolvedRetreat.state);
           return;
         }
 
         if (resolvedRetreat.type === "chapter-return") {
           setBundle(resolvedRetreat.bundle);
+          setSceneBackgroundMusicTrackId(
+            resolveReaderStateSceneBackgroundMusicTrackId({
+              bundle: resolvedRetreat.bundle,
+              state: resolvedRetreat.state
+            })
+          );
           setReaderState(resolvedRetreat.state);
         }
       });
@@ -1864,19 +2213,28 @@ export function PlayerStoryReader({
     isLoadingChapter,
     loadBundle,
     manifest,
+    queueInSceneMusicTransition,
     readerState
   ]);
 
   const commitJumpToScene = useCallback(
     (targetBundle: RuntimeChapterBundle, sceneIndex: number) => {
       setPendingSceneState(null);
+      setPendingInSceneMusicTransition(null);
       setBoundaryState(null);
       setBundle(targetBundle);
-      setReaderState({
+      const nextState = {
         sceneIndex,
         dialogueIndex: 0,
         isChapterComplete: false
-      });
+      };
+      setSceneBackgroundMusicTrackId(
+        resolveReaderStateSceneBackgroundMusicTrackId({
+          bundle: targetBundle,
+          state: nextState
+        })
+      );
+      setReaderState(nextState);
     },
     []
   );
@@ -1934,16 +2292,29 @@ export function PlayerStoryReader({
       setIsTapHeaderVisible(false);
 
       startTransition(() => {
-        setPendingSceneState(null);
-        setBoundaryState(null);
-        setReaderState({
+        const nextState = {
           ...readerState,
           dialogueIndex,
           isChapterComplete: false
-        });
+        };
+
+        if (queueInSceneMusicTransition(nextState)) {
+          return;
+        }
+
+        setPendingSceneState(null);
+        setPendingInSceneMusicTransition(null);
+        setBoundaryState(null);
+        setSceneBackgroundMusicTrackId(
+          resolveReaderStateSceneBackgroundMusicTrackId({
+            bundle,
+            state: nextState
+          })
+        );
+        setReaderState(nextState);
       });
     },
-    [bundle, isLoadingChapter, readerState]
+    [bundle, isLoadingChapter, queueInSceneMusicTransition, readerState]
   );
 
   const handleJumpToChapter = useCallback(
@@ -1994,6 +2365,7 @@ export function PlayerStoryReader({
 
       if (nextBoundaryState !== boundaryState) {
         setPendingSceneState(null);
+        setPendingInSceneMusicTransition(null);
         setBoundaryState(nextBoundaryState);
       }
 
@@ -2027,13 +2399,25 @@ export function PlayerStoryReader({
 
       startTransition(() => {
         if (resolvedAdvance.type === "line") {
+          if (queueInSceneMusicTransition(resolvedAdvance.state)) {
+            return;
+          }
+
           setPendingSceneState(null);
+          setPendingInSceneMusicTransition(null);
           setBoundaryState(null);
+          setSceneBackgroundMusicTrackId(
+            resolveReaderStateSceneBackgroundMusicTrackId({
+              bundle,
+              state: resolvedAdvance.state
+            })
+          );
           setReaderState(resolvedAdvance.state);
           return;
         }
 
         if (resolvedAdvance.type === "scene-transition") {
+          setPendingInSceneMusicTransition(null);
           setPendingSceneState(resolvedAdvance.state);
           setBoundaryState(resolvedAdvance.boundaryState);
           return;
@@ -2042,6 +2426,7 @@ export function PlayerStoryReader({
         if (resolvedAdvance.type === "chapter-break") {
           if (resolvedAdvance.boundaryState.type === "chapter-ending-card") {
             setPendingSceneState(null);
+            setPendingInSceneMusicTransition(null);
             setPendingEndingCardTransition({
               bundle: resolvedAdvance.bundle,
               state: resolvedAdvance.state,
@@ -2052,7 +2437,14 @@ export function PlayerStoryReader({
           }
 
           setPendingSceneState(null);
+          setPendingInSceneMusicTransition(null);
           setBundle(resolvedAdvance.bundle);
+          setSceneBackgroundMusicTrackId(
+            resolveReaderStateSceneBackgroundMusicTrackId({
+              bundle: resolvedAdvance.bundle,
+              state: resolvedAdvance.state
+            })
+          );
           setReaderState(resolvedAdvance.state);
           setBoundaryState(resolvedAdvance.boundaryState);
           return;
@@ -2060,6 +2452,7 @@ export function PlayerStoryReader({
 
         if (resolvedAdvance.boundaryState.type === "chapter-ending-card") {
           setPendingSceneState(null);
+          setPendingInSceneMusicTransition(null);
           setPendingEndingCardTransition({
             bundle,
             state: readerState,
@@ -2070,6 +2463,7 @@ export function PlayerStoryReader({
         }
 
         setPendingSceneState(null);
+        setPendingInSceneMusicTransition(null);
         setBoundaryState(resolvedAdvance.boundaryState);
       });
     } catch (caughtError) {
@@ -2088,6 +2482,7 @@ export function PlayerStoryReader({
     lineExitDurationMs,
     loadBundle,
     manifest,
+    queueInSceneMusicTransition,
     presentationPhase,
     readerState
   ]);

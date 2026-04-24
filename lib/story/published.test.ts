@@ -98,6 +98,7 @@ const snapshot: StoryAuthoringSnapshot = {
           orderIndex: 1,
           backgroundImageAssetId: "bg_hall",
           backgroundMusicAssetId: "music_theme",
+          backgroundMusicCues: [],
           carryOcnoerDressSelection: true,
           characterIds: ["character_ocnoer", "character_ren"],
           createdAt: "2026-03-16T00:00:00.000Z",
@@ -227,6 +228,65 @@ describe("compileRuntimeStory", () => {
     ).toBeNull();
   });
 
+  it("compiles in-scene background music cues into runtime bundles", () => {
+    const compiled = compileRuntimeStory({
+      snapshot: {
+        ...snapshot,
+        backgroundMusicTracks: [
+          ...snapshot.backgroundMusicTracks,
+          {
+            id: "music_alt",
+            type: "background_music",
+            label: "Alt",
+            slug: "alt",
+            filePath: "runtime/media/alt.mp3",
+            createdAt: "2026-03-16T00:00:00.000Z",
+            updatedAt: "2026-03-16T00:00:00.000Z"
+          }
+        ],
+        chapters: [
+          {
+            ...snapshot.chapters[0],
+            scenes: [
+              {
+                ...snapshot.chapters[0].scenes[0],
+                backgroundMusicCues: [
+                  {
+                    afterDialogueEntryId: "dialogue_narrator",
+                    backgroundMusicAssetId: "music_alt"
+                  },
+                  {
+                    afterDialogueEntryId: "dialogue_ren",
+                    backgroundMusicAssetId: null
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      bucket: "runtime",
+      runtimePrefix: "runtime",
+      generatedAt: "2026-03-16T01:00:00.000Z"
+    });
+
+    expect(
+      compiled.chapterBundles[0]?.bundle.chapter.scenes[0]?.backgroundMusicCues
+    ).toEqual([
+      {
+        afterDialogueEntryId: "dialogue_narrator",
+        backgroundMusic: expect.objectContaining({
+          id: "music_alt",
+          filePath: "runtime/media/alt.mp3"
+        })
+      },
+      {
+        afterDialogueEntryId: "dialogue_ren",
+        backgroundMusic: null
+      }
+    ]);
+  });
+
   it("includes chapter black-card text in the runtime bundle", () => {
     const compiled = compileRuntimeStory({
       snapshot: {
@@ -279,6 +339,7 @@ describe("compileRuntimeStory", () => {
                 orderIndex: 1,
                 backgroundImageAssetId: "bg_hall",
                 backgroundMusicAssetId: null,
+                backgroundMusicCues: [],
                 carryOcnoerDressSelection: true,
                 characterIds: ["character_ren"],
                 createdAt: "2026-03-16T00:00:00.000Z",

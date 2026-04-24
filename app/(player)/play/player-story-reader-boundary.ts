@@ -1,4 +1,4 @@
-import type { RuntimeChapterBundle, RuntimeManifest } from "@/lib/story/types";
+import type { RuntimeChapterBundle, RuntimeManifest } from "@ocnoer/story-core";
 
 export type ChapterCardDisplayReason =
   | "initial-entry"

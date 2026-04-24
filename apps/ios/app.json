@@ -1,0 +1,18 @@
+{
+  "expo": {
+    "name": "Ocnoer iOS",
+    "slug": "ocnoer-ios",
+    "scheme": "ocnoer",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "platforms": ["ios"],
+    "userInterfaceStyle": "dark",
+    "ios": {
+      "bundleIdentifier": "com.ocnoer.player",
+      "supportsTablet": false
+    },
+    "extra": {
+      "portStage": "scaffold"
+    }
+  }
+}

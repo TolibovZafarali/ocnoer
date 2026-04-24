@@ -10,6 +10,10 @@ function resetBackgroundMusicVolume(audio: BackgroundMusicAudioElement) {
   audio.volume = DEFAULT_BACKGROUND_MUSIC_VOLUME;
 }
 
+function clampBackgroundMusicVolume(volume: number) {
+  return Math.max(0, Math.min(DEFAULT_BACKGROUND_MUSIC_VOLUME, volume));
+}
+
 export function restartBackgroundMusic(
   audio: BackgroundMusicAudioElement | null
 ) {
@@ -34,27 +38,26 @@ export function resumePausedBackgroundMusic(
   void audio.play().catch(() => undefined);
 }
 
-export function fadeOutBackgroundMusic(
+export function fadeBackgroundMusicTo(
   audio: BackgroundMusicAudioElement | null,
+  targetVolume: number,
   durationMs: number
 ) {
   if (!audio) {
     return Promise.resolve();
   }
 
+  const resolvedTargetVolume = clampBackgroundMusicVolume(targetVolume);
+
   if (durationMs <= 0) {
-    audio.volume = 0;
+    audio.volume = resolvedTargetVolume;
     return Promise.resolve();
   }
 
   const startingVolume = Number.isFinite(audio.volume)
-    ? audio.volume
+    ? clampBackgroundMusicVolume(audio.volume)
     : DEFAULT_BACKGROUND_MUSIC_VOLUME;
-
-  if (startingVolume <= 0) {
-    audio.volume = 0;
-    return Promise.resolve();
-  }
+  const volumeDelta = resolvedTargetVolume - startingVolume;
 
   return new Promise<void>((resolve) => {
     const startedAt = Date.now();
@@ -63,7 +66,9 @@ export function fadeOutBackgroundMusic(
       const elapsedMs = Date.now() - startedAt;
       const progress = Math.min(elapsedMs / durationMs, 1);
 
-      audio.volume = Math.max(0, startingVolume * (1 - progress));
+      audio.volume = clampBackgroundMusicVolume(
+        startingVolume + volumeDelta * progress
+      );
 
       if (progress >= 1) {
         resolve();
@@ -75,4 +80,11 @@ export function fadeOutBackgroundMusic(
 
     step();
   });
+}
+
+export function fadeOutBackgroundMusic(
+  audio: BackgroundMusicAudioElement | null,
+  durationMs: number
+) {
+  return fadeBackgroundMusicTo(audio, 0, durationMs);
 }

@@ -325,12 +325,48 @@ function compileScene(input: {
       };
     });
 
+  const dialogueIndexById = new Map(
+    dialogue.map((entry, index) => [entry.id, index])
+  );
+  const backgroundMusicCues = [...(input.scene.backgroundMusicCues ?? [])]
+    .map((cue) => {
+      const dialogueIndex = dialogueIndexById.get(cue.afterDialogueEntryId);
+
+      if (dialogueIndex == null) {
+        throw new Error(
+          `Scene "${input.scene.title}" references an unknown background music cue dialogue.`
+        );
+      }
+
+      const cueBackgroundMusic = cue.backgroundMusicAssetId
+        ? (input.backgroundMusicById.get(cue.backgroundMusicAssetId) ?? null)
+        : null;
+
+      if (cue.backgroundMusicAssetId && !cueBackgroundMusic) {
+        throw new Error(
+          `Scene "${input.scene.title}" references an unknown background music cue asset.`
+        );
+      }
+
+      return {
+        afterDialogueEntryId: cue.afterDialogueEntryId,
+        backgroundMusic: cueBackgroundMusic,
+        dialogueIndex
+      };
+    })
+    .sort((left, right) => left.dialogueIndex - right.dialogueIndex)
+    .map(({ afterDialogueEntryId, backgroundMusic }) => ({
+      afterDialogueEntryId,
+      backgroundMusic
+    }));
+
   return {
     id: input.scene.id,
     title: input.scene.title,
     orderIndex: input.scene.orderIndex,
     backgroundImage,
     backgroundMusic,
+    backgroundMusicCues,
     carryOcnoerDressSelection: input.scene.carryOcnoerDressSelection ?? true,
     characterPool,
     dialogue

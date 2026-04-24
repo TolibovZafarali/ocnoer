@@ -80,6 +80,7 @@ const sceneDraftPayload = {
     orderIndex: 1,
     backgroundImageAssetId: "bg_1",
     backgroundMusicAssetId: null,
+    backgroundMusicCues: [],
     carryOcnoerDressSelection: true,
     characterIds: ["character_1"]
   },
@@ -152,7 +153,9 @@ describe("deleteCharacterAction", () => {
     );
 
     expect(deleteCharacterMock).toHaveBeenCalledWith("character_123");
-    expect(revalidatePathMock).toHaveBeenCalledWith("/admin/characters/character_123");
+    expect(revalidatePathMock).toHaveBeenCalledWith(
+      "/admin/characters/character_123"
+    );
     expect(revalidatePathMock).toHaveBeenCalledWith("/admin/characters");
     expect(redirectMock).toHaveBeenCalledWith(
       "/admin/characters?status=success&message=Character+deleted."
@@ -226,10 +229,7 @@ describe("createChapterNavigationAction", () => {
     formData.set("title", "Chapter One");
 
     await expect(
-      createChapterNavigationAction(
-        { error: null, redirectTo: null },
-        formData
-      )
+      createChapterNavigationAction({ error: null, redirectTo: null }, formData)
     ).resolves.toEqual({
       error: null,
       redirectTo:
@@ -403,9 +403,9 @@ describe("scene draft actions", () => {
       sceneId: "scene_456",
       payload: sceneDraftPayload
     });
-    expect(
-      upsertSceneDraftMock.mock.invocationCallOrder[0]
-    ).toBeLessThan(saveSceneDraftMock.mock.invocationCallOrder[0]);
+    expect(upsertSceneDraftMock.mock.invocationCallOrder[0]).toBeLessThan(
+      saveSceneDraftMock.mock.invocationCallOrder[0]
+    );
     expect(revalidatePathMock).toHaveBeenCalledWith("/admin");
     expect(revalidatePathMock).toHaveBeenCalledWith("/play");
     expect(revalidatePathMock).toHaveBeenCalledWith(

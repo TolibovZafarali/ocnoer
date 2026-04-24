@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  fadeBackgroundMusicTo,
   fadeOutBackgroundMusic,
   restartBackgroundMusic,
   resumePausedBackgroundMusic
@@ -91,6 +92,26 @@ describe("player story reader audio helpers", () => {
     await fadeOutBackgroundMusic(audio, 0);
 
     expect(audio.volume).toBe(0);
+  });
+
+  it("fades background music up to a target volume over time", async () => {
+    vi.useFakeTimers();
+
+    const audio = createAudioElement({
+      paused: false,
+      volume: 0.2
+    });
+
+    const fadePromise = fadeBackgroundMusicTo(audio, 1, 96);
+
+    await vi.advanceTimersByTimeAsync(48);
+    expect(audio.volume).toBeGreaterThan(0.2);
+    expect(audio.volume).toBeLessThan(1);
+
+    await vi.advanceTimersByTimeAsync(96);
+    await fadePromise;
+
+    expect(audio.volume).toBe(1);
   });
 
   it("ignores missing audio elements", () => {

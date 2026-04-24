@@ -42,6 +42,7 @@ function createScene(input: {
               `runtime/media/background-${input.id}.png`
           },
     backgroundMusic: null,
+    backgroundMusicCues: [],
     carryOcnoerDressSelection: true,
     characterPool: [],
     dialogue: input.dialogueIds.map((dialogueId, index) => ({
@@ -352,6 +353,7 @@ describe("getPlayerRuntimeAssetUrls", () => {
             filePath: "runtime/media/opening-background.png"
           },
           backgroundMusic: null,
+          backgroundMusicCues: [],
           carryOcnoerDressSelection: true,
           characterPool: [],
           dialogue: [
@@ -422,6 +424,7 @@ describe("getPlayerRuntimeAssetUrls", () => {
             filePath: "runtime/media/opening-background.png"
           },
           backgroundMusic: null,
+          backgroundMusicCues: [],
           carryOcnoerDressSelection: true,
           characterPool: [],
           dialogue: [
@@ -489,6 +492,7 @@ describe("getPlayerRuntimeAssetUrls", () => {
             filePath: "runtime/media/opening-background.png"
           },
           backgroundMusic: null,
+          backgroundMusicCues: [],
           carryOcnoerDressSelection: true,
           characterPool: [],
           dialogue: [
@@ -556,6 +560,7 @@ describe("getPlayerRuntimeAssetUrls", () => {
             filePath: "runtime/media/opening-background.png"
           },
           backgroundMusic: null,
+          backgroundMusicCues: [],
           carryOcnoerDressSelection: true,
           characterPool: [
             {
@@ -672,6 +677,7 @@ describe("getPlayerRuntimeSceneAssetUrls", () => {
             filePath: "runtime/media/opening-background.png"
           },
           backgroundMusic: null,
+          backgroundMusicCues: [],
           carryOcnoerDressSelection: true,
           characterPool: [
             {

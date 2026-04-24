@@ -29,6 +29,7 @@ import type {
   RuntimeBackgroundMusic,
   RuntimeChapterBundle,
   RuntimeCharacter,
+  SceneBackgroundMusicCue,
   SceneDefinition,
   SceneDraftPayload,
   StoryAuthoringSnapshot
@@ -195,6 +196,23 @@ function normalizeChapterCardText(value: string | null | undefined) {
   return normalized.length > 0 ? normalized : null;
 }
 
+function normalizeSceneBackgroundMusicCue(
+  cue: SceneBackgroundMusicCue
+): SceneBackgroundMusicCue | null {
+  const afterDialogueEntryId = cue.afterDialogueEntryId.trim();
+
+  if (!afterDialogueEntryId) {
+    return null;
+  }
+
+  return {
+    afterDialogueEntryId,
+    backgroundMusicAssetId: normalizeOptionalSceneDraftValue(
+      cue.backgroundMusicAssetId ?? null
+    )
+  };
+}
+
 function sortSnapshot(
   snapshot: StoryAuthoringSnapshot
 ): StoryAuthoringSnapshot {
@@ -230,6 +248,12 @@ function sortSnapshot(
       ),
       scenes: sortByOrderIndex(chapter.scenes).map((scene) => ({
         ...scene,
+        backgroundMusicAssetId: normalizeOptionalSceneDraftValue(
+          scene.backgroundMusicAssetId ?? null
+        ),
+        backgroundMusicCues: (scene.backgroundMusicCues ?? [])
+          .map(normalizeSceneBackgroundMusicCue)
+          .filter((cue): cue is SceneBackgroundMusicCue => cue !== null),
         carryOcnoerDressSelection: scene.carryOcnoerDressSelection ?? true,
         characterIds: [...new Set(scene.characterIds)],
         dialogue: sortByOrderIndex(scene.dialogue).map(normalizeDialogueEntry)
@@ -1752,7 +1776,11 @@ function isBackgroundMusicReferenced(
     (chapter) =>
       chapter.endingCardBackgroundMusicAssetId === backgroundMusicAssetId ||
       chapter.scenes.some(
-        (scene) => scene.backgroundMusicAssetId === backgroundMusicAssetId
+        (scene) =>
+          scene.backgroundMusicAssetId === backgroundMusicAssetId ||
+          (scene.backgroundMusicCues ?? []).some(
+            (cue) => cue.backgroundMusicAssetId === backgroundMusicAssetId
+          )
       )
   );
 }
@@ -1901,6 +1929,7 @@ export async function saveSceneDraft(input: {
     scene.dialogue.map((entry) => [entry.id, entry])
   );
   const timestamp = nowIsoString();
+  const finalDialogueIdsByDraftId = new Map<string, string>();
   const nextDialogue: DialogueEntry[] = draft.dialogue.map((entry, index) => {
     const rawId = entry.id.trim();
 
@@ -1935,8 +1964,12 @@ export async function saveSceneDraft(input: {
     });
 
     if (entry.speakerType === "narrator") {
+      const nextId = isSceneDraftTempId(rawId)
+        ? createEntityId("dialogue")
+        : rawId;
+      finalDialogueIdsByDraftId.set(rawId, nextId);
       return {
-        id: isSceneDraftTempId(rawId) ? createEntityId("dialogue") : rawId,
+        id: nextId,
         orderIndex: index + 1,
         text,
         speaker: {
@@ -1952,8 +1985,12 @@ export async function saveSceneDraft(input: {
     }
 
     if (entry.speakerType === "dress_prompt") {
+      const nextId = isSceneDraftTempId(rawId)
+        ? createEntityId("dialogue")
+        : rawId;
+      finalDialogueIdsByDraftId.set(rawId, nextId);
       return {
-        id: isSceneDraftTempId(rawId) ? createEntityId("dialogue") : rawId,
+        id: nextId,
         orderIndex: index + 1,
         text,
         speaker: {
@@ -1967,8 +2004,12 @@ export async function saveSceneDraft(input: {
     }
 
     if (entry.speakerType === "cat_name_prompt") {
+      const nextId = isSceneDraftTempId(rawId)
+        ? createEntityId("dialogue")
+        : rawId;
+      finalDialogueIdsByDraftId.set(rawId, nextId);
       return {
-        id: isSceneDraftTempId(rawId) ? createEntityId("dialogue") : rawId,
+        id: nextId,
         orderIndex: index + 1,
         text,
         speaker: {
@@ -1980,8 +2021,12 @@ export async function saveSceneDraft(input: {
       };
     }
 
+    const nextId = isSceneDraftTempId(rawId)
+      ? createEntityId("dialogue")
+      : rawId;
+    finalDialogueIdsByDraftId.set(rawId, nextId);
     return {
-      id: isSceneDraftTempId(rawId) ? createEntityId("dialogue") : rawId,
+      id: nextId,
       orderIndex: index + 1,
       text,
       speaker: {
@@ -2000,6 +2045,70 @@ export async function saveSceneDraft(input: {
     );
   }
 
+  const nextDialogueIndexById = new Map(
+    nextDialogue.map((entry, index) => [entry.id, index])
+  );
+  const rawBackgroundMusicCues = draft.scene.backgroundMusicCues ?? [];
+  const nextBackgroundMusicCues = rawBackgroundMusicCues
+    .map((cue) => {
+      const rawAfterDialogueEntryId = cue.afterDialogueEntryId.trim();
+
+      if (!rawAfterDialogueEntryId) {
+        throw new StoryRepositoryError(
+          "Background music cue must target a dialogue entry."
+        );
+      }
+
+      const afterDialogueEntryId =
+        finalDialogueIdsByDraftId.get(rawAfterDialogueEntryId) ?? null;
+
+      if (!afterDialogueEntryId) {
+        throw new StoryRepositoryError(
+          "Background music cue dialogue entry not found."
+        );
+      }
+
+      const dialogueIndex = nextDialogueIndexById.get(afterDialogueEntryId);
+
+      if (dialogueIndex == null) {
+        throw new StoryRepositoryError(
+          "Background music cue dialogue entry not found."
+        );
+      }
+
+      if (dialogueIndex >= nextDialogue.length - 1) {
+        throw new StoryRepositoryError(
+          "Background music cue must target a dialogue row that has another row after it."
+        );
+      }
+
+      const nextCueBackgroundMusicAssetId = normalizeOptionalSceneDraftValue(
+        cue.backgroundMusicAssetId ?? null
+      );
+
+      if (nextCueBackgroundMusicAssetId) {
+        findBackgroundMusicOrThrow(snapshot, nextCueBackgroundMusicAssetId);
+      }
+
+      return {
+        afterDialogueEntryId,
+        backgroundMusicAssetId: nextCueBackgroundMusicAssetId,
+        dialogueIndex
+      };
+    })
+    .sort((left, right) => left.dialogueIndex - right.dialogueIndex);
+  const seenBackgroundMusicCueDialogueIds = new Set<string>();
+
+  nextBackgroundMusicCues.forEach((cue) => {
+    if (seenBackgroundMusicCueDialogueIds.has(cue.afterDialogueEntryId)) {
+      throw new StoryRepositoryError(
+        "Only one background music cue can target each dialogue row."
+      );
+    }
+
+    seenBackgroundMusicCueDialogueIds.add(cue.afterDialogueEntryId);
+  });
+
   const orderChanged = nextSceneOrder !== scene.orderIndex;
 
   if (!orderChanged) {
@@ -2009,6 +2118,12 @@ export async function saveSceneDraft(input: {
   scene.title = nextTitle;
   scene.backgroundImageAssetId = backgroundImageAssetId;
   scene.backgroundMusicAssetId = backgroundMusicAssetId;
+  scene.backgroundMusicCues = nextBackgroundMusicCues.map(
+    ({ afterDialogueEntryId, backgroundMusicAssetId }) => ({
+      afterDialogueEntryId,
+      backgroundMusicAssetId
+    })
+  );
   scene.carryOcnoerDressSelection = draft.scene.carryOcnoerDressSelection;
   scene.characterIds = nextCharacterIds;
   scene.dialogue = nextDialogue;
@@ -2847,6 +2962,7 @@ export async function createScene(input: {
     orderIndex: input.orderIndex,
     backgroundImageAssetId: input.backgroundImageAssetId,
     backgroundMusicAssetId: input.backgroundMusicAssetId,
+    backgroundMusicCues: [],
     carryOcnoerDressSelection: input.carryOcnoerDressSelection,
     characterIds,
     dialogue: [],
@@ -2894,6 +3010,7 @@ export async function updateScene(input: {
   scene.title = input.title.trim();
   scene.backgroundImageAssetId = input.backgroundImageAssetId;
   scene.backgroundMusicAssetId = input.backgroundMusicAssetId;
+  scene.backgroundMusicCues = scene.backgroundMusicCues ?? [];
   scene.carryOcnoerDressSelection = input.carryOcnoerDressSelection;
   scene.characterIds = nextCharacterIds;
   scene.updatedAt = nowIsoString();

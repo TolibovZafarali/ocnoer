@@ -47,6 +47,7 @@ export type ReaderCachedAsset = {
   contentType: string | null;
   fromCache: boolean;
   warnings: string[];
+  layoutMetrics: ReaderAssetLayoutMetrics | null;
 };
 
 export type ReaderAssetCacheError = {
@@ -74,7 +75,33 @@ type SvgPayloadClassification = {
     extension: string;
     base64: string;
   } | null;
+  layoutMetrics: ReaderAssetLayoutMetrics | null;
   warnings: string[];
+};
+
+export type ReaderAssetLayoutMetrics = {
+  naturalWidth?: number | null;
+  naturalHeight?: number | null;
+  svgWrapper?: {
+    width: number;
+    height: number;
+    viewBox: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    } | null;
+    embeddedImage: {
+      x: number;
+      y: number;
+      width: number;
+      height: number;
+    } | null;
+  } | null;
+};
+
+type ReaderCacheMetadata = {
+  layoutMetrics?: ReaderAssetLayoutMetrics | null;
 };
 
 const nativeImageRefCache = new Map<string, ImageRef>();
@@ -210,6 +237,10 @@ function getCacheFile(cacheKey: string, extension: string) {
   return new File(getCacheDirectory(), `${cacheKey}.${extension}`);
 }
 
+function getCacheMetadataFile(cacheKey: string) {
+  return new File(getCacheDirectory(), `${cacheKey}.metadata.json`);
+}
+
 function getFileSize(file: File) {
   try {
     const info = file.info();
@@ -221,6 +252,39 @@ function getFileSize(file: File) {
 
 function isReadyFile(file: File) {
   return getFileSize(file) > 0;
+}
+
+function readCacheMetadata(cacheKey: string): ReaderCacheMetadata | null {
+  const file = getCacheMetadataFile(cacheKey);
+
+  if (!isReadyFile(file)) {
+    return null;
+  }
+
+  try {
+    const parsed = JSON.parse(file.textSync()) as ReaderCacheMetadata;
+
+    return typeof parsed === "object" && parsed ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeCacheMetadata(
+  cacheKey: string,
+  metadata: ReaderCacheMetadata | null
+) {
+  if (!metadata?.layoutMetrics) {
+    return;
+  }
+
+  try {
+    getCacheMetadataFile(cacheKey).write(JSON.stringify(metadata));
+  } catch {
+    logAssetWarning("unable to write asset metadata", {
+      cacheKey
+    });
+  }
 }
 
 function getPathExtension(value: string | null | undefined) {
@@ -326,8 +390,11 @@ function decodeUtf8Bytes(bytes: Uint8Array) {
 
 function decodeBase64Bytes(base64: string) {
   const normalizedBase64 = base64.replace(/\s/g, "");
-  const padding =
-    normalizedBase64.endsWith("==") ? 2 : normalizedBase64.endsWith("=") ? 1 : 0;
+  const padding = normalizedBase64.endsWith("==")
+    ? 2
+    : normalizedBase64.endsWith("=")
+      ? 1
+      : 0;
   const output = new Uint8Array(
     Math.floor((normalizedBase64.length * 3) / 4) - padding
   );
@@ -372,6 +439,41 @@ function decodeBase64Bytes(base64: string) {
   return outputIndex === output.length ? output : output.slice(0, outputIndex);
 }
 
+function readUint32BigEndian(bytes: Uint8Array, offset: number) {
+  return (
+    ((bytes[offset] ?? 0) << 24) |
+    ((bytes[offset + 1] ?? 0) << 16) |
+    ((bytes[offset + 2] ?? 0) << 8) |
+    (bytes[offset + 3] ?? 0)
+  );
+}
+
+function getRasterDimensionsFromBytes(input: {
+  bytes: Uint8Array;
+  mimeType: string;
+}) {
+  if (
+    input.mimeType === "image/png" &&
+    input.bytes.length >= 24 &&
+    input.bytes[0] === 0x89 &&
+    input.bytes[1] === 0x50 &&
+    input.bytes[2] === 0x4e &&
+    input.bytes[3] === 0x47
+  ) {
+    const width = readUint32BigEndian(input.bytes, 16);
+    const height = readUint32BigEndian(input.bytes, 20);
+
+    return width > 0 && height > 0
+      ? {
+          width,
+          height
+        }
+      : null;
+  }
+
+  return null;
+}
+
 function createAssetRecord(input: {
   assetRef: ReaderAssetRef;
   cacheKey: string;
@@ -379,6 +481,7 @@ function createAssetRecord(input: {
   renderKind: ReaderAssetRenderKind;
   contentType: string | null;
   fromCache: boolean;
+  layoutMetrics?: ReaderAssetLayoutMetrics | null;
   warnings?: string[];
 }): ReaderCachedAsset {
   const record: ReaderCachedAsset = {
@@ -391,8 +494,15 @@ function createAssetRecord(input: {
     bytes: getFileSize(input.file),
     contentType: input.contentType,
     fromCache: input.fromCache,
-    warnings: input.warnings ?? []
+    warnings: input.warnings ?? [],
+    layoutMetrics: input.layoutMetrics ?? null
   };
+
+  if (!input.fromCache) {
+    writeCacheMetadata(input.cacheKey, {
+      layoutMetrics: record.layoutMetrics
+    });
+  }
 
   cachedAssetsByUrl.set(input.assetRef.url, record);
   cachedAssetsByKey.set(input.cacheKey, record);
@@ -433,6 +543,7 @@ function findExistingCachedAsset(assetRef: ReaderAssetRef, cacheKey: string) {
     }
 
     const renderKind = extension === "svg" ? "svg-vector" : "bitmap";
+    const metadata = readCacheMetadata(cacheKey);
 
     return createAssetRecord({
       assetRef,
@@ -441,6 +552,7 @@ function findExistingCachedAsset(assetRef: ReaderAssetRef, cacheKey: string) {
       renderKind,
       contentType: null,
       fromCache: true,
+      layoutMetrics: metadata?.layoutMetrics ?? null,
       warnings: extension.startsWith("embedded.")
         ? ["Using extracted embedded raster from cached SVG wrapper."]
         : []
@@ -476,6 +588,113 @@ function inferBitmapExtension(input: {
   );
 }
 
+function getFirstTag(source: string, tagName: string) {
+  return source.match(new RegExp(`<${tagName}\\b[^>]*>`, "i"))?.[0] ?? null;
+}
+
+function getTagAttribute(tag: string | null, attributeName: string) {
+  if (!tag) {
+    return null;
+  }
+
+  const match = tag.match(
+    new RegExp(`${attributeName}\\s*=\\s*["']([^"']+)["']`, "i")
+  );
+
+  return match?.[1] ?? null;
+}
+
+function parseSvgNumber(value: string | null) {
+  if (!value || value.trim().endsWith("%")) {
+    return null;
+  }
+
+  const match = value.trim().match(/^-?\d+(?:\.\d+)?/);
+  const parsed = match ? Number(match[0]) : Number.NaN;
+
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
+function parseSvgCoordinate(value: string | null) {
+  if (!value || value.trim().endsWith("%")) {
+    return 0;
+  }
+
+  const match = value.trim().match(/^-?\d+(?:\.\d+)?/);
+  const parsed = match ? Number(match[0]) : Number.NaN;
+
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseSvgViewBox(value: string | null) {
+  const parts = value
+    ?.trim()
+    .split(/[\s,]+/)
+    .map((part) => Number(part));
+
+  if (
+    !parts ||
+    parts.length !== 4 ||
+    parts.some((part) => !Number.isFinite(part)) ||
+    (parts[2] ?? 0) <= 0 ||
+    (parts[3] ?? 0) <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    x: parts[0] ?? 0,
+    y: parts[1] ?? 0,
+    width: parts[2] ?? 0,
+    height: parts[3] ?? 0
+  };
+}
+
+function getSvgLayoutMetrics(input: {
+  svgXml: string;
+  embeddedImageTag: string | null;
+}): ReaderAssetLayoutMetrics | null {
+  const svgTag = getFirstTag(input.svgXml, "svg");
+  const viewBox = parseSvgViewBox(getTagAttribute(svgTag, "viewBox"));
+  const svgWidth = parseSvgNumber(getTagAttribute(svgTag, "width"));
+  const svgHeight = parseSvgNumber(getTagAttribute(svgTag, "height"));
+  const canvasWidth = viewBox?.width ?? svgWidth;
+  const canvasHeight = viewBox?.height ?? svgHeight;
+
+  if (!canvasWidth || !canvasHeight) {
+    return null;
+  }
+
+  const imageWidth =
+    parseSvgNumber(getTagAttribute(input.embeddedImageTag, "width")) ??
+    canvasWidth;
+  const imageHeight =
+    parseSvgNumber(getTagAttribute(input.embeddedImageTag, "height")) ??
+    canvasHeight;
+  const imageX =
+    parseSvgCoordinate(getTagAttribute(input.embeddedImageTag, "x")) -
+    (viewBox?.x ?? 0);
+  const imageY =
+    parseSvgCoordinate(getTagAttribute(input.embeddedImageTag, "y")) -
+    (viewBox?.y ?? 0);
+
+  return {
+    svgWrapper: {
+      width: canvasWidth,
+      height: canvasHeight,
+      viewBox,
+      embeddedImage: input.embeddedImageTag
+        ? {
+            x: imageX,
+            y: imageY,
+            width: imageWidth,
+            height: imageHeight
+          }
+        : null
+    }
+  };
+}
+
 export function classifySvgAssetPayload(
   svgXml: string
 ): SvgPayloadClassification {
@@ -484,28 +703,45 @@ export function classifySvgAssetPayload(
   // transcode through sharp to WebP, upload extensioned files, and emit
   // renderKind/contentType/hash metadata into the runtime asset manifest.
   const trimmedSvg = svgXml.trimStart();
+  const hasSvgRoot =
+    /^<svg\b/i.test(trimmedSvg) || /^<\?xml\b[\s\S]*?<svg\b/i.test(trimmedSvg);
 
-  if (!trimmedSvg.startsWith("<svg")) {
+  if (!hasSvgRoot) {
     return {
       renderKind: "unknown",
       embeddedRaster: null,
+      layoutMetrics: null,
       warnings: ["SVG payload does not start with an <svg> root."]
     };
   }
 
-  const embeddedImages = Array.from(
-    svgXml.matchAll(
-      /(?:href|xlink:href)=["']data:(image\/(?:png|jpe?g|webp));base64,([^"']+)["']/gi
-    )
-  ).map((match) => ({
-    mimeType: match[1]?.toLowerCase() ?? "image/png",
-    base64: match[2] ?? ""
-  }));
+  const embeddedImages = Array.from(svgXml.matchAll(/<image\b[^>]*>/gi))
+    .map((match) => {
+      const tag = match[0];
+      const href =
+        getTagAttribute(tag, "href") ?? getTagAttribute(tag, "xlink:href");
+      const embeddedMatch = href?.match(
+        /^data:(image\/(?:png|jpe?g|webp));base64,(.+)$/i
+      );
+
+      return embeddedMatch
+        ? {
+            tag,
+            mimeType: embeddedMatch[1]?.toLowerCase() ?? "image/png",
+            base64: embeddedMatch[2] ?? ""
+          }
+        : null;
+    })
+    .filter((image): image is NonNullable<typeof image> => Boolean(image));
 
   if (embeddedImages.length === 0) {
     return {
       renderKind: "svg-vector",
       embeddedRaster: null,
+      layoutMetrics: getSvgLayoutMetrics({
+        svgXml,
+        embeddedImageTag: null
+      }),
       warnings: []
     };
   }
@@ -528,6 +764,10 @@ export function classifySvgAssetPayload(
       extension,
       base64: largestEmbeddedImage.base64
     },
+    layoutMetrics: getSvgLayoutMetrics({
+      svgXml,
+      embeddedImageTag: largestEmbeddedImage.tag
+    }),
     warnings: [
       `Detected ${embeddedImages.length} embedded raster image(s) inside SVG.`
     ]
@@ -554,12 +794,28 @@ async function writeSvgAsset(input: {
   const classification = classifySvgAssetPayload(input.svgXml);
 
   if (classification.embeddedRaster) {
+    const embeddedRasterBytes = decodeBase64Bytes(
+      classification.embeddedRaster.base64
+    );
+    const embeddedRasterDimensions = getRasterDimensionsFromBytes({
+      bytes: embeddedRasterBytes,
+      mimeType: classification.embeddedRaster.mimeType
+    });
+    const layoutMetrics: ReaderAssetLayoutMetrics | null = {
+      ...classification.layoutMetrics,
+      naturalWidth:
+        embeddedRasterDimensions?.width ??
+        classification.layoutMetrics?.naturalWidth,
+      naturalHeight:
+        embeddedRasterDimensions?.height ??
+        classification.layoutMetrics?.naturalHeight
+    };
     const file = getCacheFile(
       input.cacheKey,
       `embedded.${classification.embeddedRaster.extension}`
     );
 
-    file.write(decodeBase64Bytes(classification.embeddedRaster.base64));
+    file.write(embeddedRasterBytes);
 
     if (!isReadyFile(file)) {
       throw new Error("Cached embedded raster file is empty.");
@@ -572,6 +828,7 @@ async function writeSvgAsset(input: {
       renderKind: "bitmap",
       contentType: classification.embeddedRaster.mimeType,
       fromCache: false,
+      layoutMetrics,
       warnings: classification.warnings
     });
   }
@@ -597,6 +854,7 @@ async function writeSvgAsset(input: {
       classification.renderKind === "svg-vector" ? "svg-vector" : "unknown",
     contentType: input.contentType,
     fromCache: false,
+    layoutMetrics: classification.layoutMetrics,
     warnings: classification.warnings
   });
 }
@@ -845,6 +1103,10 @@ export function getAssetRenderKind(assetRefOrUrl: ReaderAssetRef | string) {
   return getCachedRecord(assetRefOrUrl)?.renderKind ?? "unknown";
 }
 
+export function getAssetLayoutMetrics(assetRefOrUrl: ReaderAssetRef | string) {
+  return getCachedRecord(assetRefOrUrl)?.layoutMetrics ?? null;
+}
+
 export function createReaderImageSource(imageUri: string): ImageSource {
   return {
     uri: imageUri,
@@ -894,6 +1156,17 @@ export function loadReaderImageRef(imageUrl: string) {
     cacheKey: imageUrl
   })
     .then((imageRef) => {
+      const record = cachedAssetsByUrl.get(imageUrl) ?? null;
+
+      if (record) {
+        record.layoutMetrics = {
+          ...record.layoutMetrics,
+          naturalWidth: imageRef.width,
+          naturalHeight: imageRef.height
+        };
+        cachedAssetsByKey.set(record.cacheKey, record);
+      }
+
       nativeImageRefCache.set(imageUrl, imageRef);
       return imageRef;
     })
@@ -936,7 +1209,12 @@ export function loadReaderSvgAst(imageUrl: string) {
   const load = new File(localUri)
     .text()
     .then((svgXml) => {
-      if (!svgXml.trimStart().startsWith("<svg")) {
+      const trimmedSvg = svgXml.trimStart();
+
+      if (
+        !/^<svg\b/i.test(trimmedSvg) &&
+        !/^<\?xml\b[\s\S]*?<svg\b/i.test(trimmedSvg)
+      ) {
         return null;
       }
 

@@ -57,6 +57,12 @@ class MockFile {
 
     return typeof value === "string" ? value : "";
   }
+
+  textSync() {
+    const value = mockFiles.get(this.uri);
+
+    return typeof value === "string" ? value : "";
+  }
 }
 
 vi.mock("expo-file-system", () => ({
@@ -172,12 +178,16 @@ describe("reader asset cache", () => {
       vi.fn(async () =>
         createResponse({
           contentType: "application/octet-stream",
-          body: '<svg><image href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==" /></svg>'
+          body: '<svg width="900" height="1400" viewBox="0 0 900 1400"><image x="120" y="80" width="640" height="1280" href="data:image/png;base64,iVBORw0KGgoAAAANSUhEUg==" /></svg>'
         })
       )
     );
-    const { ensureSceneAssetsReady, getCachedAssetUri, getAssetRenderKind } =
-      await import("./imagePreload");
+    const {
+      ensureSceneAssetsReady,
+      getAssetLayoutMetrics,
+      getCachedAssetUri,
+      getAssetRenderKind
+    } = await import("./imagePreload");
     const assetRef = {
       role: "portrait" as const,
       url: "https://example.supabase.co/storage/v1/object/public/runtime/character_svg_wrapper",
@@ -192,6 +202,18 @@ describe("reader asset cache", () => {
     expect(result.status).toBe("success");
     expect(getCachedAssetUri(assetRef)?.endsWith(".embedded.png")).toBe(true);
     expect(getAssetRenderKind(assetRef)).toBe("bitmap");
+    expect(getAssetLayoutMetrics(assetRef)).toMatchObject({
+      svgWrapper: {
+        width: 900,
+        height: 1400,
+        embeddedImage: {
+          x: 120,
+          y: 80,
+          width: 640,
+          height: 1280
+        }
+      }
+    });
   });
 
   it("reports asset failures instead of marking a scene ready", async () => {

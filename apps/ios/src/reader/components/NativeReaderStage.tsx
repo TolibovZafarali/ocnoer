@@ -1,9 +1,12 @@
 import { Image as ExpoImage } from "expo-image";
+import { useMemo, useState } from "react";
 import {
+  type LayoutChangeEvent,
   StyleSheet,
   View,
   type ImageStyle,
-  type StyleProp
+  type StyleProp,
+  type ViewStyle
 } from "react-native";
 import { SvgAst } from "react-native-svg";
 
@@ -13,10 +16,12 @@ import type {
 } from "../readerPresentation";
 import {
   createCachedReaderImageSource,
+  getAssetLayoutMetrics,
   getAssetRenderKind,
   usePreloadedReaderImageRef,
   usePreloadedReaderSvgAst
 } from "../imagePreload";
+import { resolveNativeReaderPortraitLayout } from "../portraitLayout";
 import { ocnoerTheme, ocnoerWebPlayer } from "../../ui/theme";
 import {
   DirectionalSlideView,
@@ -26,12 +31,13 @@ import {
 
 function NativeCachedImage(props: {
   accessibilityLabel?: string;
-  contentFit: "cover" | "contain";
+  contentFit: "cover" | "contain" | "fill";
   contentPosition?: "left bottom" | "right bottom" | "center";
   imageUrl: string;
+  imageRef?: ReturnType<typeof usePreloadedReaderImageRef>;
   style: StyleProp<ImageStyle>;
 }) {
-  const imageRef = usePreloadedReaderImageRef(props.imageUrl);
+  const loadedImageRef = usePreloadedReaderImageRef(props.imageUrl);
   const source = createCachedReaderImageSource(props.imageUrl);
 
   if (!source) {
@@ -47,19 +53,40 @@ function NativeCachedImage(props: {
       contentPosition={props.contentPosition ?? "center"}
       priority="high"
       recyclingKey={props.imageUrl}
-      source={imageRef ?? source}
+      source={props.imageRef ?? loadedImageRef ?? source}
       style={props.style}
       transition={0}
     />
   );
 }
 
+function getEmbeddedImageStyle(input: {
+  canvasWidth: number;
+  canvasHeight: number;
+  imageRect: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+}): StyleProp<ImageStyle> {
+  return {
+    height: `${(input.imageRect.height / input.canvasHeight) * 100}%`,
+    left: `${(input.imageRect.x / input.canvasWidth) * 100}%`,
+    position: "absolute",
+    top: `${(input.imageRect.y / input.canvasHeight) * 100}%`,
+    width: `${(input.imageRect.width / input.canvasWidth) * 100}%`
+  };
+}
+
 function CachedPortraitAsset(props: {
   accessibilityLabel: string;
   imageUrl: string;
+  imageRef: ReturnType<typeof usePreloadedReaderImageRef>;
   side: "left" | "right";
 }) {
   const renderKind = getAssetRenderKind(props.imageUrl);
+  const layoutMetrics = getAssetLayoutMetrics(props.imageUrl);
   const svgAst = usePreloadedReaderSvgAst(props.imageUrl);
   const preserveAspectRatio =
     props.side === "left" ? "xMinYMax meet" : "xMaxYMax meet";
@@ -70,19 +97,47 @@ function CachedPortraitAsset(props: {
   };
 
   if (renderKind !== "svg-vector") {
+    const svgWrapper = layoutMetrics?.svgWrapper ?? null;
+
+    if (svgWrapper) {
+      return (
+        <View
+          accessibilityLabel={props.accessibilityLabel}
+          accessible
+          pointerEvents="none"
+          style={styles.portraitVirtualCanvas}
+        >
+          <NativeCachedImage
+            accessibilityLabel={props.accessibilityLabel}
+            contentFit="fill"
+            imageRef={props.imageRef}
+            imageUrl={props.imageUrl}
+            style={
+              svgWrapper.embeddedImage
+                ? getEmbeddedImageStyle({
+                    canvasWidth: svgWrapper.width,
+                    canvasHeight: svgWrapper.height,
+                    imageRect: svgWrapper.embeddedImage
+                  })
+                : styles.portraitBitmap
+            }
+          />
+        </View>
+      );
+    }
+
     return (
       <View
         accessibilityLabel={props.accessibilityLabel}
         accessible
         pointerEvents="none"
-        style={styles.portraitSvg}
+        style={styles.portraitAsset}
       >
         <NativeCachedImage
           accessibilityLabel={props.accessibilityLabel}
           contentFit="contain"
-          contentPosition={
-            props.side === "left" ? "left bottom" : "right bottom"
-          }
+          contentPosition="center"
+          imageRef={props.imageRef}
           imageUrl={props.imageUrl}
           style={styles.portraitBitmap}
         />
@@ -95,7 +150,7 @@ function CachedPortraitAsset(props: {
       accessibilityLabel={props.accessibilityLabel}
       accessible
       pointerEvents="none"
-      style={styles.portraitSvg}
+      style={styles.portraitAsset}
     >
       {svgAst ? <SvgAst ast={svgAst} override={svgProps} /> : null}
     </View>
@@ -106,21 +161,63 @@ function Portrait(props: {
   isExiting: boolean;
   portrait: NativeReaderPortrait | null;
   side: "left" | "right";
+  stageSize: {
+    height: number;
+    width: number;
+  } | null;
 }) {
-  if (!props.portrait) {
+  const imageUrl = props.portrait?.imageUrl ?? null;
+  const imageRef = usePreloadedReaderImageRef(imageUrl);
+  const layoutMetrics = imageUrl ? getAssetLayoutMetrics(imageUrl) : null;
+  const svgWrapper = layoutMetrics?.svgWrapper ?? null;
+  const layout = useMemo(() => {
+    if (!props.stageSize || !imageUrl) {
+      return null;
+    }
+
+    return resolveNativeReaderPortraitLayout({
+      stageWidth: props.stageSize.width,
+      stageHeight: props.stageSize.height,
+      side: props.side,
+      assetWidth: imageRef?.width ?? layoutMetrics?.naturalWidth,
+      assetHeight: imageRef?.height ?? layoutMetrics?.naturalHeight,
+      wrapperWidth: svgWrapper?.width,
+      wrapperHeight: svgWrapper?.height
+    });
+  }, [
+    imageUrl,
+    imageRef?.height,
+    imageRef?.width,
+    layoutMetrics?.naturalHeight,
+    layoutMetrics?.naturalWidth,
+    props.side,
+    props.stageSize,
+    svgWrapper?.height,
+    svgWrapper?.width
+  ]);
+
+  if (!props.portrait || !layout) {
     return null;
   }
 
+  const slotStyle: ViewStyle = {
+    bottom: layout.bottom,
+    height: layout.height,
+    width: layout.width,
+    ...(typeof layout.left === "number"
+      ? {
+          left: layout.left
+        }
+      : {}),
+    ...(typeof layout.right === "number"
+      ? {
+          right: layout.right
+        }
+      : {})
+  };
+
   return (
-    <View
-      pointerEvents="none"
-      style={[
-        styles.portraitSlot,
-        props.side === "left"
-          ? styles.portraitSlotLeft
-          : styles.portraitSlotRight
-      ]}
-    >
+    <View pointerEvents="none" style={[styles.portraitSlot, slotStyle]}>
       <DirectionalSlideView
         animationKey={props.portrait.key}
         direction={props.side === "left" ? "from-left" : "from-right"}
@@ -130,6 +227,7 @@ function Portrait(props: {
       >
         <CachedPortraitAsset
           accessibilityLabel={props.portrait.label}
+          imageRef={imageRef}
           imageUrl={props.portrait.imageUrl}
           side={props.side}
         />
@@ -142,8 +240,26 @@ export function NativeReaderStage(props: {
   isLineExiting: boolean;
   presentation: NativeReaderPresentation;
 }) {
+  const [stageSize, setStageSize] = useState<{
+    height: number;
+    width: number;
+  } | null>(null);
+  const handleStageLayout = (event: LayoutChangeEvent) => {
+    const nextStageSize = event.nativeEvent.layout;
+
+    setStageSize((currentStageSize) =>
+      currentStageSize?.height === nextStageSize.height &&
+      currentStageSize.width === nextStageSize.width
+        ? currentStageSize
+        : {
+            height: nextStageSize.height,
+            width: nextStageSize.width
+          }
+    );
+  };
+
   return (
-    <View style={styles.stage}>
+    <View style={styles.stage} onLayout={handleStageLayout}>
       {props.presentation.backgroundImageUrl ? (
         <FadeInView
           key={props.presentation.backgroundImageUrl}
@@ -166,11 +282,13 @@ export function NativeReaderStage(props: {
           isExiting={props.isLineExiting}
           portrait={props.presentation.leftPortrait}
           side="left"
+          stageSize={stageSize}
         />
         <Portrait
           isExiting={props.isLineExiting}
           portrait={props.presentation.rightPortrait}
           side="right"
+          stageSize={stageSize}
         />
       </View>
     </View>
@@ -194,35 +312,28 @@ const styles = StyleSheet.create({
     backgroundColor: ocnoerTheme.colors.black
   },
   portraitLayer: {
-    bottom: 0,
-    height: ocnoerTheme.stage.portraitLayerHeight,
+    ...StyleSheet.absoluteFillObject,
     left: 0,
     position: "absolute",
     right: 0,
     zIndex: 8
   },
   portraitSlot: {
-    bottom: 0,
-    height: "100%",
-    overflow: "hidden",
+    overflow: "visible",
     position: "absolute",
-    width: ocnoerTheme.stage.portraitColumnWidth
-  },
-  portraitSlotLeft: {
-    left: 0
-  },
-  portraitSlotRight: {
-    right: 0
+    zIndex: 1
   },
   portraitFade: {
     height: "100%",
     width: "100%"
   },
-  portraitSvg: {
-    bottom: 0,
+  portraitAsset: {
     height: "100%",
-    maxWidth: ocnoerTheme.stage.portraitColumnMaxWidth,
-    position: "absolute",
+    width: "100%"
+  },
+  portraitVirtualCanvas: {
+    height: "100%",
+    overflow: "hidden",
     width: "100%"
   },
   portraitBitmap: {

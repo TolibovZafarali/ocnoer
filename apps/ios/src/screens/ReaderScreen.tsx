@@ -12,7 +12,10 @@ import {
   View
 } from "react-native";
 
-import type { PlayerRuntimeBootstrap } from "@ocnoer/story-core";
+import {
+  validateCatNameInput,
+  type PlayerRuntimeBootstrap
+} from "@ocnoer/story-core";
 
 import type { MobilePlayer } from "../api/playerSessionTypes";
 import { AudioStatusPanel } from "../audio/AudioControls";
@@ -49,6 +52,12 @@ type ReaderScreenProps = {
   onToggleAudioMuted: () => void;
   onUpdateCatName: (catName: string) => Promise<void>;
 };
+
+function waitForDuration(durationMs: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
+}
 
 function ReaderChrome(props: {
   audioPreferences: NativeAudioPreferences;
@@ -155,6 +164,7 @@ function ReaderMessageScreen(props: {
 export function ReaderScreen(props: ReaderScreenProps) {
   const dimensions = useWindowDimensions();
   const [isChromeVisible, setIsChromeVisible] = useState(false);
+  const [isLineExiting, setIsLineExiting] = useState(false);
   const [isMapOpen, setIsMapOpen] = useState(false);
   const reader = useNativeReaderController({
     bootstrap: props.bootstrap,
@@ -166,6 +176,7 @@ export function ReaderScreen(props: ReaderScreenProps) {
   });
   const presentation = reader.presentation;
   const boundaryPresentation = reader.boundaryPresentation;
+  const hasBoundaryPresentation = Boolean(boundaryPresentation);
   const backgroundMusicCue = useMemo(() => {
     if (reader.state.status !== "ready" && reader.state.status !== "finished") {
       return resolveNativeReaderBackgroundMusicCue({
@@ -194,25 +205,54 @@ export function ReaderScreen(props: ReaderScreenProps) {
   const revealChrome = useCallback(() => {
     setIsChromeVisible(true);
   }, []);
+  const runWithLineExit = useCallback(
+    async (action: () => Promise<void> | void) => {
+      if (isLineExiting) {
+        return;
+      }
+
+      const shouldAnimateExit =
+        !hasBoundaryPresentation && reader.state.status === "ready";
+
+      if (shouldAnimateExit) {
+        setIsLineExiting(true);
+        await waitForDuration(ocnoerTheme.motion.lineExitMs);
+      }
+
+      try {
+        await action();
+      } finally {
+        if (shouldAnimateExit) {
+          setIsLineExiting(false);
+        }
+      }
+    },
+    [hasBoundaryPresentation, isLineExiting, reader.state.status]
+  );
   const handleAdvance = useCallback(() => {
     setIsChromeVisible(false);
-    void reader.advance();
-  }, [reader]);
+    void runWithLineExit(reader.advance);
+  }, [reader.advance, runWithLineExit]);
   const handleRetreat = useCallback(() => {
     setIsChromeVisible(false);
-    void reader.retreat();
-  }, [reader]);
+    void runWithLineExit(reader.retreat);
+  }, [reader.retreat, runWithLineExit]);
   const handleSelectDressOption = useCallback(
     (optionKey: string) => {
       setIsChromeVisible(false);
-      void reader.selectDressOption(optionKey);
+      void runWithLineExit(() => reader.selectDressOption(optionKey));
     },
-    [reader]
+    [reader.selectDressOption, runWithLineExit]
   );
   const handleSubmitCatName = useCallback(() => {
     setIsChromeVisible(false);
-    void reader.submitCatName();
-  }, [reader]);
+    if (validateCatNameInput(reader.catNameInputValue)) {
+      void reader.submitCatName();
+      return;
+    }
+
+    void runWithLineExit(reader.submitCatName);
+  }, [reader.catNameInputValue, reader.submitCatName, runWithLineExit]);
   const handleBackHome = useCallback(() => {
     setIsChromeVisible(false);
     props.onBackHome();
@@ -284,7 +324,10 @@ export function ReaderScreen(props: ReaderScreenProps) {
               }
             ]}
           >
-            <NativeReaderStage presentation={presentation} />
+            <NativeReaderStage
+              isLineExiting={isLineExiting}
+              presentation={presentation}
+            />
             <BlackoutOverlay
               opacity={
                 boundaryPresentation?.type === "scene-transition" ? 0.72 : 0.08
@@ -307,7 +350,9 @@ export function ReaderScreen(props: ReaderScreenProps) {
                 <ReaderChrome
                   audioPreferences={props.audioPreferences}
                   audioStatus={audioStatus}
-                  canRetreat={reader.canRetreat}
+                  canRetreat={
+                    reader.canRetreat && !reader.isMoving && !isLineExiting
+                  }
                   onBackHome={handleBackHome}
                   onOpenMap={handleOpenMap}
                   onRetreat={handleRetreat}
@@ -333,15 +378,12 @@ export function ReaderScreen(props: ReaderScreenProps) {
                 style={styles.finishedCard}
               />
             ) : (
-              <FadeInView
-                animationKey={`${presentation.status}:${presentation.dialogueEntryId}`}
-                durationMs={ocnoerTheme.motion.quickMs}
-                style={styles.dialogueLayer}
-              >
+              <View pointerEvents="box-none" style={styles.dialogueLayer}>
                 <NativeReaderDialogue
                   actionError={reader.actionError}
                   catNameInputError={reader.catNameInputError}
                   catNameInputValue={reader.catNameInputValue}
+                  isExiting={isLineExiting}
                   isMoving={reader.isMoving}
                   isSavingCatName={reader.isSavingCatName}
                   persistenceError={reader.persistenceError}
@@ -351,7 +393,7 @@ export function ReaderScreen(props: ReaderScreenProps) {
                   onSelectDressOption={handleSelectDressOption}
                   onSubmitCatName={handleSubmitCatName}
                 />
-              </FadeInView>
+              </View>
             )}
           </View>
         </View>

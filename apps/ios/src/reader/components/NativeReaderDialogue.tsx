@@ -15,6 +15,10 @@ import type {
 } from "../readerPresentation";
 import { OcnoerSurface, OcnoerTextInput } from "../../ui/primitives";
 import { ocnoerTheme, ocnoerWebPlayer } from "../../ui/theme";
+import {
+  DirectionalSlideView,
+  type NativeMotionDirection
+} from "./NativeCinematic";
 
 type ReaderDialogueProps = {
   presentation: NativeReaderPresentation;
@@ -23,6 +27,7 @@ type ReaderDialogueProps = {
   catNameInputValue: string;
   catNameInputError: string | null;
   isSavingCatName: boolean;
+  isExiting: boolean;
   isMoving: boolean;
   onAdvance: () => void;
   onSelectDressOption: (optionKey: string) => void;
@@ -59,6 +64,20 @@ function getDialogueCardPositionStyle(
     left: ocnoerWebPlayer.dialogueCard.sideInset,
     right: ocnoerWebPlayer.dialogueCard.sideInset
   };
+}
+
+function getDialogueMotionDirection(
+  presentation: NativeReaderPresentation
+): NativeMotionDirection {
+  if (presentation.dialogueCardPlacement === "speaker-left") {
+    return "from-right";
+  }
+
+  if (presentation.dialogueCardPlacement === "speaker-right") {
+    return "from-left";
+  }
+
+  return "from-bottom";
 }
 
 function shouldShowSpeakerLabel(presentation: NativeReaderPresentation) {
@@ -152,6 +171,7 @@ function ContinueArrow(props: {
 
 export function NativeReaderDialogue(props: ReaderDialogueProps) {
   const cardPosition = getDialogueCardPositionStyle(props.presentation);
+  const motionDirection = getDialogueMotionDirection(props.presentation);
   const [dressIndex, setDressIndex] = useState(0);
   const selectedDressOption = useMemo(() => {
     if (props.presentation.status !== "supported") {
@@ -171,21 +191,26 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
 
   if (props.presentation.status === "unsupported") {
     return (
-      <OcnoerSurface
+      <DirectionalSlideView
+        animationKey={`${props.presentation.status}:${props.presentation.dialogueEntryId}`}
+        direction={motionDirection}
+        isExiting={props.isExiting}
+        pointerEvents={props.isExiting ? "none" : "auto"}
         style={[styles.dialogueCard, cardPosition]}
-        variant="glass"
       >
-        <Text style={styles.unsupportedTitle}>Unsupported Story Entry</Text>
-        <Text style={styles.body}>{props.presentation.message}</Text>
-        <Text style={styles.metaText}>
-          Entry {props.presentation.dialogueEntryId}
-        </Text>
-        <ContinueArrow
-          canAdvance={false}
-          isMoving={props.isMoving}
-          onAdvance={props.onAdvance}
-        />
-      </OcnoerSurface>
+        <OcnoerSurface style={styles.dialogueSurface} variant="glass">
+          <Text style={styles.unsupportedTitle}>Unsupported Story Entry</Text>
+          <Text style={styles.body}>{props.presentation.message}</Text>
+          <Text style={styles.metaText}>
+            Entry {props.presentation.dialogueEntryId}
+          </Text>
+          <ContinueArrow
+            canAdvance={false}
+            isMoving={props.isMoving}
+            onAdvance={props.onAdvance}
+          />
+        </OcnoerSurface>
+      </DirectionalSlideView>
     );
   }
 
@@ -196,118 +221,128 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
     !supportedPresentation.needsCatNameInput;
 
   return (
-    <OcnoerSurface style={[styles.dialogueCard, cardPosition]} variant="glass">
-      <SpeakerLabel presentation={props.presentation} />
+    <DirectionalSlideView
+      animationKey={`${props.presentation.status}:${props.presentation.dialogueEntryId}`}
+      direction={motionDirection}
+      isExiting={props.isExiting}
+      pointerEvents={props.isExiting ? "none" : "auto"}
+      style={[styles.dialogueCard, cardPosition]}
+    >
+      <OcnoerSurface style={styles.dialogueSurface} variant="glass">
+        <SpeakerLabel presentation={props.presentation} />
 
-      {shouldShowDialogueText ? (
-        <Text
-          style={isDressPrompt ? styles.dressPromptText : styles.dialogueText}
-        >
-          {supportedPresentation.dialogueText}
-        </Text>
-      ) : null}
+        {shouldShowDialogueText ? (
+          <Text
+            style={isDressPrompt ? styles.dressPromptText : styles.dialogueText}
+          >
+            {supportedPresentation.dialogueText}
+          </Text>
+        ) : null}
 
-      {supportedPresentation.needsCatNameInput ? (
-        <View style={styles.promptBlock}>
-          <OcnoerTextInput
-            autoCapitalize="words"
-            editable={!props.isSavingCatName}
-            onChangeText={props.onCatNameInputChange}
-            onSubmitEditing={props.onSubmitCatName}
-            placeholder="Enter cat name"
-            returnKeyType="done"
-            value={props.catNameInputValue}
-          />
-          {props.catNameInputError ? (
-            <Text style={styles.errorText}>{props.catNameInputError}</Text>
-          ) : null}
-        </View>
-      ) : null}
-
-      {isDressPrompt && selectedDressOption ? (
-        <View style={styles.dressPromptBlock}>
-          <View style={styles.dressCarousel}>
-            <Pressable
-              accessibilityLabel="Previous dress option"
-              accessibilityRole="button"
-              disabled={supportedPresentation.dressOptions.length <= 1}
-              onPress={() => {
-                setDressIndex((currentIndex) =>
-                  currentIndex <= 0
-                    ? supportedPresentation.dressOptions.length - 1
-                    : currentIndex - 1
-                );
-              }}
-              style={({ pressed }) => [
-                styles.dressArrow,
-                supportedPresentation.dressOptions.length <= 1
-                  ? styles.disabled
-                  : null,
-                pressed ? styles.pressed : null
-              ]}
-            >
-              <Text style={styles.dressArrowText}>{"\u2190"}</Text>
-            </Pressable>
-
-            <View style={styles.dressPreviewWrap}>
-              <DressOptionCard
-                option={selectedDressOption}
-                onPress={() =>
-                  props.onSelectDressOption(selectedDressOption.key)
-                }
-              />
-              <Text style={styles.dressCounter}>
-                {dressIndex + 1} of {supportedPresentation.dressOptions.length}
-              </Text>
-            </View>
-
-            <Pressable
-              accessibilityLabel="Next dress option"
-              accessibilityRole="button"
-              disabled={supportedPresentation.dressOptions.length <= 1}
-              onPress={() => {
-                setDressIndex((currentIndex) =>
-                  currentIndex >= supportedPresentation.dressOptions.length - 1
-                    ? 0
-                    : currentIndex + 1
-                );
-              }}
-              style={({ pressed }) => [
-                styles.dressArrow,
-                supportedPresentation.dressOptions.length <= 1
-                  ? styles.disabled
-                  : null,
-                pressed ? styles.pressed : null
-              ]}
-            >
-              <Text style={styles.dressArrowText}>{"\u2192"}</Text>
-            </Pressable>
+        {supportedPresentation.needsCatNameInput ? (
+          <View style={styles.promptBlock}>
+            <OcnoerTextInput
+              autoCapitalize="words"
+              editable={!props.isSavingCatName}
+              onChangeText={props.onCatNameInputChange}
+              onSubmitEditing={props.onSubmitCatName}
+              placeholder="Enter cat name"
+              returnKeyType="done"
+              value={props.catNameInputValue}
+            />
+            {props.catNameInputError ? (
+              <Text style={styles.errorText}>{props.catNameInputError}</Text>
+            ) : null}
           </View>
-        </View>
-      ) : null}
+        ) : null}
 
-      {props.actionError ? (
-        <Text style={styles.errorText}>{props.actionError}</Text>
-      ) : null}
-      {props.persistenceError ? (
-        <Text style={styles.warningText}>{props.persistenceError}</Text>
-      ) : null}
+        {isDressPrompt && selectedDressOption ? (
+          <View style={styles.dressPromptBlock}>
+            <View style={styles.dressCarousel}>
+              <Pressable
+                accessibilityLabel="Previous dress option"
+                accessibilityRole="button"
+                disabled={supportedPresentation.dressOptions.length <= 1}
+                onPress={() => {
+                  setDressIndex((currentIndex) =>
+                    currentIndex <= 0
+                      ? supportedPresentation.dressOptions.length - 1
+                      : currentIndex - 1
+                  );
+                }}
+                style={({ pressed }) => [
+                  styles.dressArrow,
+                  supportedPresentation.dressOptions.length <= 1
+                    ? styles.disabled
+                    : null,
+                  pressed ? styles.pressed : null
+                ]}
+              >
+                <Text style={styles.dressArrowText}>{"\u2190"}</Text>
+              </Pressable>
 
-      {!isDressPrompt ? (
-        <ContinueArrow
-          canAdvance={!props.isMoving}
-          isMoving={props.isMoving || props.isSavingCatName}
-          onAdvance={() => {
-            if (supportedPresentation.needsCatNameInput) {
-              props.onSubmitCatName();
-              return;
-            }
+              <View style={styles.dressPreviewWrap}>
+                <DressOptionCard
+                  option={selectedDressOption}
+                  onPress={() =>
+                    props.onSelectDressOption(selectedDressOption.key)
+                  }
+                />
+                <Text style={styles.dressCounter}>
+                  {dressIndex + 1} of{" "}
+                  {supportedPresentation.dressOptions.length}
+                </Text>
+              </View>
 
-            props.onAdvance();
-          }}
-        />
-      ) : null}
-    </OcnoerSurface>
+              <Pressable
+                accessibilityLabel="Next dress option"
+                accessibilityRole="button"
+                disabled={supportedPresentation.dressOptions.length <= 1}
+                onPress={() => {
+                  setDressIndex((currentIndex) =>
+                    currentIndex >=
+                    supportedPresentation.dressOptions.length - 1
+                      ? 0
+                      : currentIndex + 1
+                  );
+                }}
+                style={({ pressed }) => [
+                  styles.dressArrow,
+                  supportedPresentation.dressOptions.length <= 1
+                    ? styles.disabled
+                    : null,
+                  pressed ? styles.pressed : null
+                ]}
+              >
+                <Text style={styles.dressArrowText}>{"\u2192"}</Text>
+              </Pressable>
+            </View>
+          </View>
+        ) : null}
+
+        {props.actionError ? (
+          <Text style={styles.errorText}>{props.actionError}</Text>
+        ) : null}
+        {props.persistenceError ? (
+          <Text style={styles.warningText}>{props.persistenceError}</Text>
+        ) : null}
+
+        {!isDressPrompt ? (
+          <ContinueArrow
+            canAdvance={!props.isMoving}
+            isMoving={props.isMoving || props.isSavingCatName}
+            onAdvance={() => {
+              if (supportedPresentation.needsCatNameInput) {
+                props.onSubmitCatName();
+                return;
+              }
+
+              props.onAdvance();
+            }}
+          />
+        ) : null}
+      </OcnoerSurface>
+    </DirectionalSlideView>
   );
 }
 
@@ -315,9 +350,11 @@ const styles = StyleSheet.create({
   dialogueCard: {
     bottom: ocnoerWebPlayer.dialogueCard.bottomInset,
     maxHeight: "64%",
-    padding: ocnoerWebPlayer.dialogueCard.padding,
     position: "absolute",
     zIndex: 20
+  },
+  dialogueSurface: {
+    maxHeight: "100%"
   },
   speaker: {
     color: ocnoerTheme.colors.textSubtle,

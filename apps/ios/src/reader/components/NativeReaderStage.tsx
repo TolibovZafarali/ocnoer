@@ -6,9 +6,14 @@ import type {
   NativeReaderPresentation
 } from "../readerPresentation";
 import { ocnoerTheme, ocnoerWebPlayer } from "../../ui/theme";
-import { FadeInView, StageScrims } from "./NativeCinematic";
+import {
+  DirectionalSlideView,
+  FadeInView,
+  StageScrims
+} from "./NativeCinematic";
 
 function Portrait(props: {
+  isExiting: boolean;
   portrait: NativeReaderPortrait | null;
   side: "left" | "right";
 }) {
@@ -26,7 +31,13 @@ function Portrait(props: {
           : styles.portraitSlotRight
       ]}
     >
-      <FadeInView animationKey={props.portrait.key} style={styles.portraitFade}>
+      <DirectionalSlideView
+        animationKey={props.portrait.key}
+        direction={props.side === "left" ? "from-left" : "from-right"}
+        isExiting={props.isExiting}
+        pointerEvents="none"
+        style={styles.portraitFade}
+      >
         <View
           accessibilityLabel={props.portrait.label}
           accessible
@@ -50,12 +61,13 @@ function Portrait(props: {
             width="100%"
           />
         </View>
-      </FadeInView>
+      </DirectionalSlideView>
     </View>
   );
 }
 
 export function NativeReaderStage(props: {
+  isLineExiting: boolean;
   presentation: NativeReaderPresentation;
 }) {
   return (
@@ -78,8 +90,16 @@ export function NativeReaderStage(props: {
       )}
       <StageScrims />
       <View pointerEvents="none" style={styles.portraitLayer}>
-        <Portrait portrait={props.presentation.leftPortrait} side="left" />
-        <Portrait portrait={props.presentation.rightPortrait} side="right" />
+        <Portrait
+          isExiting={props.isLineExiting}
+          portrait={props.presentation.leftPortrait}
+          side="left"
+        />
+        <Portrait
+          isExiting={props.isLineExiting}
+          portrait={props.presentation.rightPortrait}
+          side="right"
+        />
       </View>
     </View>
   );

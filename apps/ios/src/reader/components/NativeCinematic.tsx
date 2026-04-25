@@ -168,10 +168,7 @@ export function BlackoutOverlay(props: {
 
 export function StageScrims() {
   return (
-    <>
-      <View pointerEvents="none" style={styles.sceneTint} />
-      <View pointerEvents="none" style={styles.topScrim} />
-    </>
+    <View pointerEvents="none" style={styles.sceneTint} />
   );
 }
 
@@ -184,13 +181,5 @@ const styles = StyleSheet.create({
   sceneTint: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(2, 6, 17, 0.18)"
-  },
-  topScrim: {
-    backgroundColor: "rgba(2, 6, 17, 0.08)",
-    height: "22%",
-    left: 0,
-    position: "absolute",
-    right: 0,
-    top: 0
   }
 });

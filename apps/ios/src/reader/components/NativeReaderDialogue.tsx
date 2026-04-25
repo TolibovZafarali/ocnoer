@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { BlurView } from "expo-blur";
 import {
   ActivityIndicator,
   Animated,
@@ -17,7 +18,7 @@ import type {
   NativeReaderDressOption,
   NativeReaderPresentation
 } from "../readerPresentation";
-import { OcnoerSurface, OcnoerTextInput } from "../../ui/primitives";
+import { OcnoerTextInput } from "../../ui/primitives";
 import { ocnoerTheme, ocnoerWebPlayer } from "../../ui/theme";
 import {
   DirectionalSlideView,
@@ -42,6 +43,8 @@ type ReaderDialogueProps = {
 const TYPING_BASE_DELAY_MS = 22;
 const TYPING_COMMA_EXTRA_DELAY_MS = 42;
 const TYPING_SENTENCE_EXTRA_DELAY_MS = 110;
+const DIALOGUE_BACKDROP_BLUR_INTENSITY = 100;
+const DIALOGUE_BACKDROP_BLUR_TINT = "dark";
 
 function getDialogueCardPositionStyle(
   presentation: NativeReaderPresentation
@@ -357,7 +360,12 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
           onPress={handleCompleteTyping}
           style={styles.dialogueSurfacePressable}
         >
-          <OcnoerSurface style={styles.dialogueSurface} variant="glass">
+          <BlurView
+            experimentalBlurMethod="dimezisBlurView"
+            intensity={DIALOGUE_BACKDROP_BLUR_INTENSITY}
+            style={styles.dialogueSurface}
+            tint={DIALOGUE_BACKDROP_BLUR_TINT}
+          >
             <Text style={styles.unsupportedTitle}>Unsupported Story Entry</Text>
             <Text style={styles.body}>{props.presentation.message}</Text>
             <Text style={styles.metaText}>
@@ -369,7 +377,7 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
               isMoving={props.isMoving}
               onAdvance={props.onAdvance}
             />
-          </OcnoerSurface>
+          </BlurView>
         </Pressable>
       </DirectionalSlideView>
     );
@@ -399,7 +407,12 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
         onPress={handleCompleteTyping}
         style={styles.dialogueSurfacePressable}
       >
-        <OcnoerSurface style={styles.dialogueSurface} variant="glass">
+        <BlurView
+          experimentalBlurMethod="dimezisBlurView"
+          intensity={DIALOGUE_BACKDROP_BLUR_INTENSITY}
+          style={styles.dialogueSurface}
+          tint={DIALOGUE_BACKDROP_BLUR_TINT}
+        >
           <SpeakerLabel presentation={props.presentation} />
 
           {shouldShowDialogueText ? (
@@ -516,7 +529,7 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
               }}
             />
           ) : null}
-        </OcnoerSurface>
+        </BlurView>
       </Pressable>
     </DirectionalSlideView>
   );
@@ -530,17 +543,21 @@ const styles = StyleSheet.create({
     zIndex: 20
   },
   dialogueSurface: {
-    backgroundColor: "rgba(0, 0, 0, 0.94)",
-    borderColor: "rgba(255, 255, 255, 0.08)",
-    elevation: 6,
     maxHeight: "100%",
-    shadowColor: "#000000",
+    backgroundColor: "transparent",
+    borderColor: "rgba(255, 255, 255, 0.18)",
+    borderRadius: ocnoerWebPlayer.dialogueCard.borderRadius,
+    borderWidth: 1,
+    elevation: 0,
+    overflow: "hidden",
+    padding: ocnoerWebPlayer.dialogueCard.padding,
+    shadowColor: "transparent",
     shadowOffset: {
       width: 0,
-      height: 12
+      height: 0
     },
-    shadowOpacity: 0.22,
-    shadowRadius: 14
+    shadowOpacity: 0,
+    shadowRadius: 0
   },
   dialogueSurfacePressable: {
     maxHeight: "100%"

@@ -3,6 +3,7 @@ import { Platform, type TextStyle, type ViewStyle } from "react-native";
 export const ocnoerColors = {
   black: "#000000",
   ink: "#02040a",
+  slate950: "#020617",
   night: "#05070f",
   stage: "#071014",
   stageDeep: "#020617",
@@ -54,6 +55,7 @@ export const ocnoerOpacity = {
 
 const iosSerif = "Georgia";
 const iosScript = "Snell Roundhand";
+const iosHandwriting = "Noteworthy";
 
 export const ocnoerTypography = {
   family: {
@@ -67,6 +69,10 @@ export const ocnoerTypography = {
     }),
     script: Platform.select({
       ios: iosScript,
+      default: "serif"
+    }),
+    chapterCard: Platform.select({
+      ios: iosHandwriting,
       default: "serif"
     }),
     monospace: Platform.select({
@@ -83,14 +89,16 @@ export const ocnoerTypography = {
     title: 32,
     boundaryTitle: 30,
     scriptName: 42,
-    dressPrompt: 34
+    dressPrompt: 34,
+    chapterCard: 18
   },
   lineHeight: {
     body: 24,
     dialogue: 29,
     title: 38,
     boundaryTitle: 36,
-    dressPrompt: 40
+    dressPrompt: 40,
+    chapterCard: 37
   }
 } as const;
 
@@ -127,15 +135,69 @@ export const ocnoerShadows = {
 
 export const ocnoerMotion = {
   quickMs: 160,
-  normalMs: 240,
+  continueEnterMs: 180,
+  lineExitMs: 240,
+  normalMs: 300,
   stageFadeMs: 320,
-  blackoutCoverMs: 420
+  mapOverlayMs: 340,
+  blackoutCoverMs: 900,
+  openingFadeMs: 1200
 } as const;
 
 export const ocnoerStage = {
   preferredAspectRatio: 9 / 16,
-  portraitLayerHeight: "74%",
-  portraitColumnWidth: "52%"
+  portraitLayerHeight: "72%",
+  portraitLayerHeightLarge: "78%",
+  portraitColumnWidth: "52%",
+  portraitColumnMaxWidth: 352,
+  dialogueInset: 12,
+  dialogueInsetLarge: 20,
+  dialogueCardRadius: 28,
+  dialogueCardPadding: 20,
+  chapterCardMaxWidth: 448,
+  chapterCardWidthRatio: "72%"
+} as const;
+
+export const ocnoerWebPlayer = {
+  gate: {
+    collapsedPillSize: 72,
+    expandedPillMaxWidth: 416,
+    pillBackground: "rgba(0, 0, 0, 0.35)",
+    pillBorder: "rgba(255, 255, 255, 0.10)",
+    arrowBackground: "#ffffff",
+    arrowColor: "#020617",
+    arrowShadowColor: "rgba(255, 255, 255, 0.85)"
+  },
+  dialogueCard: {
+    backgroundColor: "rgba(2, 6, 23, 0.82)",
+    borderColor: "rgba(255, 255, 255, 0.10)",
+    borderRadius: 28,
+    padding: 20,
+    bottomInset: 12,
+    sideInset: 12,
+    catNameMaxWidth: 384,
+    promptPreviewMaxWidth: 216
+  },
+  boundaryCard: {
+    backgroundColor: "rgba(2, 6, 23, 0.82)",
+    borderColor: "rgba(255, 255, 255, 0.10)",
+    borderRadius: 28,
+    padding: 20
+  },
+  stage: {
+    backgroundColor: "#020617",
+    overlayBase: "rgba(2, 6, 17, 0.28)",
+    overlayBottom: "rgba(0, 0, 0, 0.62)",
+    transitionBlackout: "#000000"
+  },
+  chrome: {
+    iconSize: 44,
+    inset: 12,
+    iconColor: "#f8fafc",
+    iconMutedColor: "#cbd5e1",
+    panelBackground: "rgba(0, 0, 0, 0.35)",
+    panelBorder: "rgba(255, 255, 255, 0.10)"
+  }
 } as const;
 
 export const ocnoerText = {

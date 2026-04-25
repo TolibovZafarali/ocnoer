@@ -1,236 +1,222 @@
 # iOS UI Parity Plan
 
-## Audit Source
+## Source Of Truth Audited
 
-This audit is based on the current repository code, primarily:
+This pass used the current web player code as the reference, not screenshots or guesses:
 
-- Web login/player gate: `app/page.tsx`, `app/home-player-gate.tsx`, `app/globals.css`
-- Web reader: `app/(player)/play/page.tsx`, `app/(player)/play/player-story-reader.tsx`
-- Web motion/cinematic helpers: `app/(player)/play/player-story-reader-motion.ts`, `app/(player)/play/player-scene-lighting.ts`, `app/(player)/play/chapter-card-handwriting.tsx`
-- Web boundary model: `app/(player)/play/player-story-reader-boundary.ts`, `packages/story-core/src/boundary.ts`
-- Native app before this pass: `apps/ios/src/screens/SignInScreen.tsx`, `apps/ios/src/screens/BootstrapScreen.tsx`, `apps/ios/src/screens/ReaderScreen.tsx`, `apps/ios/src/reader/readerPresentation.ts`, `apps/ios/src/reader/boundaryPresentation.ts`, `apps/ios/src/audio/AudioControls.tsx`
+- Login gate: `app/page.tsx`, `app/home-player-gate.tsx`, `app/globals.css`
+- Reader shell: `app/(player)/play/page.tsx`, `app/(player)/play/player-story-reader.tsx`
+- Reader motion: `app/(player)/play/player-story-reader-motion.ts`
+- Scene lighting: `app/(player)/play/player-scene-lighting.ts`
+- Chapter handwriting card: `app/(player)/play/chapter-card-handwriting.tsx`
+- Boundary state model: `app/(player)/play/player-story-reader-boundary.ts`, `packages/story-core/src/boundary.ts`
+- Shared runtime asset selection: `packages/story-core/src/runtime.ts`
 
-## Web Player Experience
+## Extracted Web Rules
 
 ### Login / Gate
 
-The web entry point redirects signed-in players to `/play`. Signed-out players see a minimal fullscreen gate:
+Exact web structure:
 
-- dark radial background with cyan/blue glows
-- low-opacity animated grid
-- centered rounded password pill
-- collapsed circular arrow button that expands to reveal the password input
-- white circular submit button
-- red shake/color feedback on invalid attempts
+- Fullscreen `home-player-gate` with a dark radial background, cyan/blue glows, and a low-opacity grid.
+- One centered pill, collapsed at `72px` square and expanded to `min(26rem, calc(100vw - 2rem))`.
+- Pill height `72px`, `rounded-full`, `border-white/10`, `bg-black/35`, heavy dark shadow, backdrop blur.
+- Inner expanded layout uses `gap-2 pl-5 pr-2`; collapsed layout centers a `56px` white circular arrow.
+- Submit arrow is white background, slate-950 foreground, and no visible label text.
 
-### Home / Continue / Restart / Profile
+Native match:
 
-The web player does not currently have a separate rich player home screen after sign-in. `/play` loads runtime data and resumes from saved progress inside the reader. Continue/restart/profile management currently exists on iOS, not as a matching web screen.
+- `SignInScreen` now uses the same collapsed/expanded structure, `72px` shell, `56px` white arrow, `rgba(0,0,0,0.35)` pill, `white/10` border, and dark gate atmosphere.
 
-### Reader Shell
+Native approximation:
 
-The web reader is a cinematic stage:
+- React Native does not provide the same CSS radial gradients, blur filters, or Framer spring/shake behavior without extra dependencies. The glow/grid background is approximated with native layers.
 
-- black root background
-- centered portrait-ratio stage using the active background image aspect ratio
-- stage fills `100dvh`
-- desktop-only temporary nav gutters can appear when there is enough side space
-- normal mobile experience keeps the story stage dominant and uncluttered
+### Home / Continue / Restart
 
-### Background / Layering
+Exact web structure:
 
-The web stage renders the scene background image as full-cover media. It samples image luminance and builds a dark vertical overlay that becomes heavier toward the bottom. This protects dialogue readability without replacing the artwork.
+- There is no separate web home screen after login. Signed-in players redirect directly to `/play`; resume and runtime loading happen inside the reader.
 
-### Character Staging
+Native match:
 
-The web player uses the runtime visible-stage asset rules:
+- The native home keeps required iOS-only controls, but uses the web reader/gate visual language: black stage field, top utility chrome, bottom `bg-slate-950/82` glass panel, and the same primary continue/restart/clear hierarchy.
 
-- character lines show only the active speaker portrait on the speaker side
-- narrator and dress-prompt lines do not show extra inactive portraits
-- cat-name prompt shows the prompt character on the right side, even when sourced from the left stage slot or character pool
-- portraits sit behind the dialogue card in the lower 72-78% of the stage
-- portraits animate from their side and use scene-lighting filters/drop shadows
+Native approximation:
+
+- Profile, progress reset, preview, and audio preference controls are native-only surfaces because the web player does not currently expose an equivalent home screen.
+
+### Reader Shell / Stage
+
+Exact web structure:
+
+- Root is black and centers a stage with `h-[100dvh] w-screen`, `overflow-hidden`, and `bg-slate-950`.
+- Stage max width is `calc(100dvh * stageAspectRatio)`, where web reads the active background image dimensions and updates `stageAspectRatio`.
+- Background media is absolute full-cover; missing background falls back to black.
+- Desktop-only temporary nav gutters appear only when side gutters are wide enough.
+
+Native match:
+
+- `ReaderScreen` now centers a full-height stage and constrains stage width to `min(screenWidth, screenHeight * 9 / 16)`, preserving the web portrait-stage feel on iPad/landscape while remaining full width on iPhone.
+- The native reader root is black and no longer uses the decorative gate background for reader states.
+
+Native approximation:
+
+- Native currently uses the web default `9 / 16` stage ratio rather than sampling remote background dimensions. Exact per-scene aspect parity still needs native image-size probing wired into the stage frame.
+- Desktop temporary nav gutters are intentionally not copied to iOS.
+
+### Background Overlay / Lighting
+
+Exact web structure:
+
+- Web samples image luminance with canvas and applies `linear-gradient(180deg, rgba(2,6,17,0.08) 0%, rgba(2,6,17,0.18) 22%, rgba(2,6,17,0.36) 54%, rgba(2,6,17,0.84) 100%)`, scaled by scene lighting strength.
+- Portrait filters use brightness, contrast, saturation, and drop shadow derived from scene luminance.
+
+Native match:
+
+- Native stage now uses a lighter top scrim and heavier bottom scrim to match the web overlay shape more closely.
+
+Native approximation:
+
+- React Native does not have the same CSS linear-gradient or canvas luminance path here. Current overlay and portrait lighting are static approximations.
+
+### Portraits
+
+Exact web structure:
+
+- Visible portraits come from `getPlayerRuntimeAssetUrls`.
+- Character lines show only the active speaker on the speaker side.
+- Narrator and dress prompts do not show extra inactive portraits.
+- Cat-name prompt forces the prompt character to the right side.
+- Portrait layer is bottom-aligned at `h-[72%] md:h-[78%]`; each side is `w-[52%] max-w-[22rem]` on mobile and `md:w-[46%]`.
+
+Native match:
+
+- Native presentation already uses the shared runtime visible-asset rules and now sizes portrait slots with `52%`, bottom `72%`, and max width `352px`.
+- Inactive portrait dimming/scaling was removed because the web visible-stage rules mostly avoid showing inactive portraits in player dialogue.
+
+Native approximation:
+
+- Native still lacks web side-enter/exit motion and scene-derived CSS filters.
 
 ### Dialogue Card
 
-The dialogue card is a bottom glass surface:
+Exact web values:
 
-- rounded `28px`
-- `border-white/10`
-- `bg-slate-950/82`
-- backdrop blur
-- `p-5`
-- positioned opposite character speakers when possible
-- centered for narrator and dress-prompt lines
-- cat-name prompt card is left-biased to leave the right prompt character visible
+- Position: absolute bottom `clamp(0.75rem, 2vw, 1.25rem)`.
+- Radius: `28px`.
+- Border: `border-white/10`.
+- Fill: `bg-slate-950/82` (`rgba(2, 6, 23, 0.82)`).
+- Padding: `p-5` (`20px`).
+- Backdrop blur.
+- Center placement uses left/right clamp insets.
+- Speaker-left placement moves the card to the right half; speaker-right moves it to the left half.
+- Cat-name prompt is left-biased with `w-[min(22rem, calc(100%-1.5rem))]` and `md:w-[min(24rem,46%)]`.
 
-Character names are uppercase and widely tracked, except `Ocnoer`, which uses a large script-like character-name font. Dialogue text uses the dialogue serif font. Continue is a small circular arrow that appears only after typing is ready.
+Native match:
 
-### Narrator vs Character
+- Native card tokens now centralize the same fill, border, `28px` radius, `20px` padding, and `12px` bottom/side inset.
+- Native placement now mirrors web intent: centered for narrator/dress, opposite-side for character speakers, and left-biased/max-width for cat-name prompt.
+- Narrator entries have no speaker label. Character entries keep uppercase tracked labels, with an Ocnoer script approximation.
 
-Narrator entries do not show a speaker label in the web dialogue card. Character entries show a speaker label and active portrait staging. The card motion direction changes based on speaker side.
+Native approximation:
 
-### Cat-Name Prompt
+- React Native cannot use CSS `clamp()` or backdrop blur with current dependencies, so placement uses fixed native insets and percentage approximations.
+- Native font families are system approximations for Literata, Tangerine, Imperial Script, and Bad Script.
 
-The web prompt:
+### Prompts
 
-- uses the left-biased card placement
-- labels the card "Name your cat"
-- hides normal dialogue text while the input is active
-- validates and saves via the continue arrow
-- locks cat name into branch flags and later server sync
+Exact web cat-name prompt:
 
-### Dress Prompt
+- Left-biased card.
+- Label: `Name your cat`.
+- Normal dialogue text is hidden while input is active.
+- Continue arrow submits the cat name and advances.
 
-The web dress prompt:
+Native match:
 
-- uses a centered card
-- renders prompt text in a large script-like dress-prompt font
-- shows one outfit preview card at a time
-- has circular previous/next arrow controls
-- selecting the visible outfit advances the story
+- Native cat-name prompt now keeps the input inside the web-style dialogue card and uses the continue arrow to submit and advance.
 
-### Boundary / Transition Cards
+Exact web dress prompt:
 
-The web player has multiple boundary presentations:
+- Centered dialogue card.
+- Prompt text uses the large dress script font.
+- One outfit preview is visible at a time, flanked by circular previous/next arrows.
+- Selecting the visible preview stores the dress and advances immediately.
 
-- chapter opening card: fullscreen black with handwriting reveal
-- chapter ending card: fullscreen black with handwriting reveal, optional delayed music intro
-- chapter break card: top glass panel with chapter title/meta and begin action
-- scene transition: black overlay, asset preload, optional music fade, then reveal
-- story-finished state: black terminal state after the ending card
+Native match:
 
-### Motion / Cinematics
+- Native dress prompt now uses one visible preview, circular arrow controls, an `n of total` counter, and select-to-advance behavior.
 
-Important web motion patterns:
+Native approximation:
 
-- dialogue enter/exit from side or bottom
-- per-character typing delay with punctuation pauses
-- chapter-card handwriting reveal with pause markers
-- opening scene fade from black
-- scene-change blackout with preload timeout and post-swap hold
-- short inline-music blackout when music cues change
-- map overlay fade/scale
-- reduced-motion fallbacks
+- Dress prompt slide animation is not yet the web Framer `AnimatePresence` carousel motion.
 
-### Audio Controls
+### Boundary / Ending States
 
-The web reader controls background music through an HTML audio element and transition helpers. There is not a prominent in-reader audio control panel in the web UI. The iOS app keeps a visible mute/preference control because native audio state and user preference need a reachable control.
+Exact web structure:
 
-### Map / Overlay UI
+- Chapter opening card: fullscreen black, centered handwriting reveal, tap/click to proceed after reveal.
+- Chapter ending card: fullscreen black, centered handwriting reveal, optional delayed ending-card music.
+- Scene transition: black overlay; preload/wait/fade sequence; no visible card.
+- Chapter break: top glass panel with `rounded-[28px]`, `bg-slate-950/82`, `border-white/10`, chapter title/meta, and a Begin Chapter button.
+- Story finished: terminal black screen.
 
-The web reader has a tap-revealed top header. That header includes:
+Native match:
 
-- previous dialogue
-- world map
-- sign out
+- Chapter opening and ending cards are now fullscreen black with centered handwriting-style text and tap-to-advance.
+- Scene transition now presents as a black pressable transition surface instead of a generic panel.
+- Chapter break now uses a top glass panel with the same core card tokens.
+- Story-finished state is black rather than a generic completion card.
 
-The map opens as a fullscreen black/blur overlay with the `lore/world-map.jpg` image and a close button.
+Native approximation:
 
-## iOS Before This Pass
+- Native handwriting is static text, not the measured web reveal/pen-glow animation.
+- Native scene transition still requires a tap to clear the boundary; web performs timed blackout/reveal choreography automatically after advance.
 
-Already working on iOS:
+### Chrome / Map / Audio
 
-- native sign-in/session restore
-- runtime bootstrap loading
-- profile cat-name update
-- synced progress loading/clearing/restarting
-- reader advance/retreat
-- cat-name prompt behavior
-- dress option selection behavior
-- boundary state handling
-- native background music playback and mute preference
+Exact web structure:
 
-Parity gaps before this pass:
+- Web has an invisible full-stage tap target under dialogue.
+- Tapping reveals a top header with previous, map, and sign-out icons.
+- Header hides again when advancing/back/map actions run.
+- Map opens as a fullscreen `bg-black/95` overlay with `lore/world-map.jpg` and a close button.
+- Web has an HTML audio element but no prominent in-reader audio panel.
 
-- sign-in looked like a generic form, not the web gate
-- home/bootstrap was a debug-style runtime dashboard
-- reader used a stacked header/audio/stage/dialogue layout instead of a fullscreen stage
-- cards used small 8px radii and teal utility styling instead of Ocnoer glass surfaces
-- iOS showed all staged characters rather than the web-visible active portrait rules
-- narrator, character, cat-name, and dress prompt presentation were not visually distinct enough
-- boundary cards were plain panels, not cinematic black/chapter cards
-- no native transition-layer primitives existed
-- map overlay and tap-revealed chrome were missing
+Native match:
 
-## Implemented In This Step
+- Native reader chrome is now hidden by default and revealed by tapping the stage.
+- Revealed chrome includes previous dialogue, map, native home, and compact audio controls.
+- Native map uses the actual `lore/world-map.jpg` in a fullscreen black overlay.
+- Chrome hides again on advance, retreat, map open, and home.
 
-### Native UI Foundation
+Native approximation:
 
-Added centralized iOS UI foundation:
+- The web sign-out icon is represented by a native home control because `ReaderScreen` does not own sign-out.
+- The audio control remains visible in revealed native chrome because native music preferences need an accessible control and there is no matching web UI.
+
+## Files Changed In This Step
 
 - `apps/ios/src/ui/theme.ts`
 - `apps/ios/src/ui/primitives.tsx`
-
-The foundation includes dark Ocnoer colors, spacing, typography, radii, opacity, shadows, stage constants, reusable background/glow/grid treatment, glass surfaces, pill buttons, icon buttons, text inputs, info rows, and pills.
-
-### Native Reader Presentation Foundation
-
-Added reusable reader pieces:
-
+- `apps/ios/src/screens/SignInScreen.tsx`
+- `apps/ios/src/screens/BootstrapScreen.tsx`
+- `apps/ios/src/screens/ReaderScreen.tsx`
+- `apps/ios/src/reader/useNativeReaderController.ts`
 - `apps/ios/src/reader/components/NativeCinematic.tsx`
 - `apps/ios/src/reader/components/NativeReaderStage.tsx`
 - `apps/ios/src/reader/components/NativeReaderDialogue.tsx`
 - `apps/ios/src/reader/components/NativeReaderBoundaryCard.tsx`
 
-These provide stage scrims, fade-in wrapper, blackout overlay primitive, fullscreen background/portrait staging, bottom dialogue cards, prompt styling, and boundary card presentation.
+## Still Required Before Honest Near-Parity
 
-### Sign-In
-
-The iOS sign-in screen now uses a native approximation of the web gate:
-
-- fullscreen dark Ocnoer background
-- glow/grid atmosphere
-- centered rounded credential pill
-- collapsed-to-expanded credential input
-- white circular submit control
-- compact error presentation
-
-### Bootstrap / Home
-
-The iOS bootstrap screen now uses the new native theme:
-
-- dark cinematic background
-- profile, reading, audio, and runtime sections as glass/quiet surfaces
-- clearer continue/start/restart/clear action hierarchy
-- retained cat-name edit, progress sync warnings, preview, and sign-out behavior
-
-### Reader
-
-The iOS reader now moves toward the web structure:
-
-- fullscreen stage frame
-- full-cover background image
-- top/bottom scrim layering
-- active visible portrait placement behind dialogue
-- compact top reader chrome
-- bottom glass dialogue card
-- narrator/character/cat-name/dress prompt styling differences
-- chapter and story boundary cards use stronger cinematic black/glass presentation
-- scene/moving blackout primitive is wired in lightly
-
-### Visible Stage Parity
-
-`apps/ios/src/reader/readerPresentation.ts` now derives native portraits from the same `getPlayerRuntimeAssetUrls` visible-stage rules used by the web player, rather than showing every staged character. This is an important behavioral/visual parity fix.
-
-## Remaining Work For Near-Full Parity
-
-- Exact native equivalent of web typewriter timing and punctuation pauses.
-- Exact chapter handwriting reveal and pause-marker behavior.
-- Opening scene fade timing that matches the web's chapter-card-to-scene transition.
-- Scene-change and inline-music blackout sequencing with asset preload waits and music fade timing.
-- Native map overlay using the world map asset.
-- Tap-revealed reader chrome matching the web header behavior.
-- Dress prompt carousel parity: one visible outfit, arrow navigation, select-to-advance.
-- Better native iconography for back/next/audio/map/sign-out controls.
-- Native font loading for closer matches to Literata, Tangerine, Imperial Script, and Bad Script.
-- Adaptive scene-lighting analysis for portrait filters/shadows.
-- More exact safe-area handling around bottom dialogue card and keyboard states.
-- Hiding or relocating native audio controls if product decides web parity should outweigh native preference visibility.
-
-## Later-Step Blockers / Dependencies
-
-- Font parity needs bundled native fonts or an Expo font-loading pass.
-- Lighting parity likely needs a native image sampling strategy or a precomputed scene-lighting profile in runtime data.
-- Full cinematic parity needs a deliberate native transition state machine; this pass only lays down reusable overlay/card primitives.
-- Map parity needs asset strategy for `lore/world-map.jpg` in the native bundle or a public runtime URL.
+- Native stage ratio should follow actual background image dimensions, not only the default `9 / 16`.
+- Native typewriter timing and punctuation pauses should match `player-story-reader-motion.ts`.
+- Chapter handwriting needs the measured line-by-line reveal and pause marker behavior from `ChapterCardHandwriting`.
+- Opening scene fade and scene-transition timing should match the web cover, preload, blackout, post-swap hold, and reveal sequence.
+- Inline music cue blackout/fade choreography is still not mirrored.
+- Native scene lighting needs image luminance analysis or precomputed lighting data.
+- Native fonts should be bundled to match Literata, Tangerine, Imperial Script, and Bad Script more closely.
+- Chrome icons should use real icon glyphs/assets rather than text-symbol approximations.
+- Native audio controls need a product decision: keep as native-only reachable control, or hide behind a settings surface for stricter web parity.

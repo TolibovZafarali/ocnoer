@@ -12,7 +12,7 @@ import {
   type ViewStyle
 } from "react-native";
 
-import { ocnoerTheme } from "./theme";
+import { ocnoerTheme, ocnoerWebPlayer } from "./theme";
 
 type OcnoerButtonVariant = "primary" | "secondary" | "ghost" | "danger";
 
@@ -39,6 +39,7 @@ type OcnoerIconButtonProps = {
   label: string;
   onPress: () => void;
   style?: StyleProp<ViewStyle>;
+  textStyle?: StyleProp<TextStyle>;
 };
 
 export function OcnoerScreenBackground(props: {
@@ -154,7 +155,9 @@ export function OcnoerIconButton(props: OcnoerIconButtonProps) {
         props.style
       ]}
     >
-      <Text style={styles.iconButtonText}>{props.label}</Text>
+      <Text style={[styles.iconButtonText, props.textStyle]}>
+        {props.label}
+      </Text>
     </Pressable>
   );
 }
@@ -194,7 +197,7 @@ export function OcnoerPill(props: {
 
 const styles = StyleSheet.create({
   screen: {
-    backgroundColor: ocnoerTheme.colors.night,
+    backgroundColor: "#05080e",
     flex: 1,
     overflow: "hidden"
   },
@@ -243,23 +246,23 @@ const styles = StyleSheet.create({
     right: 0
   },
   surfaceBase: {
-    borderRadius: ocnoerTheme.radii.card,
+    borderRadius: ocnoerWebPlayer.dialogueCard.borderRadius,
     borderWidth: 1,
-    padding: ocnoerTheme.spacing.xl
+    padding: ocnoerWebPlayer.dialogueCard.padding
   },
   surfaceGlass: {
     ...ocnoerTheme.shadows.card,
-    backgroundColor: ocnoerTheme.colors.panel,
-    borderColor: ocnoerTheme.colors.border
+    backgroundColor: ocnoerWebPlayer.dialogueCard.backgroundColor,
+    borderColor: ocnoerWebPlayer.dialogueCard.borderColor
   },
   surfaceSolid: {
     ...ocnoerTheme.shadows.card,
     backgroundColor: ocnoerTheme.colors.panelStrong,
-    borderColor: ocnoerTheme.colors.border
+    borderColor: ocnoerWebPlayer.dialogueCard.borderColor
   },
   surfaceQuiet: {
     backgroundColor: ocnoerTheme.colors.panelSoft,
-    borderColor: ocnoerTheme.colors.border
+    borderColor: ocnoerWebPlayer.dialogueCard.borderColor
   },
   buttonBase: {
     alignItems: "center",
@@ -307,15 +310,15 @@ const styles = StyleSheet.create({
   iconButton: {
     alignItems: "center",
     borderRadius: ocnoerTheme.radii.pill,
-    height: 44,
+    height: ocnoerWebPlayer.chrome.iconSize,
     justifyContent: "center",
-    width: 44
+    width: ocnoerWebPlayer.chrome.iconSize
   },
   iconButtonText: {
     color: ocnoerTheme.colors.text,
-    fontSize: 22,
+    fontSize: 25,
     fontWeight: "700",
-    lineHeight: 24
+    lineHeight: 28
   },
   disabled: {
     opacity: ocnoerTheme.opacity.disabled

@@ -1,11 +1,14 @@
-import { useMemo } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Image,
   KeyboardAvoidingView,
   Platform,
+  Pressable,
   SafeAreaView,
   StyleSheet,
   Text,
+  useWindowDimensions,
   View
 } from "react-native";
 
@@ -29,10 +32,11 @@ import type { NativeAudioPreferences } from "../storage/audioPreferenceStorage";
 import {
   OcnoerButton,
   OcnoerIconButton,
-  OcnoerScreenBackground,
   OcnoerSurface
 } from "../ui/primitives";
-import { ocnoerTheme } from "../ui/theme";
+import { ocnoerTheme, ocnoerWebPlayer } from "../ui/theme";
+
+const worldMapImage = require("../../../../lore/world-map.jpg") as number;
 
 type ReaderScreenProps = {
   bootstrap: PlayerRuntimeBootstrap;
@@ -47,35 +51,66 @@ type ReaderScreenProps = {
 };
 
 function ReaderChrome(props: {
-  title: string;
-  subtitle: string;
   audioPreferences: NativeAudioPreferences;
   audioStatus: ReturnType<typeof useNativeBackgroundMusic>;
+  canRetreat: boolean;
   onBackHome: () => void;
+  onOpenMap: () => void;
+  onRetreat: () => void;
   onToggleAudioMuted: () => void;
 }) {
   return (
     <View pointerEvents="box-none" style={styles.chrome}>
       <OcnoerIconButton
-        accessibilityLabel="Return to home"
-        label="<"
-        onPress={props.onBackHome}
+        accessibilityLabel="Previous dialogue"
+        disabled={!props.canRetreat}
+        label="←"
+        onPress={props.onRetreat}
         style={styles.chromeIcon}
       />
-      <View pointerEvents="none" style={styles.chromeTitle}>
-        <Text numberOfLines={1} style={styles.chromeTitleText}>
-          {props.title}
-        </Text>
-        <Text numberOfLines={1} style={styles.chromeSubtitleText}>
-          {props.subtitle}
-        </Text>
-      </View>
-      <View style={styles.audioChrome}>
+      <View pointerEvents="box-none" style={styles.chromeRight}>
+        <OcnoerIconButton
+          accessibilityLabel="Open world map"
+          label="⌖"
+          onPress={props.onOpenMap}
+          style={styles.chromeIcon}
+        />
         <AudioStatusPanel
           compact
           preferences={props.audioPreferences}
           status={props.audioStatus}
           onToggleMuted={props.onToggleAudioMuted}
+        />
+        <OcnoerIconButton
+          accessibilityLabel="Return home"
+          label="⌂"
+          onPress={props.onBackHome}
+          style={styles.chromeIcon}
+          textStyle={styles.chromeHomeText}
+        />
+      </View>
+    </View>
+  );
+}
+
+function WorldMapOverlay(props: { onClose: () => void }) {
+  return (
+    <View accessibilityViewIsModal style={styles.mapOverlay}>
+      <View style={styles.mapStage}>
+        <Pressable
+          accessibilityLabel="Close world map"
+          accessibilityRole="button"
+          onPress={props.onClose}
+          style={styles.mapCloseButton}
+        >
+          <Text style={styles.mapCloseText}>×</Text>
+        </Pressable>
+        <Image
+          accessibilityIgnoresInvertColors
+          accessibilityLabel="Ocnoer world map"
+          resizeMode="contain"
+          source={worldMapImage}
+          style={styles.mapImage}
         />
       </View>
     </View>
@@ -91,7 +126,7 @@ function ReaderMessageScreen(props: {
 }) {
   return (
     <SafeAreaView style={styles.safeArea}>
-      <OcnoerScreenBackground>
+      <View style={styles.messageScreen}>
         <View style={styles.centered}>
           <OcnoerSurface style={styles.messagePanel} variant="glass">
             {props.loading ? (
@@ -112,12 +147,15 @@ function ReaderMessageScreen(props: {
             ) : null}
           </OcnoerSurface>
         </View>
-      </OcnoerScreenBackground>
+      </View>
     </SafeAreaView>
   );
 }
 
 export function ReaderScreen(props: ReaderScreenProps) {
+  const dimensions = useWindowDimensions();
+  const [isChromeVisible, setIsChromeVisible] = useState(false);
+  const [isMapOpen, setIsMapOpen] = useState(false);
   const reader = useNativeReaderController({
     bootstrap: props.bootstrap,
     config: props.config,
@@ -149,6 +187,40 @@ export function ReaderScreen(props: ReaderScreenProps) {
     cue: backgroundMusicCue,
     preferences: props.audioPreferences
   });
+  const stageWidth = Math.min(
+    dimensions.width,
+    dimensions.height * ocnoerTheme.stage.preferredAspectRatio
+  );
+  const revealChrome = useCallback(() => {
+    setIsChromeVisible(true);
+  }, []);
+  const handleAdvance = useCallback(() => {
+    setIsChromeVisible(false);
+    void reader.advance();
+  }, [reader]);
+  const handleRetreat = useCallback(() => {
+    setIsChromeVisible(false);
+    void reader.retreat();
+  }, [reader]);
+  const handleSelectDressOption = useCallback(
+    (optionKey: string) => {
+      setIsChromeVisible(false);
+      void reader.selectDressOption(optionKey);
+    },
+    [reader]
+  );
+  const handleSubmitCatName = useCallback(() => {
+    setIsChromeVisible(false);
+    void reader.submitCatName();
+  }, [reader]);
+  const handleBackHome = useCallback(() => {
+    setIsChromeVisible(false);
+    props.onBackHome();
+  }, [props]);
+  const handleOpenMap = useCallback(() => {
+    setIsChromeVisible(false);
+    setIsMapOpen(true);
+  }, []);
 
   useReaderImagePreload(reader.preloadImageUrls);
 
@@ -194,85 +266,104 @@ export function ReaderScreen(props: ReaderScreenProps) {
     );
   }
 
-  const subtitle =
-    reader.state.status === "finished"
-      ? "Story complete"
-      : `Scene ${presentation.sceneIndex + 1}/${presentation.sceneCount} - Line ${presentation.dialogueIndex + 1}/${presentation.dialogueCount}`;
   const showTransitionBlackout =
     boundaryPresentation?.type === "scene-transition" || reader.isMoving;
 
   return (
-    <SafeAreaView style={styles.safeArea}>
+    <View style={styles.safeArea}>
       <KeyboardAvoidingView
         behavior={Platform.OS === "ios" ? "padding" : undefined}
         style={styles.readerRoot}
       >
-        <View style={styles.stageFrame}>
-          <NativeReaderStage presentation={presentation} />
-          <BlackoutOverlay
-            opacity={
-              boundaryPresentation?.type === "scene-transition" ? 0.72 : 0.08
-            }
-            visible={showTransitionBlackout}
-          />
-          <ReaderChrome
-            audioPreferences={props.audioPreferences}
-            audioStatus={audioStatus}
-            subtitle={subtitle}
-            title={presentation.chapterTitle}
-            onBackHome={props.onBackHome}
-            onToggleAudioMuted={props.onToggleAudioMuted}
-          />
-
-          {boundaryPresentation ? (
-            <NativeReaderBoundaryCard
-              actionError={reader.actionError}
-              boundary={boundaryPresentation}
-              canRetreat={reader.canRetreat}
-              isMoving={reader.isMoving}
-              persistenceError={reader.persistenceError}
-              onAdvance={reader.advance}
-              onRetreat={reader.retreat}
+        <View style={styles.stageOuter}>
+          <View
+            style={[
+              styles.stageFrame,
+              {
+                width: stageWidth
+              }
+            ]}
+          >
+            <NativeReaderStage presentation={presentation} />
+            <BlackoutOverlay
+              opacity={
+                boundaryPresentation?.type === "scene-transition" ? 0.72 : 0.08
+              }
+              visible={showTransitionBlackout}
             />
-          ) : reader.state.status === "finished" ? (
-            <OcnoerSurface style={styles.finishedCard} variant="glass">
-              <Text style={styles.messageTitle}>Story Finished</Text>
-              <Text style={styles.messageBody}>
-                You have reached the end of the currently published story.
-              </Text>
-              <OcnoerButton
-                disabled={reader.isMoving}
-                label="Back"
-                onPress={reader.retreat}
-                variant="secondary"
-              />
-            </OcnoerSurface>
-          ) : (
-            <FadeInView
-              animationKey={`${presentation.status}:${presentation.dialogueEntryId}`}
-              durationMs={ocnoerTheme.motion.quickMs}
-              style={styles.dialogueLayer}
-            >
-              <NativeReaderDialogue
+            <Pressable
+              accessibilityLabel="Show navigation header"
+              accessibilityRole="button"
+              onPress={revealChrome}
+              style={styles.stageTapLayer}
+            />
+            {isChromeVisible ? (
+              <FadeInView
+                animationKey="reader-chrome-visible"
+                durationMs={ocnoerTheme.motion.lineExitMs}
+                pointerEvents="box-none"
+                style={styles.chromeWrap}
+              >
+                <ReaderChrome
+                  audioPreferences={props.audioPreferences}
+                  audioStatus={audioStatus}
+                  canRetreat={reader.canRetreat}
+                  onBackHome={handleBackHome}
+                  onOpenMap={handleOpenMap}
+                  onRetreat={handleRetreat}
+                  onToggleAudioMuted={props.onToggleAudioMuted}
+                />
+              </FadeInView>
+            ) : null}
+
+            {boundaryPresentation ? (
+              <NativeReaderBoundaryCard
                 actionError={reader.actionError}
-                canRetreat={reader.canRetreat}
-                catNameInputError={reader.catNameInputError}
-                catNameInputValue={reader.catNameInputValue}
+                boundary={boundaryPresentation}
                 isMoving={reader.isMoving}
-                isSavingCatName={reader.isSavingCatName}
                 persistenceError={reader.persistenceError}
-                presentation={presentation}
-                onAdvance={reader.advance}
-                onCatNameInputChange={reader.setCatNameInputValue}
-                onRetreat={reader.retreat}
-                onSelectDressOption={reader.selectDressOption}
-                onSubmitCatName={reader.submitCatName}
+                onAdvance={handleAdvance}
+                onRevealChrome={revealChrome}
               />
-            </FadeInView>
-          )}
+            ) : reader.state.status === "finished" ? (
+              <Pressable
+                accessibilityLabel="Story finished"
+                accessibilityRole="button"
+                onPress={revealChrome}
+                style={styles.finishedCard}
+              />
+            ) : (
+              <FadeInView
+                animationKey={`${presentation.status}:${presentation.dialogueEntryId}`}
+                durationMs={ocnoerTheme.motion.quickMs}
+                style={styles.dialogueLayer}
+              >
+                <NativeReaderDialogue
+                  actionError={reader.actionError}
+                  catNameInputError={reader.catNameInputError}
+                  catNameInputValue={reader.catNameInputValue}
+                  isMoving={reader.isMoving}
+                  isSavingCatName={reader.isSavingCatName}
+                  persistenceError={reader.persistenceError}
+                  presentation={presentation}
+                  onAdvance={handleAdvance}
+                  onCatNameInputChange={reader.setCatNameInputValue}
+                  onSelectDressOption={handleSelectDressOption}
+                  onSubmitCatName={handleSubmitCatName}
+                />
+              </FadeInView>
+            )}
+          </View>
         </View>
+        {isMapOpen ? (
+          <WorldMapOverlay
+            onClose={() => {
+              setIsMapOpen(false);
+            }}
+          />
+        ) : null}
       </KeyboardAvoidingView>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -285,53 +376,94 @@ const styles = StyleSheet.create({
     backgroundColor: ocnoerTheme.colors.black,
     flex: 1
   },
-  stageFrame: {
+  messageScreen: {
+    backgroundColor: ocnoerTheme.colors.black,
+    flex: 1
+  },
+  stageOuter: {
+    alignItems: "center",
     backgroundColor: ocnoerTheme.colors.black,
     flex: 1,
+    justifyContent: "center"
+  },
+  stageFrame: {
+    alignSelf: "center",
+    backgroundColor: ocnoerTheme.colors.slate950,
+    height: "100%",
     overflow: "hidden"
+  },
+  stageTapLayer: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "transparent",
+    zIndex: 15
+  },
+  chromeWrap: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 40
   },
   chrome: {
     alignItems: "center",
     flexDirection: "row",
-    gap: ocnoerTheme.spacing.sm,
+    justifyContent: "space-between",
     left: 0,
-    paddingHorizontal: ocnoerTheme.spacing.md,
-    paddingTop: ocnoerTheme.spacing.sm,
+    paddingHorizontal: ocnoerWebPlayer.chrome.inset,
+    paddingTop: ocnoerWebPlayer.chrome.inset,
     position: "absolute",
     right: 0,
-    top: 0,
-    zIndex: 32
+    top: 0
   },
   chromeIcon: {
-    backgroundColor: "rgba(0, 0, 0, 0.22)",
-    borderColor: ocnoerTheme.colors.border,
-    borderWidth: 1
+    backgroundColor: "transparent"
   },
-  chromeTitle: {
-    flex: 1,
-    minWidth: 0
+  chromeHomeText: {
+    fontSize: 22
   },
-  chromeTitleText: {
-    color: ocnoerTheme.colors.text,
-    fontSize: 14,
-    fontWeight: "800"
-  },
-  chromeSubtitleText: {
-    color: ocnoerTheme.colors.textSubtle,
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 0.4,
-    marginTop: 2
-  },
-  audioChrome: {
-    backgroundColor: "rgba(0, 0, 0, 0.28)",
-    borderColor: ocnoerTheme.colors.border,
+  chromeRight: {
+    alignItems: "center",
+    backgroundColor: ocnoerWebPlayer.chrome.panelBackground,
+    borderColor: ocnoerWebPlayer.chrome.panelBorder,
     borderRadius: ocnoerTheme.radii.lg,
     borderWidth: 1,
-    maxWidth: 168,
-    minWidth: 136,
-    paddingHorizontal: ocnoerTheme.spacing.sm,
+    flexDirection: "row",
+    gap: ocnoerTheme.spacing.xs,
+    maxWidth: "78%",
+    paddingHorizontal: ocnoerTheme.spacing.xs,
     paddingVertical: ocnoerTheme.spacing.xs
+  },
+  mapOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 0, 0, 0.95)",
+    justifyContent: "center",
+    padding: ocnoerTheme.spacing.md,
+    zIndex: 70
+  },
+  mapStage: {
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center"
+  },
+  mapCloseButton: {
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.35)",
+    borderColor: "rgba(255, 255, 255, 0.20)",
+    borderRadius: ocnoerTheme.radii.pill,
+    borderWidth: 1,
+    height: 48,
+    justifyContent: "center",
+    left: ocnoerTheme.spacing.md,
+    position: "absolute",
+    top: ocnoerTheme.spacing.md,
+    width: 48,
+    zIndex: 2
+  },
+  mapCloseText: {
+    color: ocnoerTheme.colors.text,
+    fontSize: 30,
+    lineHeight: 34
+  },
+  mapImage: {
+    height: "100%",
+    width: "100%"
   },
   centered: {
     alignItems: "center",
@@ -363,10 +495,8 @@ const styles = StyleSheet.create({
     zIndex: 20
   },
   finishedCard: {
-    bottom: ocnoerTheme.spacing.lg,
-    left: ocnoerTheme.spacing.md,
-    position: "absolute",
-    right: ocnoerTheme.spacing.md,
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: ocnoerTheme.colors.black,
     zIndex: 22
   }
 });

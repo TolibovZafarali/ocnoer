@@ -12,7 +12,7 @@ import {
 } from "react-native";
 
 import { OcnoerScreenBackground } from "../ui/primitives";
-import { ocnoerTheme } from "../ui/theme";
+import { ocnoerTheme, ocnoerWebPlayer } from "../ui/theme";
 
 type SignInScreenProps = {
   error: string | null;
@@ -35,7 +35,7 @@ export function SignInScreen(props: SignInScreenProps) {
   function focusInput() {
     setTimeout(() => {
       inputRef.current?.focus();
-    }, 80);
+    }, 170);
   }
 
   function handleArrowPress() {
@@ -68,6 +68,7 @@ export function SignInScreen(props: SignInScreenProps) {
               {expanded ? (
                 <TextInput
                   ref={inputRef}
+                  accessibilityLabel="Password"
                   autoCapitalize="none"
                   autoCorrect={false}
                   editable={!props.isSubmitting}
@@ -77,8 +78,6 @@ export function SignInScreen(props: SignInScreenProps) {
                       props.onSignIn(secret);
                     }
                   }}
-                  placeholder="Player credential"
-                  placeholderTextColor={ocnoerTheme.colors.textFaint}
                   returnKeyType="go"
                   secureTextEntry
                   selectionColor={ocnoerTheme.colors.text}
@@ -103,7 +102,7 @@ export function SignInScreen(props: SignInScreenProps) {
                 {props.isSubmitting ? (
                   <ActivityIndicator color={ocnoerTheme.colors.stageDeep} />
                 ) : (
-                  <Text style={styles.arrowText}>{">"}</Text>
+                  <Text style={styles.arrowText}>{"\u2192"}</Text>
                 )}
               </Pressable>
             </View>
@@ -135,21 +134,21 @@ const styles = StyleSheet.create({
   gatePill: {
     ...ocnoerTheme.shadows.card,
     alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.36)",
-    borderColor: ocnoerTheme.colors.border,
+    backgroundColor: ocnoerWebPlayer.gate.pillBackground,
+    borderColor: ocnoerWebPlayer.gate.pillBorder,
     borderRadius: ocnoerTheme.radii.pill,
     borderWidth: 1,
     flexDirection: "row",
-    height: 72,
+    height: ocnoerWebPlayer.gate.collapsedPillSize,
     overflow: "hidden",
     padding: ocnoerTheme.spacing.sm
   },
   gatePillExpanded: {
-    maxWidth: 416,
+    maxWidth: ocnoerWebPlayer.gate.expandedPillMaxWidth,
     width: "100%"
   },
   gatePillCollapsed: {
-    width: 72
+    width: ocnoerWebPlayer.gate.collapsedPillSize
   },
   gatePillError: {
     borderColor: "rgba(253, 164, 175, 0.36)"
@@ -157,22 +156,22 @@ const styles = StyleSheet.create({
   input: {
     color: ocnoerTheme.colors.text,
     flex: 1,
-    fontSize: 17,
+    fontSize: 16,
     minWidth: 0,
     paddingHorizontal: ocnoerTheme.spacing.lg
   },
   arrowButton: {
     ...ocnoerTheme.shadows.glow,
     alignItems: "center",
-    backgroundColor: ocnoerTheme.colors.text,
+    backgroundColor: ocnoerWebPlayer.gate.arrowBackground,
     borderRadius: ocnoerTheme.radii.pill,
     height: 56,
     justifyContent: "center",
     width: 56
   },
   arrowText: {
-    color: ocnoerTheme.colors.stageDeep,
-    fontSize: 24,
+    color: ocnoerWebPlayer.gate.arrowColor,
+    fontSize: 25,
     fontWeight: "900",
     lineHeight: 28
   },

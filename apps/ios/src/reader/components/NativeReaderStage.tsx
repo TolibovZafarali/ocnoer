@@ -1,10 +1,11 @@
 import { Image, StyleSheet, View } from "react-native";
+import { SvgUri } from "react-native-svg";
 
 import type {
   NativeReaderPortrait,
   NativeReaderPresentation
 } from "../readerPresentation";
-import { ocnoerTheme } from "../../ui/theme";
+import { ocnoerTheme, ocnoerWebPlayer } from "../../ui/theme";
 import { FadeInView, StageScrims } from "./NativeCinematic";
 
 function Portrait(props: {
@@ -26,13 +27,12 @@ function Portrait(props: {
       ]}
     >
       <FadeInView animationKey={props.portrait.key} style={styles.portraitFade}>
-        <Image
-          accessibilityIgnoresInvertColors
+        <View
           accessibilityLabel={props.portrait.label}
-          resizeMode="contain"
-          source={{ uri: props.portrait.imageUrl }}
+          accessible
+          pointerEvents="none"
           style={[
-            styles.portraitImage,
+            styles.portraitSvg,
             props.side === "left"
               ? styles.portraitImageLeft
               : styles.portraitImageRight,
@@ -40,7 +40,16 @@ function Portrait(props: {
               ? styles.portraitImageActive
               : styles.portraitImageInactive
           ]}
-        />
+        >
+          <SvgUri
+            height="100%"
+            preserveAspectRatio={
+              props.side === "left" ? "xMinYMax meet" : "xMaxYMax meet"
+            }
+            uri={props.portrait.imageUrl}
+            width="100%"
+          />
+        </View>
       </FadeInView>
     </View>
   );
@@ -79,7 +88,7 @@ export function NativeReaderStage(props: {
 const styles = StyleSheet.create({
   stage: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: ocnoerTheme.colors.black,
+    backgroundColor: ocnoerWebPlayer.stage.backgroundColor,
     overflow: "hidden"
   },
   stageBackground: {
@@ -117,33 +126,23 @@ const styles = StyleSheet.create({
     height: "100%",
     width: "100%"
   },
-  portraitImage: {
+  portraitSvg: {
     bottom: 0,
     height: "100%",
-    maxWidth: 290,
+    maxWidth: ocnoerTheme.stage.portraitColumnMaxWidth,
     position: "absolute",
     width: "100%"
   },
   portraitImageLeft: {
-    left: -12
+    left: 0
   },
   portraitImageRight: {
-    right: -12
+    right: 0
   },
   portraitImageActive: {
-    opacity: 1,
-    transform: [
-      {
-        scale: 1.025
-      }
-    ]
+    opacity: 1
   },
   portraitImageInactive: {
-    opacity: ocnoerTheme.opacity.inactivePortrait,
-    transform: [
-      {
-        scale: 0.985
-      }
-    ]
+    opacity: 1
   }
 });

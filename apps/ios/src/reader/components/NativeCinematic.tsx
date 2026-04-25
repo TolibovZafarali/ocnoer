@@ -7,12 +7,13 @@ import {
   type ViewStyle
 } from "react-native";
 
-import { ocnoerTheme } from "../../ui/theme";
+import { ocnoerTheme, ocnoerWebPlayer } from "../../ui/theme";
 
 export function FadeInView(props: {
   animationKey: string;
   children: ReactNode;
   durationMs?: number;
+  pointerEvents?: "auto" | "box-none" | "box-only" | "none";
   style?: StyleProp<ViewStyle>;
 }) {
   const opacity = useRef(new Animated.Value(1)).current;
@@ -33,7 +34,10 @@ export function FadeInView(props: {
   }, [opacity, props.animationKey, props.durationMs]);
 
   return (
-    <Animated.View style={[props.style, { opacity }]}>
+    <Animated.View
+      pointerEvents={props.pointerEvents}
+      style={[props.style, { opacity }]}
+    >
       {props.children}
     </Animated.View>
   );
@@ -79,20 +83,20 @@ const styles = StyleSheet.create({
   },
   sceneTint: {
     ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(2, 6, 17, 0.24)"
+    backgroundColor: "rgba(2, 6, 17, 0.18)"
   },
   topScrim: {
-    backgroundColor: "rgba(2, 6, 17, 0.42)",
-    height: "24%",
+    backgroundColor: "rgba(2, 6, 17, 0.08)",
+    height: "22%",
     left: 0,
     position: "absolute",
     right: 0,
     top: 0
   },
   bottomScrim: {
-    backgroundColor: "rgba(2, 6, 17, 0.78)",
+    backgroundColor: ocnoerWebPlayer.stage.overlayBottom,
     bottom: 0,
-    height: "54%",
+    height: "46%",
     left: 0,
     position: "absolute",
     right: 0

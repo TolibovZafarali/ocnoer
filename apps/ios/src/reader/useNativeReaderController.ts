@@ -59,6 +59,13 @@ type NativeReaderRuntimeState =
       readerState: ReaderState;
     };
 
+type ActiveNativeReaderRuntimeState = Extract<
+  NativeReaderRuntimeState,
+  { status: "ready" | "finished" }
+>;
+
+type RuntimeAdvanceResult = Awaited<ReturnType<typeof advanceRuntimePosition>>;
+
 type UseNativeReaderControllerInput = {
   bootstrap: PlayerRuntimeBootstrap;
   config: MobileRuntimeConfig;
@@ -394,11 +401,103 @@ export function useNativeReaderController(
     );
   }, [runtimeState]);
 
+  const commitAdvanceResult = useCallback(
+    (
+      currentRuntimeState: ActiveNativeReaderRuntimeState,
+      result: RuntimeAdvanceResult
+    ) => {
+      if (result.type === "story-finished") {
+        const nextBoundaryState = createBoundaryStateForAdvance({
+          manifest: currentRuntimeState.manifest,
+          currentChapter: currentRuntimeState.bundle.chapter,
+          action: {
+            type: "story-finished"
+          }
+        });
+
+        setRuntimeState({
+          status: "finished",
+          manifest: currentRuntimeState.manifest,
+          bundle: currentRuntimeState.bundle,
+          readerState: {
+            ...currentRuntimeState.readerState,
+            isChapterComplete: true
+          }
+        });
+        setBoundaryState(nextBoundaryState);
+        return;
+      }
+
+      if (result.type === "chapter-break") {
+        const nextBoundaryState = createBoundaryStateForAdvance({
+          manifest: currentRuntimeState.manifest,
+          currentChapter: currentRuntimeState.bundle.chapter,
+          action: {
+            type: "chapter-break",
+            nextChapter: result.bundle.chapter
+          }
+        });
+
+        setRuntimeState({
+          status: "ready",
+          manifest: currentRuntimeState.manifest,
+          bundle: result.bundle,
+          readerState: result.state
+        });
+        setBoundaryState(nextBoundaryState);
+        return;
+      }
+
+      if (result.type === "scene-transition") {
+        setRuntimeState({
+          status: "ready",
+          manifest: currentRuntimeState.manifest,
+          bundle: currentRuntimeState.bundle,
+          readerState: result.state
+        });
+        setBoundaryState(
+          createBoundaryStateForAdvance({
+            manifest: currentRuntimeState.manifest,
+            currentChapter: currentRuntimeState.bundle.chapter,
+            action: {
+              type: "scene-transition"
+            }
+          })
+        );
+        return;
+      }
+
+      setRuntimeState({
+        status: "ready",
+        manifest: currentRuntimeState.manifest,
+        bundle: currentRuntimeState.bundle,
+        readerState: result.state
+      });
+      setBoundaryState(null);
+    },
+    []
+  );
+
+  const advanceFromRuntimeState = useCallback(
+    async (currentRuntimeState: ActiveNativeReaderRuntimeState) => {
+      const result = await advanceRuntimePosition({
+        manifest: currentRuntimeState.manifest,
+        bundle: currentRuntimeState.bundle,
+        state: currentRuntimeState.readerState,
+        loadChapter: repository.loadChapter
+      });
+
+      commitAdvanceResult(currentRuntimeState, result);
+    },
+    [commitAdvanceResult, repository.loadChapter]
+  );
+
   const selectDressOption = useCallback(
-    (optionKey: string) => {
+    async (optionKey: string) => {
       if (
-        runtimeState.status !== "ready" &&
-        runtimeState.status !== "finished"
+        (runtimeState.status !== "ready" &&
+          runtimeState.status !== "finished") ||
+        isMoving
       ) {
         return;
       }
@@ -414,12 +513,21 @@ export function useNativeReaderController(
       }
 
       setActionError(null);
+      setIsMoving(true);
       setBranchFlags((currentValue) => ({
         ...currentValue,
         [getDressBranchFlagKey(speaker.characterId)]: optionKey
       }));
+
+      try {
+        await advanceFromRuntimeState(runtimeState);
+      } catch (error) {
+        setActionError(getErrorMessage(error, "Unable to advance the story."));
+      } finally {
+        setIsMoving(false);
+      }
     },
-    [runtimeState]
+    [advanceFromRuntimeState, isMoving, runtimeState]
   );
 
   const submitCatName = useCallback(async () => {
@@ -446,14 +554,28 @@ export function useNativeReaderController(
           catNameLocked: true
         })
       );
+
+      if (
+        runtimeState.status === "ready" ||
+        runtimeState.status === "finished"
+      ) {
+        setIsMoving(true);
+        await advanceFromRuntimeState(runtimeState);
+      }
     } catch (error) {
       setCatNameInputError(
         getErrorMessage(error, "Unable to save the cat name.")
       );
     } finally {
+      setIsMoving(false);
       setIsSavingCatName(false);
     }
-  }, [catNameInputValue, onUpdateCatName]);
+  }, [
+    advanceFromRuntimeState,
+    catNameInputValue,
+    onUpdateCatName,
+    runtimeState
+  ]);
 
   const advance = useCallback(async () => {
     if (
@@ -519,81 +641,7 @@ export function useNativeReaderController(
     setActionError(null);
 
     try {
-      const result = await advanceRuntimePosition({
-        manifest: runtimeState.manifest,
-        bundle: runtimeState.bundle,
-        state: runtimeState.readerState,
-        loadChapter: repository.loadChapter
-      });
-
-      if (result.type === "story-finished") {
-        const nextBoundaryState = createBoundaryStateForAdvance({
-          manifest: runtimeState.manifest,
-          currentChapter: runtimeState.bundle.chapter,
-          action: {
-            type: "story-finished"
-          }
-        });
-
-        setRuntimeState({
-          status: "finished",
-          manifest: runtimeState.manifest,
-          bundle: runtimeState.bundle,
-          readerState: {
-            ...runtimeState.readerState,
-            isChapterComplete: true
-          }
-        });
-        setBoundaryState(nextBoundaryState);
-        return;
-      }
-
-      if (result.type === "chapter-break") {
-        const nextBoundaryState = createBoundaryStateForAdvance({
-          manifest: runtimeState.manifest,
-          currentChapter: runtimeState.bundle.chapter,
-          action: {
-            type: "chapter-break",
-            nextChapter: result.bundle.chapter
-          }
-        });
-
-        setRuntimeState({
-          status: "ready",
-          manifest: runtimeState.manifest,
-          bundle: result.bundle,
-          readerState: result.state
-        });
-        setBoundaryState(nextBoundaryState);
-        return;
-      }
-
-      if (result.type === "scene-transition") {
-        setRuntimeState({
-          status: "ready",
-          manifest: runtimeState.manifest,
-          bundle: runtimeState.bundle,
-          readerState: result.state
-        });
-        setBoundaryState(
-          createBoundaryStateForAdvance({
-            manifest: runtimeState.manifest,
-            currentChapter: runtimeState.bundle.chapter,
-            action: {
-              type: "scene-transition"
-            }
-          })
-        );
-        return;
-      }
-
-      setRuntimeState({
-        status: "ready",
-        manifest: runtimeState.manifest,
-        bundle: runtimeState.bundle,
-        readerState: result.state
-      });
-      setBoundaryState(null);
+      await advanceFromRuntimeState(runtimeState);
     } catch (error) {
       setActionError(getErrorMessage(error, "Unable to advance the story."));
     } finally {
@@ -601,9 +649,9 @@ export function useNativeReaderController(
     }
   }, [
     boundaryState,
+    advanceFromRuntimeState,
     isMoving,
     presentation,
-    repository.loadChapter,
     runtimeState
   ]);
 

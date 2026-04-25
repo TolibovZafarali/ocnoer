@@ -1,22 +1,20 @@
+import { useEffect, useMemo, useState } from "react";
 import {
-  Image,
-  ScrollView,
+  ActivityIndicator,
+  Pressable,
   StyleSheet,
   Text,
   View,
   type ViewStyle
 } from "react-native";
+import { SvgUri } from "react-native-svg";
 
 import type {
   NativeReaderDressOption,
   NativeReaderPresentation
 } from "../readerPresentation";
-import {
-  OcnoerButton,
-  OcnoerSurface,
-  OcnoerTextInput
-} from "../../ui/primitives";
-import { ocnoerTheme } from "../../ui/theme";
+import { OcnoerSurface, OcnoerTextInput } from "../../ui/primitives";
+import { ocnoerTheme, ocnoerWebPlayer } from "../../ui/theme";
 
 type ReaderDialogueProps = {
   presentation: NativeReaderPresentation;
@@ -26,9 +24,7 @@ type ReaderDialogueProps = {
   catNameInputError: string | null;
   isSavingCatName: boolean;
   isMoving: boolean;
-  canRetreat: boolean;
   onAdvance: () => void;
-  onRetreat: () => void;
   onSelectDressOption: (optionKey: string) => void;
   onSubmitCatName: () => void;
   onCatNameInputChange: (value: string) => void;
@@ -39,28 +35,29 @@ function getDialogueCardPositionStyle(
 ): ViewStyle {
   if (presentation.dialogueCardPlacement === "speaker-left") {
     return {
-      left: "38%",
-      right: ocnoerTheme.spacing.md
+      left: "48%",
+      right: ocnoerWebPlayer.dialogueCard.sideInset
     };
   }
 
   if (presentation.dialogueCardPlacement === "speaker-right") {
     return {
-      left: ocnoerTheme.spacing.md,
-      right: "38%"
+      left: ocnoerWebPlayer.dialogueCard.sideInset,
+      right: "48%"
     };
   }
 
   if (presentation.dialogueCardPlacement === "cat-name") {
     return {
-      left: ocnoerTheme.spacing.md,
-      right: "22%"
+      left: ocnoerWebPlayer.dialogueCard.sideInset,
+      maxWidth: ocnoerWebPlayer.dialogueCard.catNameMaxWidth,
+      width: "92%"
     };
   }
 
   return {
-    left: ocnoerTheme.spacing.md,
-    right: ocnoerTheme.spacing.md
+    left: ocnoerWebPlayer.dialogueCard.sideInset,
+    right: ocnoerWebPlayer.dialogueCard.sideInset
   };
 }
 
@@ -97,71 +94,80 @@ function SpeakerLabel(props: { presentation: NativeReaderPresentation }) {
 
 function DressOptionCard(props: {
   option: NativeReaderDressOption;
-  selected: boolean;
   onPress: () => void;
 }) {
   return (
-    <View style={styles.dressOptionWrap}>
-      <OcnoerButton
-        accessibilityLabel={`Choose ${props.option.label}`}
-        label=""
-        onPress={props.onPress}
-        style={[
-          styles.dressPreviewButton,
-          props.selected ? styles.dressOptionSelected : null
-        ]}
-        variant="secondary"
-      />
-      <View pointerEvents="none" style={styles.dressPreviewContent}>
-        {props.option.previewImageUrl ? (
-          <Image
-            accessibilityIgnoresInvertColors
-            resizeMode="contain"
-            source={{ uri: props.option.previewImageUrl }}
-            style={styles.dressPreview}
-          />
-        ) : (
-          <View style={styles.emptyDressPreview}>
-            <Text style={styles.emptyDressPreviewText}>No preview</Text>
-          </View>
-        )}
-      </View>
-      <Text numberOfLines={2} style={styles.dressOptionText}>
-        {props.option.label}
-      </Text>
-    </View>
+    <Pressable
+      accessibilityLabel={`Choose ${props.option.label}`}
+      accessibilityRole="button"
+      onPress={props.onPress}
+      style={({ pressed }) => [
+        styles.dressPreviewButton,
+        pressed ? styles.pressed : null
+      ]}
+    >
+      {props.option.previewImageUrl ? (
+        <SvgUri
+          height="100%"
+          preserveAspectRatio="xMidYMid meet"
+          uri={props.option.previewImageUrl}
+          width="100%"
+        />
+      ) : (
+        <View style={styles.emptyDressPreview}>
+          <Text style={styles.emptyDressPreviewText}>No preview</Text>
+        </View>
+      )}
+    </Pressable>
   );
 }
 
-export function ReaderActions(props: {
+function ContinueArrow(props: {
   canAdvance: boolean;
-  canRetreat: boolean;
   isMoving: boolean;
   onAdvance: () => void;
-  onRetreat: () => void;
 }) {
   return (
-    <View style={styles.actions}>
-      <OcnoerButton
-        disabled={!props.canRetreat || props.isMoving}
-        label="Back"
-        onPress={props.onRetreat}
-        style={styles.actionButton}
-        variant="ghost"
-      />
-      <OcnoerButton
+    <View style={styles.continueSlot}>
+      <Pressable
+        accessibilityLabel={props.isMoving ? "Loading next line" : "Continue"}
+        accessibilityRole="button"
         disabled={!props.canAdvance || props.isMoving}
-        label={props.isMoving ? "Loading" : "Next"}
-        loading={props.isMoving}
         onPress={props.onAdvance}
-        style={styles.actionButton}
-      />
+        style={({ pressed }) => [
+          styles.continueButton,
+          !props.canAdvance || props.isMoving ? styles.disabled : null,
+          pressed && props.canAdvance && !props.isMoving ? styles.pressed : null
+        ]}
+      >
+        {props.isMoving ? (
+          <ActivityIndicator color={ocnoerTheme.colors.text} size="small" />
+        ) : (
+          <Text style={styles.continueText}>{"\u2192"}</Text>
+        )}
+      </Pressable>
     </View>
   );
 }
 
 export function NativeReaderDialogue(props: ReaderDialogueProps) {
   const cardPosition = getDialogueCardPositionStyle(props.presentation);
+  const [dressIndex, setDressIndex] = useState(0);
+  const selectedDressOption = useMemo(() => {
+    if (props.presentation.status !== "supported") {
+      return null;
+    }
+
+    return (
+      props.presentation.dressOptions[
+        Math.min(dressIndex, props.presentation.dressOptions.length - 1)
+      ] ?? null
+    );
+  }, [dressIndex, props.presentation]);
+
+  useEffect(() => {
+    setDressIndex(0);
+  }, [props.presentation.dialogueEntryId]);
 
   if (props.presentation.status === "unsupported") {
     return (
@@ -174,26 +180,20 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
         <Text style={styles.metaText}>
           Entry {props.presentation.dialogueEntryId}
         </Text>
-        <ReaderActions
+        <ContinueArrow
           canAdvance={false}
-          canRetreat={props.canRetreat}
           isMoving={props.isMoving}
           onAdvance={props.onAdvance}
-          onRetreat={props.onRetreat}
         />
       </OcnoerSurface>
     );
   }
 
-  const canAdvance =
-    !props.presentation.needsCatNameInput &&
-    !props.presentation.needsDressSelection &&
-    !props.isMoving;
-  const selectedDressOptionKey = props.presentation.selectedDressOptionKey;
-  const isDressPrompt = props.presentation.entryType === "dress_prompt";
+  const supportedPresentation = props.presentation;
+  const isDressPrompt = supportedPresentation.entryType === "dress_prompt";
   const shouldShowDialogueText =
-    props.presentation.dialogueText.length > 0 &&
-    !props.presentation.needsCatNameInput;
+    supportedPresentation.dialogueText.length > 0 &&
+    !supportedPresentation.needsCatNameInput;
 
   return (
     <OcnoerSurface style={[styles.dialogueCard, cardPosition]} variant="glass">
@@ -203,11 +203,11 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
         <Text
           style={isDressPrompt ? styles.dressPromptText : styles.dialogueText}
         >
-          {props.presentation.dialogueText}
+          {supportedPresentation.dialogueText}
         </Text>
       ) : null}
 
-      {props.presentation.needsCatNameInput ? (
+      {supportedPresentation.needsCatNameInput ? (
         <View style={styles.promptBlock}>
           <OcnoerTextInput
             autoCapitalize="words"
@@ -221,33 +221,68 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
           {props.catNameInputError ? (
             <Text style={styles.errorText}>{props.catNameInputError}</Text>
           ) : null}
-          <OcnoerButton
-            disabled={props.isSavingCatName}
-            label={props.isSavingCatName ? "Saving" : "Save Name"}
-            loading={props.isSavingCatName}
-            onPress={props.onSubmitCatName}
-            style={styles.promptButton}
-          />
         </View>
       ) : null}
 
-      {props.presentation.dressOptions.length > 0 ? (
-        <View style={styles.promptBlock}>
-          <Text style={styles.promptEyebrow}>Choose Outfit</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            style={styles.dressScroll}
-          >
-            {props.presentation.dressOptions.map((option) => (
+      {isDressPrompt && selectedDressOption ? (
+        <View style={styles.dressPromptBlock}>
+          <View style={styles.dressCarousel}>
+            <Pressable
+              accessibilityLabel="Previous dress option"
+              accessibilityRole="button"
+              disabled={supportedPresentation.dressOptions.length <= 1}
+              onPress={() => {
+                setDressIndex((currentIndex) =>
+                  currentIndex <= 0
+                    ? supportedPresentation.dressOptions.length - 1
+                    : currentIndex - 1
+                );
+              }}
+              style={({ pressed }) => [
+                styles.dressArrow,
+                supportedPresentation.dressOptions.length <= 1
+                  ? styles.disabled
+                  : null,
+                pressed ? styles.pressed : null
+              ]}
+            >
+              <Text style={styles.dressArrowText}>{"\u2190"}</Text>
+            </Pressable>
+
+            <View style={styles.dressPreviewWrap}>
               <DressOptionCard
-                key={option.key}
-                option={option}
-                selected={option.key === selectedDressOptionKey}
-                onPress={() => props.onSelectDressOption(option.key)}
+                option={selectedDressOption}
+                onPress={() =>
+                  props.onSelectDressOption(selectedDressOption.key)
+                }
               />
-            ))}
-          </ScrollView>
+              <Text style={styles.dressCounter}>
+                {dressIndex + 1} of {supportedPresentation.dressOptions.length}
+              </Text>
+            </View>
+
+            <Pressable
+              accessibilityLabel="Next dress option"
+              accessibilityRole="button"
+              disabled={supportedPresentation.dressOptions.length <= 1}
+              onPress={() => {
+                setDressIndex((currentIndex) =>
+                  currentIndex >= supportedPresentation.dressOptions.length - 1
+                    ? 0
+                    : currentIndex + 1
+                );
+              }}
+              style={({ pressed }) => [
+                styles.dressArrow,
+                supportedPresentation.dressOptions.length <= 1
+                  ? styles.disabled
+                  : null,
+                pressed ? styles.pressed : null
+              ]}
+            >
+              <Text style={styles.dressArrowText}>{"\u2192"}</Text>
+            </Pressable>
+          </View>
         </View>
       ) : null}
 
@@ -258,22 +293,29 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
         <Text style={styles.warningText}>{props.persistenceError}</Text>
       ) : null}
 
-      <ReaderActions
-        canAdvance={canAdvance}
-        canRetreat={props.canRetreat}
-        isMoving={props.isMoving}
-        onAdvance={props.onAdvance}
-        onRetreat={props.onRetreat}
-      />
+      {!isDressPrompt ? (
+        <ContinueArrow
+          canAdvance={!props.isMoving}
+          isMoving={props.isMoving || props.isSavingCatName}
+          onAdvance={() => {
+            if (supportedPresentation.needsCatNameInput) {
+              props.onSubmitCatName();
+              return;
+            }
+
+            props.onAdvance();
+          }}
+        />
+      ) : null}
     </OcnoerSurface>
   );
 }
 
 const styles = StyleSheet.create({
   dialogueCard: {
-    bottom: ocnoerTheme.spacing.md,
-    maxHeight: "52%",
-    padding: ocnoerTheme.spacing.xl,
+    bottom: ocnoerWebPlayer.dialogueCard.bottomInset,
+    maxHeight: "64%",
+    padding: ocnoerWebPlayer.dialogueCard.padding,
     position: "absolute",
     zIndex: 20
   },
@@ -311,35 +353,46 @@ const styles = StyleSheet.create({
   promptBlock: {
     marginTop: ocnoerTheme.spacing.lg
   },
-  promptButton: {
-    marginTop: ocnoerTheme.spacing.md
+  dressPromptBlock: {
+    marginTop: ocnoerTheme.spacing.xl
   },
-  dressScroll: {
-    marginHorizontal: -ocnoerTheme.spacing.xs
+  dressCarousel: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: ocnoerTheme.spacing.sm,
+    justifyContent: "center"
   },
-  dressOptionWrap: {
-    marginHorizontal: ocnoerTheme.spacing.xs,
-    width: 118
+  dressArrow: {
+    alignItems: "center",
+    backgroundColor: "rgba(0, 0, 0, 0.25)",
+    borderColor: "rgba(255, 255, 255, 0.15)",
+    borderRadius: ocnoerTheme.radii.pill,
+    borderWidth: 1,
+    height: 40,
+    justifyContent: "center",
+    width: 40
+  },
+  dressArrowText: {
+    color: ocnoerTheme.colors.text,
+    fontSize: 18,
+    fontWeight: "800",
+    lineHeight: 22
+  },
+  dressPreviewWrap: {
+    alignItems: "center",
+    maxWidth: ocnoerWebPlayer.dialogueCard.promptPreviewMaxWidth,
+    width: "58%"
   },
   dressPreviewButton: {
+    alignItems: "center",
+    aspectRatio: 4 / 5,
+    backgroundColor: "rgba(255, 255, 255, 0.05)",
+    borderColor: ocnoerTheme.colors.border,
     borderRadius: ocnoerTheme.radii.lg,
-    height: 134,
-    paddingHorizontal: 0
-  },
-  dressOptionSelected: {
-    backgroundColor: "rgba(255, 255, 255, 0.12)",
-    borderColor: ocnoerTheme.colors.borderFocus
-  },
-  dressPreviewContent: {
-    height: 134,
-    left: 0,
+    borderWidth: 1,
+    justifyContent: "center",
+    overflow: "hidden",
     padding: ocnoerTheme.spacing.sm,
-    position: "absolute",
-    right: 0,
-    top: 0
-  },
-  dressPreview: {
-    height: "100%",
     width: "100%"
   },
   emptyDressPreview: {
@@ -347,32 +400,40 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.24)",
     borderRadius: ocnoerTheme.radii.md,
     flex: 1,
-    justifyContent: "center"
+    justifyContent: "center",
+    width: "100%"
   },
   emptyDressPreviewText: {
     color: ocnoerTheme.colors.textSubtle,
     fontSize: 12,
     fontWeight: "700"
   },
-  dressOptionText: {
-    color: ocnoerTheme.colors.text,
+  dressCounter: {
+    color: ocnoerTheme.colors.textSubtle,
     fontSize: 12,
-    fontWeight: "800",
     lineHeight: 16,
     marginTop: ocnoerTheme.spacing.sm,
     textAlign: "center"
   },
-  actions: {
+  continueSlot: {
     alignItems: "center",
     flexDirection: "row",
-    gap: ocnoerTheme.spacing.sm,
+    height: 36,
     justifyContent: "flex-end",
     marginTop: ocnoerTheme.spacing.xl
   },
-  actionButton: {
-    minHeight: 42,
-    minWidth: 88,
-    paddingHorizontal: ocnoerTheme.spacing.lg
+  continueButton: {
+    alignItems: "center",
+    borderRadius: ocnoerTheme.radii.pill,
+    height: 36,
+    justifyContent: "center",
+    width: 36
+  },
+  continueText: {
+    color: ocnoerTheme.colors.text,
+    fontSize: 24,
+    fontWeight: "700",
+    lineHeight: 28
   },
   body: {
     ...ocnoerTheme.text.body,
@@ -400,5 +461,11 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     marginTop: ocnoerTheme.spacing.md
+  },
+  pressed: {
+    opacity: ocnoerTheme.opacity.pressed
+  },
+  disabled: {
+    opacity: ocnoerTheme.opacity.disabled
   }
 });

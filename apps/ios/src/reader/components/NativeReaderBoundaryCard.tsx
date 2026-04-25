@@ -1,8 +1,8 @@
-import { StyleSheet, Text, View } from "react-native";
+import { Pressable, StyleSheet, Text, View } from "react-native";
 
 import type { NativeReaderBoundaryPresentation } from "../boundaryPresentation";
 import { OcnoerButton, OcnoerSurface, OcnoerPill } from "../../ui/primitives";
-import { ocnoerTheme } from "../../ui/theme";
+import { ocnoerTheme, ocnoerWebPlayer } from "../../ui/theme";
 import { FadeInView } from "./NativeCinematic";
 
 type NativeReaderBoundaryCardProps = {
@@ -10,27 +10,17 @@ type NativeReaderBoundaryCardProps = {
   actionError: string | null;
   persistenceError: string | null;
   isMoving: boolean;
-  canRetreat: boolean;
   onAdvance: () => void;
-  onRetreat: () => void;
+  onRevealChrome?: () => void;
 };
 
 function BoundaryActions(props: {
   primaryActionLabel: string | null;
-  canRetreat: boolean;
   isMoving: boolean;
   onAdvance: () => void;
-  onRetreat: () => void;
 }) {
   return (
     <View style={styles.actions}>
-      <OcnoerButton
-        disabled={!props.canRetreat || props.isMoving}
-        label="Back"
-        onPress={props.onRetreat}
-        style={styles.actionButton}
-        variant="ghost"
-      />
       {props.primaryActionLabel ? (
         <OcnoerButton
           disabled={props.isMoving}
@@ -45,10 +35,32 @@ function BoundaryActions(props: {
 }
 
 export function NativeReaderBoundaryCard(props: NativeReaderBoundaryCardProps) {
+  if (props.boundary.type === "scene-transition") {
+    return (
+      <Pressable
+        accessibilityLabel="Continue scene transition"
+        accessibilityRole="button"
+        disabled={props.isMoving}
+        onPress={props.onAdvance}
+        style={styles.transitionCard}
+      />
+    );
+  }
+
+  if (props.boundary.type === "story-finished") {
+    return (
+      <Pressable
+        accessibilityLabel="Story finished"
+        accessibilityRole="button"
+        onPress={props.onRevealChrome}
+        style={styles.storyFinishedCard}
+      />
+    );
+  }
+
   const isChapterCard =
     props.boundary.type === "chapter-opening-card" ||
-    props.boundary.type === "chapter-ending-card" ||
-    props.boundary.type === "story-finished";
+    props.boundary.type === "chapter-ending-card";
 
   if (isChapterCard) {
     return (
@@ -57,27 +69,21 @@ export function NativeReaderBoundaryCard(props: NativeReaderBoundaryCardProps) {
         durationMs={ocnoerTheme.motion.stageFadeMs}
         style={styles.fullCardWrap}
       >
-        <View style={styles.fullCard}>
+        <Pressable
+          accessibilityLabel={props.boundary.eyebrow}
+          accessibilityRole="button"
+          disabled={props.isMoving || !props.boundary.primaryActionLabel}
+          onPress={props.onAdvance}
+          style={styles.fullCard}
+        >
           <Text style={styles.chapterCardText}>{props.boundary.body}</Text>
-          {props.boundary.meta ? (
-            <OcnoerPill style={styles.metaPill}>
-              <Text style={styles.metaPillText}>{props.boundary.meta}</Text>
-            </OcnoerPill>
-          ) : null}
           {props.actionError ? (
             <Text style={styles.errorText}>{props.actionError}</Text>
           ) : null}
           {props.persistenceError ? (
             <Text style={styles.warningText}>{props.persistenceError}</Text>
           ) : null}
-          <BoundaryActions
-            canRetreat={props.canRetreat}
-            isMoving={props.isMoving}
-            primaryActionLabel={props.boundary.primaryActionLabel}
-            onAdvance={props.onAdvance}
-            onRetreat={props.onRetreat}
-          />
-        </View>
+        </Pressable>
       </FadeInView>
     );
   }
@@ -110,11 +116,9 @@ export function NativeReaderBoundaryCard(props: NativeReaderBoundaryCardProps) {
         ) : null}
 
         <BoundaryActions
-          canRetreat={props.canRetreat}
           isMoving={props.isMoving}
           primaryActionLabel={props.boundary.primaryActionLabel}
           onAdvance={props.onAdvance}
-          onRetreat={props.onRetreat}
         />
       </OcnoerSurface>
     </FadeInView>
@@ -125,19 +129,21 @@ const styles = StyleSheet.create({
   fullCardWrap: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: ocnoerTheme.colors.black,
-    justifyContent: "center",
-    padding: ocnoerTheme.spacing.xxl,
     zIndex: 30
   },
   fullCard: {
-    alignItems: "center"
+    alignItems: "center",
+    flex: 1,
+    justifyContent: "center",
+    padding: ocnoerTheme.spacing.xxl
   },
   chapterCardText: {
     color: ocnoerTheme.colors.text,
-    fontFamily: ocnoerTheme.typography.family.script,
-    fontSize: 26,
-    lineHeight: 44,
-    maxWidth: 420,
+    fontFamily: ocnoerTheme.typography.family.chapterCard,
+    fontSize: ocnoerTheme.typography.size.chapterCard,
+    letterSpacing: 0.2,
+    lineHeight: ocnoerTheme.typography.lineHeight.chapterCard,
+    maxWidth: ocnoerTheme.stage.chapterCardMaxWidth,
     textAlign: "center"
   },
   metaPill: {
@@ -150,12 +156,16 @@ const styles = StyleSheet.create({
   },
   boundaryWrap: {
     ...StyleSheet.absoluteFillObject,
-    justifyContent: "center",
-    padding: ocnoerTheme.spacing.lg,
+    justifyContent: "flex-start",
+    padding: ocnoerTheme.spacing.md,
+    paddingTop: ocnoerTheme.spacing.md,
     zIndex: 28
   },
   boundaryPanel: {
-    padding: ocnoerTheme.spacing.xl
+    backgroundColor: ocnoerWebPlayer.boundaryCard.backgroundColor,
+    borderColor: ocnoerWebPlayer.boundaryCard.borderColor,
+    borderRadius: ocnoerWebPlayer.boundaryCard.borderRadius,
+    padding: ocnoerWebPlayer.boundaryCard.padding
   },
   boundaryHeader: {
     alignItems: "flex-start",
@@ -188,6 +198,16 @@ const styles = StyleSheet.create({
   },
   actionButton: {
     minWidth: 104
+  },
+  transitionCard: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: ocnoerTheme.colors.black,
+    zIndex: 30
+  },
+  storyFinishedCard: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: ocnoerTheme.colors.black,
+    zIndex: 30
   },
   errorText: {
     color: ocnoerTheme.colors.rose,

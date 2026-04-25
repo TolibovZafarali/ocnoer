@@ -1,16 +1,23 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import type { ReactNode } from "react";
 import {
   ActivityIndicator,
+  Animated,
+  Easing,
   Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
+  type StyleProp,
+  type ViewStyle,
   useWindowDimensions,
   View
 } from "react-native";
+import Svg, { Path } from "react-native-svg";
 
 import {
   validateCatNameInput,
@@ -18,28 +25,23 @@ import {
 } from "@ocnoer/story-core";
 
 import type { MobilePlayer } from "../api/playerSessionTypes";
-import { AudioStatusPanel } from "../audio/AudioControls";
 import { resolveNativeReaderBackgroundMusicCue } from "../audio/nativeBackgroundMusicCue";
 import { useNativeBackgroundMusic } from "../audio/useNativeBackgroundMusic";
 import type { MobileRuntimeConfig } from "../config/runtime";
 import { NativeReaderBoundaryCard } from "../reader/components/NativeReaderBoundaryCard";
-import {
-  BlackoutOverlay,
-  FadeInView
-} from "../reader/components/NativeCinematic";
+import { BlackoutOverlay } from "../reader/components/NativeCinematic";
 import { NativeReaderDialogue } from "../reader/components/NativeReaderDialogue";
 import { NativeReaderStage } from "../reader/components/NativeReaderStage";
 import { useReaderImagePreload } from "../reader/imagePreload";
 import { useNativeReaderController } from "../reader/useNativeReaderController";
 import type { NativeAudioPreferences } from "../storage/audioPreferenceStorage";
-import {
-  OcnoerButton,
-  OcnoerIconButton,
-  OcnoerSurface
-} from "../ui/primitives";
+import { OcnoerButton, OcnoerSurface } from "../ui/primitives";
 import { ocnoerTheme, ocnoerWebPlayer } from "../ui/theme";
 
 const worldMapImage = require("../../../../lore/world-map.jpg") as number;
+const MAP_MIN_ZOOM_SCALE = 1;
+const MAP_MAX_ZOOM_SCALE = 3;
+const MAP_OVERLAY_PADDING = ocnoerTheme.spacing.md;
 
 type ReaderScreenProps = {
   bootstrap: PlayerRuntimeBootstrap;
@@ -47,8 +49,10 @@ type ReaderScreenProps = {
   player: MobilePlayer;
   sessionToken: string;
   audioPreferences: NativeAudioPreferences;
+  isSigningOut: boolean;
   onBackHome: () => void;
   onProgressSaved: () => void;
+  onSignOut: () => void;
   onToggleAudioMuted: () => void;
   onUpdateCatName: (catName: string) => Promise<void>;
 };
@@ -59,69 +63,330 @@ function waitForDuration(durationMs: number) {
   });
 }
 
+function PreviousDialogueIcon() {
+  return (
+    <Svg fill="none" height={26} viewBox="0 0 24 24" width={26}>
+      <Path
+        d="M19 12H5"
+        stroke={ocnoerWebPlayer.chrome.iconColor}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2.2}
+      />
+      <Path
+        d="m12 19-7-7 7-7"
+        stroke={ocnoerWebPlayer.chrome.iconColor}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2.2}
+      />
+    </Svg>
+  );
+}
+
+function MapIcon() {
+  return (
+    <Svg fill="none" height={26} viewBox="0 0 24 24" width={26}>
+      <Path
+        d="m9 18-6 3V6l6-3 6 3 6-3v15l-6 3-6-3Z"
+        stroke={ocnoerWebPlayer.chrome.iconColor}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+      />
+      <Path
+        d="M9 3v15"
+        stroke={ocnoerWebPlayer.chrome.iconColor}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+      />
+      <Path
+        d="M15 6v15"
+        stroke={ocnoerWebPlayer.chrome.iconColor}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+      />
+    </Svg>
+  );
+}
+
+function SignOutIcon() {
+  return (
+    <Svg fill="none" height={26} viewBox="0 0 24 24" width={26}>
+      <Path
+        d="M10 17l5-5-5-5"
+        stroke={ocnoerWebPlayer.chrome.iconColor}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2.2}
+      />
+      <Path
+        d="M15 12H3"
+        stroke={ocnoerWebPlayer.chrome.iconColor}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2.2}
+      />
+      <Path
+        d="M21 5v14a2 2 0 0 1-2 2h-6"
+        stroke={ocnoerWebPlayer.chrome.iconColor}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+      />
+      <Path
+        d="M13 3h6a2 2 0 0 1 2 2"
+        stroke={ocnoerWebPlayer.chrome.iconColor}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+      />
+    </Svg>
+  );
+}
+
+function AudioIcon(props: { muted: boolean }) {
+  return (
+    <Svg fill="none" height={26} viewBox="0 0 24 24" width={26}>
+      <Path
+        d="M11 5 6 9H3v6h3l5 4V5Z"
+        stroke={ocnoerWebPlayer.chrome.iconColor}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+      />
+      {props.muted ? (
+        <>
+          <Path
+            d="m19 9-5 5"
+            stroke={ocnoerWebPlayer.chrome.iconColor}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2.2}
+          />
+          <Path
+            d="m14 9 5 5"
+            stroke={ocnoerWebPlayer.chrome.iconColor}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2.2}
+          />
+        </>
+      ) : (
+        <>
+          <Path
+            d="M15 9.5a4 4 0 0 1 0 5"
+            stroke={ocnoerWebPlayer.chrome.iconColor}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+          />
+          <Path
+            d="M18 7a8 8 0 0 1 0 10"
+            stroke={ocnoerWebPlayer.chrome.iconColor}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            strokeWidth={2}
+          />
+        </>
+      )}
+    </Svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <Svg fill="none" height={30} viewBox="0 0 24 24" width={30}>
+      <Path
+        d="m18 6-12 12"
+        stroke={ocnoerWebPlayer.chrome.iconColor}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2.3}
+      />
+      <Path
+        d="m6 6 12 12"
+        stroke={ocnoerWebPlayer.chrome.iconColor}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2.3}
+      />
+    </Svg>
+  );
+}
+
+function ReaderIconButton(props: {
+  accessibilityLabel: string;
+  disabled?: boolean;
+  icon: ReactNode;
+  onPress: () => void;
+  style?: StyleProp<ViewStyle>;
+}) {
+  return (
+    <Pressable
+      accessibilityLabel={props.accessibilityLabel}
+      accessibilityRole="button"
+      disabled={props.disabled}
+      hitSlop={8}
+      onPress={props.onPress}
+      style={({ pressed }) => [
+        styles.chromeIcon,
+        props.disabled ? styles.chromeIconDisabled : null,
+        pressed && !props.disabled ? styles.chromeIconPressed : null,
+        props.style
+      ]}
+    >
+      {props.icon}
+    </Pressable>
+  );
+}
+
 function ReaderChrome(props: {
   audioPreferences: NativeAudioPreferences;
-  audioStatus: ReturnType<typeof useNativeBackgroundMusic>;
   canRetreat: boolean;
-  onBackHome: () => void;
+  isSigningOut: boolean;
   onOpenMap: () => void;
   onRetreat: () => void;
+  onSignOut: () => void;
   onToggleAudioMuted: () => void;
 }) {
   return (
     <View pointerEvents="box-none" style={styles.chrome}>
-      <OcnoerIconButton
+      <ReaderIconButton
         accessibilityLabel="Previous dialogue"
         disabled={!props.canRetreat}
-        label="←"
+        icon={<PreviousDialogueIcon />}
         onPress={props.onRetreat}
-        style={styles.chromeIcon}
       />
       <View pointerEvents="box-none" style={styles.chromeRight}>
-        <OcnoerIconButton
+        <ReaderIconButton
           accessibilityLabel="Open world map"
-          label="⌖"
+          icon={<MapIcon />}
           onPress={props.onOpenMap}
-          style={styles.chromeIcon}
         />
-        <AudioStatusPanel
-          compact
-          preferences={props.audioPreferences}
-          status={props.audioStatus}
-          onToggleMuted={props.onToggleAudioMuted}
+        <ReaderIconButton
+          accessibilityLabel={
+            props.audioPreferences.muted
+              ? "Unmute background music"
+              : "Mute background music"
+          }
+          icon={<AudioIcon muted={props.audioPreferences.muted} />}
+          onPress={props.onToggleAudioMuted}
         />
-        <OcnoerIconButton
-          accessibilityLabel="Return home"
-          label="⌂"
-          onPress={props.onBackHome}
-          style={styles.chromeIcon}
-          textStyle={styles.chromeHomeText}
+        <ReaderIconButton
+          accessibilityLabel="Sign out"
+          disabled={props.isSigningOut}
+          icon={<SignOutIcon />}
+          onPress={props.onSignOut}
         />
       </View>
     </View>
   );
 }
 
+function ReaderChromeLayer(props: {
+  audioPreferences: NativeAudioPreferences;
+  canRetreat: boolean;
+  isSigningOut: boolean;
+  visible: boolean;
+  onOpenMap: () => void;
+  onRetreat: () => void;
+  onSignOut: () => void;
+  onToggleAudioMuted: () => void;
+}) {
+  const progress = useRef(new Animated.Value(props.visible ? 1 : 0)).current;
+  const translateY = progress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-32, 0]
+  });
+
+  useEffect(() => {
+    const animation = Animated.timing(progress, {
+      toValue: props.visible ? 1 : 0,
+      duration: ocnoerTheme.motion.lineExitMs,
+      easing: props.visible
+        ? Easing.out(Easing.cubic)
+        : Easing.in(Easing.cubic),
+      useNativeDriver: true
+    });
+
+    animation.start();
+
+    return () => {
+      animation.stop();
+    };
+  }, [progress, props.visible]);
+
+  return (
+    <Animated.View
+      pointerEvents={props.visible ? "box-none" : "none"}
+      style={[
+        styles.chromeWrap,
+        {
+          opacity: progress,
+          transform: [{ translateY }]
+        }
+      ]}
+    >
+      <SafeAreaView pointerEvents="box-none" style={styles.chromeSafeArea}>
+        <ReaderChrome
+          audioPreferences={props.audioPreferences}
+          canRetreat={props.canRetreat}
+          isSigningOut={props.isSigningOut}
+          onOpenMap={props.onOpenMap}
+          onRetreat={props.onRetreat}
+          onSignOut={props.onSignOut}
+          onToggleAudioMuted={props.onToggleAudioMuted}
+        />
+      </SafeAreaView>
+    </Animated.View>
+  );
+}
+
 function WorldMapOverlay(props: { onClose: () => void }) {
+  const dimensions = useWindowDimensions();
+  const mapViewportSize = {
+    height: Math.max(dimensions.height - MAP_OVERLAY_PADDING * 2, 1),
+    width: Math.max(dimensions.width - MAP_OVERLAY_PADDING * 2, 1)
+  };
+
   return (
     <View accessibilityViewIsModal style={styles.mapOverlay}>
-      <View style={styles.mapStage}>
+      <ScrollView
+        bounces={false}
+        bouncesZoom={false}
+        centerContent
+        contentContainerStyle={styles.mapZoomContentContainer}
+        maximumZoomScale={MAP_MAX_ZOOM_SCALE}
+        minimumZoomScale={MAP_MIN_ZOOM_SCALE}
+        scrollEventThrottle={16}
+        showsHorizontalScrollIndicator={false}
+        showsVerticalScrollIndicator={false}
+        style={styles.mapZoomScroll}
+      >
+        <View style={[styles.mapZoomContent, mapViewportSize]}>
+          <Image
+            accessibilityIgnoresInvertColors
+            accessibilityLabel="Ocnoer world map"
+            resizeMode="contain"
+            source={worldMapImage}
+            style={styles.mapImage}
+          />
+        </View>
+      </ScrollView>
+      <SafeAreaView pointerEvents="box-none" style={styles.mapCloseSafeArea}>
         <Pressable
           accessibilityLabel="Close world map"
           accessibilityRole="button"
+          hitSlop={8}
           onPress={props.onClose}
           style={styles.mapCloseButton}
         >
-          <Text style={styles.mapCloseText}>×</Text>
+          <CloseIcon />
         </Pressable>
-        <Image
-          accessibilityIgnoresInvertColors
-          accessibilityLabel="Ocnoer world map"
-          resizeMode="contain"
-          source={worldMapImage}
-          style={styles.mapImage}
-        />
-      </View>
+      </SafeAreaView>
     </View>
   );
 }
@@ -194,7 +459,7 @@ export function ReaderScreen(props: ReaderScreenProps) {
       boundaryState: reader.boundaryState
     });
   }, [props.config.supabaseUrl, reader.boundaryState, reader.state]);
-  const audioStatus = useNativeBackgroundMusic({
+  useNativeBackgroundMusic({
     cue: backgroundMusicCue,
     preferences: props.audioPreferences
   });
@@ -253,10 +518,10 @@ export function ReaderScreen(props: ReaderScreenProps) {
 
     void runWithLineExit(reader.submitCatName);
   }, [reader.catNameInputValue, reader.submitCatName, runWithLineExit]);
-  const handleBackHome = useCallback(() => {
+  const handleSignOut = useCallback(() => {
     setIsChromeVisible(false);
-    props.onBackHome();
-  }, [props]);
+    props.onSignOut();
+  }, [props.onSignOut]);
   const handleOpenMap = useCallback(() => {
     setIsChromeVisible(false);
     setIsMapOpen(true);
@@ -340,26 +605,18 @@ export function ReaderScreen(props: ReaderScreenProps) {
               onPress={revealChrome}
               style={styles.stageTapLayer}
             />
-            {isChromeVisible ? (
-              <FadeInView
-                animationKey="reader-chrome-visible"
-                durationMs={ocnoerTheme.motion.lineExitMs}
-                pointerEvents="box-none"
-                style={styles.chromeWrap}
-              >
-                <ReaderChrome
-                  audioPreferences={props.audioPreferences}
-                  audioStatus={audioStatus}
-                  canRetreat={
-                    reader.canRetreat && !reader.isMoving && !isLineExiting
-                  }
-                  onBackHome={handleBackHome}
-                  onOpenMap={handleOpenMap}
-                  onRetreat={handleRetreat}
-                  onToggleAudioMuted={props.onToggleAudioMuted}
-                />
-              </FadeInView>
-            ) : null}
+            <ReaderChromeLayer
+              audioPreferences={props.audioPreferences}
+              canRetreat={
+                reader.canRetreat && !reader.isMoving && !isLineExiting
+              }
+              isSigningOut={props.isSigningOut}
+              visible={isChromeVisible}
+              onOpenMap={handleOpenMap}
+              onRetreat={handleRetreat}
+              onSignOut={handleSignOut}
+              onToggleAudioMuted={props.onToggleAudioMuted}
+            />
 
             {boundaryPresentation ? (
               <NativeReaderBoundaryCard
@@ -443,65 +700,69 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     zIndex: 40
   },
+  chromeSafeArea: {
+    flex: 1
+  },
   chrome: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
-    left: 0,
     paddingHorizontal: ocnoerWebPlayer.chrome.inset,
     paddingTop: ocnoerWebPlayer.chrome.inset,
-    position: "absolute",
-    right: 0,
-    top: 0
+    width: "100%"
   },
   chromeIcon: {
-    backgroundColor: "transparent"
+    alignItems: "center",
+    backgroundColor: "transparent",
+    height: ocnoerWebPlayer.chrome.iconSize,
+    justifyContent: "center",
+    width: ocnoerWebPlayer.chrome.iconSize
   },
-  chromeHomeText: {
-    fontSize: 22
+  chromeIconDisabled: {
+    opacity: 0.45
+  },
+  chromeIconPressed: {
+    opacity: 0.76
   },
   chromeRight: {
     alignItems: "center",
-    backgroundColor: ocnoerWebPlayer.chrome.panelBackground,
-    borderColor: ocnoerWebPlayer.chrome.panelBorder,
-    borderRadius: ocnoerTheme.radii.lg,
-    borderWidth: 1,
     flexDirection: "row",
     gap: ocnoerTheme.spacing.xs,
     maxWidth: "78%",
-    paddingHorizontal: ocnoerTheme.spacing.xs,
-    paddingVertical: ocnoerTheme.spacing.xs
+    justifyContent: "flex-end"
   },
   mapOverlay: {
     ...StyleSheet.absoluteFillObject,
     backgroundColor: "rgba(0, 0, 0, 0.95)",
-    justifyContent: "center",
-    padding: ocnoerTheme.spacing.md,
+    padding: MAP_OVERLAY_PADDING,
     zIndex: 70
   },
-  mapStage: {
+  mapZoomScroll: {
+    flex: 1
+  },
+  mapZoomContentContainer: {
+    flexGrow: 1
+  },
+  mapZoomContent: {
     alignItems: "center",
-    flex: 1,
     justifyContent: "center"
+  },
+  mapCloseSafeArea: {
+    left: 0,
+    pointerEvents: "box-none",
+    position: "absolute",
+    right: 0,
+    top: 0,
+    zIndex: 2
   },
   mapCloseButton: {
     alignItems: "center",
-    backgroundColor: "rgba(0, 0, 0, 0.35)",
-    borderColor: "rgba(255, 255, 255, 0.20)",
-    borderRadius: ocnoerTheme.radii.pill,
-    borderWidth: 1,
-    height: 48,
+    backgroundColor: "transparent",
+    height: ocnoerWebPlayer.chrome.iconSize,
     justifyContent: "center",
-    left: ocnoerTheme.spacing.md,
-    position: "absolute",
-    top: ocnoerTheme.spacing.md,
-    width: 48,
-    zIndex: 2
-  },
-  mapCloseText: {
-    color: ocnoerTheme.colors.text,
-    fontSize: 30,
-    lineHeight: 34
+    marginLeft: ocnoerTheme.spacing.md,
+    marginTop: ocnoerTheme.spacing.md,
+    width: ocnoerWebPlayer.chrome.iconSize
   },
   mapImage: {
     height: "100%",

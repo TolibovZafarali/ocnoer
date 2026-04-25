@@ -196,9 +196,11 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
         audioPreferences={audioPreferences.preferences}
         bootstrap={state.bootstrap}
         config={state.config}
+        isSigningOut={props.isSigningOut}
         onToggleAudioMuted={audioPreferences.toggleMuted}
         onBackHome={returnHomeFromReader}
         onProgressSaved={() => undefined}
+        onSignOut={props.onSignOut}
         onUpdateCatName={(catName) =>
           updateCatName(catName, {
             rethrow: true

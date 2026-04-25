@@ -61,11 +61,13 @@ export function NativeReaderBoundaryCard(props: NativeReaderBoundaryCardProps) {
   const isChapterCard =
     props.boundary.type === "chapter-opening-card" ||
     props.boundary.type === "chapter-ending-card";
+  const animationKey = `${props.boundary.type}:${props.boundary.title}:${props.boundary.body}`;
 
   if (isChapterCard) {
     return (
       <FadeInView
-        animationKey={`${props.boundary.type}:${props.boundary.title}:${props.boundary.body}`}
+        key={animationKey}
+        animationKey={animationKey}
         durationMs={ocnoerTheme.motion.stageFadeMs}
         style={styles.fullCardWrap}
       >
@@ -90,7 +92,8 @@ export function NativeReaderBoundaryCard(props: NativeReaderBoundaryCardProps) {
 
   return (
     <FadeInView
-      animationKey={`${props.boundary.type}:${props.boundary.title}:${props.boundary.body}`}
+      key={animationKey}
+      animationKey={animationKey}
       durationMs={ocnoerTheme.motion.normalMs}
       style={styles.boundaryWrap}
     >

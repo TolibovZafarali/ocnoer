@@ -11,6 +11,7 @@ import {
   getCurrentScene,
   getChapterOpeningBoundaryState,
   getDressBranchFlagKey,
+  getPlayerRuntimeChapterAssetRefs,
   normalizeCatNameInput,
   reconcileCatNameBranchFlags,
   resolveBoundaryAdvance,
@@ -31,6 +32,12 @@ import { createMobileRuntimeRepository } from "../runtime/runtimeRepository";
 import { loadProgressByPlayerId } from "../storage/playerProgressStorage";
 import { saveSyncedPlayerProgress } from "../sync/playerProgressSync";
 import { createNativeReaderBoundaryPresentation } from "./boundaryPresentation";
+import {
+  ensureChapterAssetsReady,
+  ensureSceneAssetsReady,
+  getAssetCacheErrorMessage,
+  warmNextSceneAssets
+} from "./imagePreload";
 import { createNativeReaderPresentation } from "./readerPresentation";
 
 type NativeReaderRuntimeState =
@@ -136,6 +143,117 @@ function getChapterIndex(manifest: RuntimeManifest, chapterId: string) {
   return manifest.chapters.findIndex((chapter) => chapter.id === chapterId);
 }
 
+async function ensureNativeReaderPresentationAssets(input: {
+  supabaseUrl: string;
+  bundle: RuntimeChapterBundle;
+  readerState: ReaderState;
+  branchFlags: PlayerProgress["branchFlags"];
+  catName: string | null;
+}) {
+  const presentation = createNativeReaderPresentation(input);
+
+  if (!presentation) {
+    return;
+  }
+
+  const result = await ensureSceneAssetsReady(
+    presentation.sceneId,
+    presentation.blockingAssetRefs
+  );
+  const errorMessage = getAssetCacheErrorMessage(result);
+
+  if (errorMessage) {
+    throw new Error(errorMessage);
+  }
+
+  void warmNextSceneAssets(presentation.sceneId, presentation.preloadAssetRefs);
+}
+
+async function ensureReadyRuntimeStateAssets(input: {
+  supabaseUrl: string;
+  runtimeState: NativeReaderRuntimeState;
+  branchFlags: PlayerProgress["branchFlags"];
+  catName: string | null;
+}) {
+  if (
+    input.runtimeState.status !== "ready" &&
+    input.runtimeState.status !== "finished"
+  ) {
+    return;
+  }
+
+  await ensureNativeReaderPresentationAssets({
+    supabaseUrl: input.supabaseUrl,
+    bundle: input.runtimeState.bundle,
+    readerState: input.runtimeState.readerState,
+    branchFlags: input.branchFlags,
+    catName: input.catName
+  });
+
+  void ensureChapterAssetsReady(
+    input.runtimeState.bundle.chapter.id,
+    getPlayerRuntimeChapterAssetRefs({
+      supabaseUrl: input.supabaseUrl,
+      bundle: input.runtimeState.bundle,
+      branchFlags: input.branchFlags
+    })
+  );
+}
+
+async function ensureAdvanceResultAssets(input: {
+  supabaseUrl: string;
+  currentRuntimeState: ActiveNativeReaderRuntimeState;
+  result: RuntimeAdvanceResult;
+  branchFlags: PlayerProgress["branchFlags"];
+  catName: string | null;
+}) {
+  if (input.result.type === "story-finished") {
+    return;
+  }
+
+  await ensureNativeReaderPresentationAssets({
+    supabaseUrl: input.supabaseUrl,
+    bundle:
+      input.result.type === "chapter-break"
+        ? input.result.bundle
+        : input.currentRuntimeState.bundle,
+    readerState: input.result.state,
+    branchFlags: input.branchFlags,
+    catName: input.catName
+  });
+}
+
+async function ensureRetreatResultAssets(input: {
+  supabaseUrl: string;
+  currentRuntimeState: ActiveNativeReaderRuntimeState;
+  result: Awaited<ReturnType<typeof retreatRuntimePosition>>;
+  branchFlags: PlayerProgress["branchFlags"];
+  catName: string | null;
+}) {
+  if (input.result.type === "story-start") {
+    return;
+  }
+
+  await ensureNativeReaderPresentationAssets({
+    supabaseUrl: input.supabaseUrl,
+    bundle:
+      input.result.type === "chapter-return"
+        ? input.result.bundle
+        : input.currentRuntimeState.bundle,
+    readerState: input.result.state,
+    branchFlags: input.branchFlags,
+    catName: input.catName
+  });
+}
+
+export async function commitNativeReaderStateAfterAssetGate(input: {
+  ensureAssets: () => Promise<void>;
+  commit: () => void;
+}) {
+  await input.ensureAssets();
+  input.commit();
+}
+
 export function useNativeReaderController(
   input: UseNativeReaderControllerInput
 ) {
@@ -228,6 +346,17 @@ export function useNativeReaderController(
             readerState: loadedRuntime.readerState
           });
 
+          await ensureReadyRuntimeStateAssets({
+            supabaseUrl: config.supabaseUrl,
+            runtimeState: nextRuntimeState,
+            branchFlags: nextBranchFlags,
+            catName: initialCatNameState.catName
+          });
+
+          if (cancelled) {
+            return;
+          }
+
           setRuntimeState(nextRuntimeState);
           setBoundaryState(
             getInitialBoundaryState({
@@ -250,6 +379,17 @@ export function useNativeReaderController(
               ? resumeAction.readerState
               : bootstrap.initialReaderState
         });
+
+        await ensureReadyRuntimeStateAssets({
+          supabaseUrl: config.supabaseUrl,
+          runtimeState: nextRuntimeState,
+          branchFlags: nextBranchFlags,
+          catName: initialCatNameState.catName
+        });
+
+        if (cancelled) {
+          return;
+        }
 
         setRuntimeState(nextRuntimeState);
         setBoundaryState(
@@ -279,7 +419,14 @@ export function useNativeReaderController(
     return () => {
       cancelled = true;
     };
-  }, [bootstrap, player.id, loadRequestId, repository]);
+  }, [
+    bootstrap,
+    config.supabaseUrl,
+    initialCatNameState,
+    player.id,
+    loadRequestId,
+    repository
+  ]);
 
   const currentScene = useMemo(() => {
     if (runtimeState.status !== "ready" && runtimeState.status !== "finished") {
@@ -375,6 +522,10 @@ export function useNativeReaderController(
 
   const preloadImageUrls = useMemo(
     () => presentation?.preloadImageUrls ?? [],
+    [presentation]
+  );
+  const preloadAssetRefs = useMemo(
+    () => presentation?.preloadAssetRefs ?? [],
     [presentation]
   );
 
@@ -479,7 +630,15 @@ export function useNativeReaderController(
   );
 
   const advanceFromRuntimeState = useCallback(
-    async (currentRuntimeState: ActiveNativeReaderRuntimeState) => {
+    async (
+      currentRuntimeState: ActiveNativeReaderRuntimeState,
+      options?: {
+        branchFlags?: PlayerProgress["branchFlags"];
+        catName?: string | null;
+      }
+    ) => {
+      const resolvedBranchFlags = options?.branchFlags ?? branchFlags;
+      const resolvedCatName = options?.catName ?? catName;
       const result = await advanceRuntimePosition({
         manifest: currentRuntimeState.manifest,
         bundle: currentRuntimeState.bundle,
@@ -487,9 +646,27 @@ export function useNativeReaderController(
         loadChapter: repository.loadChapter
       });
 
-      commitAdvanceResult(currentRuntimeState, result);
+      await commitNativeReaderStateAfterAssetGate({
+        ensureAssets: () =>
+          ensureAdvanceResultAssets({
+            supabaseUrl: config.supabaseUrl,
+            currentRuntimeState,
+            result,
+            branchFlags: resolvedBranchFlags,
+            catName: resolvedCatName
+          }),
+        commit: () => {
+          commitAdvanceResult(currentRuntimeState, result);
+        }
+      });
     },
-    [commitAdvanceResult, repository.loadChapter]
+    [
+      branchFlags,
+      catName,
+      commitAdvanceResult,
+      config.supabaseUrl,
+      repository.loadChapter
+    ]
   );
 
   const selectDressOption = useCallback(
@@ -514,20 +691,24 @@ export function useNativeReaderController(
 
       setActionError(null);
       setIsMoving(true);
-      setBranchFlags((currentValue) => ({
-        ...currentValue,
+      const nextBranchFlags = {
+        ...branchFlags,
         [getDressBranchFlagKey(speaker.characterId)]: optionKey
-      }));
+      };
+
+      setBranchFlags(nextBranchFlags);
 
       try {
-        await advanceFromRuntimeState(runtimeState);
+        await advanceFromRuntimeState(runtimeState, {
+          branchFlags: nextBranchFlags
+        });
       } catch (error) {
         setActionError(getErrorMessage(error, "Unable to advance the story."));
       } finally {
         setIsMoving(false);
       }
     },
-    [advanceFromRuntimeState, isMoving, runtimeState]
+    [advanceFromRuntimeState, branchFlags, isMoving, runtimeState]
   );
 
   const submitCatName = useCallback(async () => {
@@ -546,21 +727,24 @@ export function useNativeReaderController(
 
     try {
       await onUpdateCatName(normalizedCatName);
+      const nextBranchFlags = reconcileCatNameBranchFlags({
+        branchFlags,
+        catName: normalizedCatName,
+        catNameLocked: true
+      });
+
       setCatName(normalizedCatName);
-      setBranchFlags((currentValue) =>
-        reconcileCatNameBranchFlags({
-          branchFlags: currentValue,
-          catName: normalizedCatName,
-          catNameLocked: true
-        })
-      );
+      setBranchFlags(nextBranchFlags);
 
       if (
         runtimeState.status === "ready" ||
         runtimeState.status === "finished"
       ) {
         setIsMoving(true);
-        await advanceFromRuntimeState(runtimeState);
+        await advanceFromRuntimeState(runtimeState, {
+          branchFlags: nextBranchFlags,
+          catName: normalizedCatName
+        });
       }
     } catch (error) {
       setCatNameInputError(
@@ -572,6 +756,7 @@ export function useNativeReaderController(
     }
   }, [
     advanceFromRuntimeState,
+    branchFlags,
     catNameInputValue,
     onUpdateCatName,
     runtimeState
@@ -687,6 +872,14 @@ export function useNativeReaderController(
         return;
       }
 
+      await ensureRetreatResultAssets({
+        supabaseUrl: config.supabaseUrl,
+        currentRuntimeState: runtimeState,
+        result,
+        branchFlags,
+        catName
+      });
+
       setBoundaryState(null);
 
       if (result.type === "chapter-return") {
@@ -710,7 +903,15 @@ export function useNativeReaderController(
     } finally {
       setIsMoving(false);
     }
-  }, [boundaryState, isMoving, repository.loadChapter, runtimeState]);
+  }, [
+    boundaryState,
+    branchFlags,
+    catName,
+    config.supabaseUrl,
+    isMoving,
+    repository.loadChapter,
+    runtimeState
+  ]);
 
   return {
     state: runtimeState,
@@ -718,6 +919,7 @@ export function useNativeReaderController(
     boundaryState,
     boundaryPresentation,
     preloadImageUrls,
+    preloadAssetRefs,
     isMoving,
     actionError,
     persistenceError,

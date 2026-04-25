@@ -32,7 +32,7 @@ import { NativeReaderBoundaryCard } from "../reader/components/NativeReaderBound
 import { BlackoutOverlay } from "../reader/components/NativeCinematic";
 import { NativeReaderDialogue } from "../reader/components/NativeReaderDialogue";
 import { NativeReaderStage } from "../reader/components/NativeReaderStage";
-import { useReaderImagePreload } from "../reader/imagePreload";
+import { useReaderAssetWarmup } from "../reader/imagePreload";
 import { useNativeReaderController } from "../reader/useNativeReaderController";
 import type { NativeAudioPreferences } from "../storage/audioPreferenceStorage";
 import { OcnoerButton, OcnoerSurface } from "../ui/primitives";
@@ -527,7 +527,7 @@ export function ReaderScreen(props: ReaderScreenProps) {
     setIsMapOpen(true);
   }, []);
 
-  useReaderImagePreload(reader.preloadImageUrls);
+  useReaderAssetWarmup(reader.preloadAssetRefs);
 
   if (reader.state.status === "loading") {
     return (

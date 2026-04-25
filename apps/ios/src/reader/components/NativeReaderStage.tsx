@@ -1,16 +1,106 @@
-import { Image, StyleSheet, View } from "react-native";
-import { SvgUri } from "react-native-svg";
+import { Image as ExpoImage } from "expo-image";
+import {
+  StyleSheet,
+  View,
+  type ImageStyle,
+  type StyleProp
+} from "react-native";
+import { SvgAst } from "react-native-svg";
 
 import type {
   NativeReaderPortrait,
   NativeReaderPresentation
 } from "../readerPresentation";
+import {
+  createCachedReaderImageSource,
+  getAssetRenderKind,
+  usePreloadedReaderImageRef,
+  usePreloadedReaderSvgAst
+} from "../imagePreload";
 import { ocnoerTheme, ocnoerWebPlayer } from "../../ui/theme";
 import {
   DirectionalSlideView,
   FadeInView,
   StageScrims
 } from "./NativeCinematic";
+
+function NativeCachedImage(props: {
+  accessibilityLabel?: string;
+  contentFit: "cover" | "contain";
+  contentPosition?: "left bottom" | "right bottom" | "center";
+  imageUrl: string;
+  style: StyleProp<ImageStyle>;
+}) {
+  const imageRef = usePreloadedReaderImageRef(props.imageUrl);
+  const source = createCachedReaderImageSource(props.imageUrl);
+
+  if (!source) {
+    return <View style={[props.style, styles.missingAsset]} />;
+  }
+
+  return (
+    <ExpoImage
+      accessibilityLabel={props.accessibilityLabel}
+      accessible={Boolean(props.accessibilityLabel)}
+      cachePolicy="memory-disk"
+      contentFit={props.contentFit}
+      contentPosition={props.contentPosition ?? "center"}
+      priority="high"
+      recyclingKey={props.imageUrl}
+      source={imageRef ?? source}
+      style={props.style}
+      transition={0}
+    />
+  );
+}
+
+function CachedPortraitAsset(props: {
+  accessibilityLabel: string;
+  imageUrl: string;
+  side: "left" | "right";
+}) {
+  const renderKind = getAssetRenderKind(props.imageUrl);
+  const svgAst = usePreloadedReaderSvgAst(props.imageUrl);
+  const preserveAspectRatio =
+    props.side === "left" ? "xMinYMax meet" : "xMaxYMax meet";
+  const svgProps = {
+    height: "100%",
+    preserveAspectRatio,
+    width: "100%"
+  };
+
+  if (renderKind !== "svg-vector") {
+    return (
+      <View
+        accessibilityLabel={props.accessibilityLabel}
+        accessible
+        pointerEvents="none"
+        style={styles.portraitSvg}
+      >
+        <NativeCachedImage
+          accessibilityLabel={props.accessibilityLabel}
+          contentFit="contain"
+          contentPosition={
+            props.side === "left" ? "left bottom" : "right bottom"
+          }
+          imageUrl={props.imageUrl}
+          style={styles.portraitBitmap}
+        />
+      </View>
+    );
+  }
+
+  return (
+    <View
+      accessibilityLabel={props.accessibilityLabel}
+      accessible
+      pointerEvents="none"
+      style={styles.portraitSvg}
+    >
+      {svgAst ? <SvgAst ast={svgAst} override={svgProps} /> : null}
+    </View>
+  );
+}
 
 function Portrait(props: {
   isExiting: boolean;
@@ -38,29 +128,11 @@ function Portrait(props: {
         pointerEvents="none"
         style={styles.portraitFade}
       >
-        <View
+        <CachedPortraitAsset
           accessibilityLabel={props.portrait.label}
-          accessible
-          pointerEvents="none"
-          style={[
-            styles.portraitSvg,
-            props.side === "left"
-              ? styles.portraitImageLeft
-              : styles.portraitImageRight,
-            props.portrait.isActiveSpeaker
-              ? styles.portraitImageActive
-              : styles.portraitImageInactive
-          ]}
-        >
-          <SvgUri
-            height="100%"
-            preserveAspectRatio={
-              props.side === "left" ? "xMinYMax meet" : "xMaxYMax meet"
-            }
-            uri={props.portrait.imageUrl}
-            width="100%"
-          />
-        </View>
+          imageUrl={props.portrait.imageUrl}
+          side={props.side}
+        />
       </DirectionalSlideView>
     </View>
   );
@@ -74,14 +146,14 @@ export function NativeReaderStage(props: {
     <View style={styles.stage}>
       {props.presentation.backgroundImageUrl ? (
         <FadeInView
+          key={props.presentation.backgroundImageUrl}
           animationKey={props.presentation.backgroundImageUrl}
           durationMs={ocnoerTheme.motion.stageFadeMs}
           style={styles.stageBackgroundFade}
         >
-          <Image
-            accessibilityIgnoresInvertColors
-            resizeMode="cover"
-            source={{ uri: props.presentation.backgroundImageUrl }}
+          <NativeCachedImage
+            contentFit="cover"
+            imageUrl={props.presentation.backgroundImageUrl}
             style={styles.stageBackground}
           />
         </FadeInView>
@@ -153,16 +225,11 @@ const styles = StyleSheet.create({
     position: "absolute",
     width: "100%"
   },
-  portraitImageLeft: {
-    left: 0
+  portraitBitmap: {
+    height: "100%",
+    width: "100%"
   },
-  portraitImageRight: {
-    right: 0
-  },
-  portraitImageActive: {
-    opacity: 1
-  },
-  portraitImageInactive: {
-    opacity: 1
+  missingAsset: {
+    backgroundColor: "transparent"
   }
 });

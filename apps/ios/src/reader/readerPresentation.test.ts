@@ -3,11 +3,17 @@ import { describe, expect, it } from "vitest";
 import type {
   ReaderState,
   RuntimeChapterBundle,
+  RuntimeCharacterDress,
   RuntimeCharacter,
   RuntimeDialogueEntry,
   RuntimeDialogueSpeaker,
   RuntimeScene,
   RuntimeStageCharacter
+} from "@ocnoer/story-core";
+import {
+  BASE_DRESS_OPTION_KEY,
+  getDressBranchFlagKey,
+  getPlayerRuntimeChapterAssetRefs
 } from "@ocnoer/story-core";
 
 import { createNativeReaderPresentation } from "./readerPresentation";
@@ -44,6 +50,7 @@ function createRuntimeCharacter(input: {
   name: string;
   slug: string;
   imagePath: string;
+  dresses?: RuntimeCharacterDress[];
 }): RuntimeCharacter {
   return {
     id: input.id,
@@ -59,7 +66,7 @@ function createRuntimeCharacter(input: {
         imagePath: input.imagePath
       }
     ],
-    dresses: []
+    dresses: input.dresses ?? []
   };
 }
 
@@ -78,6 +85,7 @@ function createDialogueEntry(input: {
 
 function createBundle(input: {
   entry: RuntimeDialogueEntry;
+  entries?: RuntimeDialogueEntry[];
   characterPool?: RuntimeCharacter[];
 }): RuntimeChapterBundle {
   const scene: RuntimeScene = {
@@ -89,7 +97,7 @@ function createBundle(input: {
     backgroundMusicCues: [],
     carryOcnoerDressSelection: true,
     characterPool: input.characterPool ?? [],
-    dialogue: [input.entry]
+    dialogue: input.entries ?? [input.entry]
   };
 
   return {
@@ -142,6 +150,215 @@ describe("createNativeReaderPresentation", () => {
     expect(presentation?.leftPortrait).toBeNull();
     expect(presentation?.rightPortrait).toBeNull();
     expect(presentation?.stageCharacters).toEqual([]);
+  });
+
+  it("preloads current scene character images before they become active", () => {
+    const presentation = createNativeReaderPresentation({
+      supabaseUrl,
+      bundle: createBundle({
+        entry: createDialogueEntry({
+          speaker: {
+            type: "narrator"
+          },
+          stage: {
+            left: null,
+            right: null
+          }
+        }),
+        entries: [
+          createDialogueEntry({
+            speaker: {
+              type: "narrator"
+            },
+            stage: {
+              left: null,
+              right: null
+            }
+          }),
+          createDialogueEntry({
+            speaker: {
+              type: "character",
+              characterId: "character_left",
+              characterName: "Left",
+              characterSlug: "left",
+              emotionKey: "default",
+              emotionLabel: "Default",
+              emotionImagePath: "runtime/media/future-left.svg"
+            },
+            stage: {
+              left: createStageCharacter({
+                characterId: "character_left",
+                characterName: "Left",
+                characterSlug: "left",
+                imagePath: "runtime/media/future-left.svg"
+              }),
+              right: createStageCharacter({
+                characterId: "character_right",
+                characterName: "Right",
+                characterSlug: "right",
+                imagePath: "runtime/media/future-right.svg"
+              })
+            }
+          })
+        ]
+      }),
+      readerState,
+      branchFlags: {},
+      catName: null
+    });
+
+    expect(presentation?.stageCharacters).toEqual([]);
+    expect(presentation?.preloadImageUrls).toEqual(
+      expect.arrayContaining([
+        publicUrl("runtime/media/future-left.svg"),
+        publicUrl("runtime/media/future-right.svg")
+      ])
+    );
+    expect(presentation?.preloadAssetRefs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "portrait",
+          url: publicUrl("runtime/media/future-left.svg")
+        }),
+        expect.objectContaining({
+          role: "portrait",
+          url: publicUrl("runtime/media/future-right.svg")
+        })
+      ])
+    );
+    expect(presentation?.blockingPreloadImageUrls).not.toContain(
+      publicUrl("runtime/media/future-left.svg")
+    );
+  });
+
+  it("builds chapter-level asset refs from every scene", () => {
+    const bundle = createBundle({
+      entry: createDialogueEntry({
+        speaker: {
+          type: "narrator"
+        },
+        stage: {
+          left: null,
+          right: null
+        }
+      }),
+      entries: [
+        createDialogueEntry({
+          speaker: {
+            type: "character",
+            characterId: "character_left",
+            characterName: "Left",
+            characterSlug: "left",
+            emotionKey: "default",
+            emotionLabel: "Default",
+            emotionImagePath: "runtime/media/future-left.svg"
+          },
+          stage: {
+            left: createStageCharacter({
+              characterId: "character_left",
+              characterName: "Left",
+              characterSlug: "left",
+              imagePath: "runtime/media/future-left.svg"
+            }),
+            right: null
+          }
+        })
+      ]
+    });
+
+    expect(
+      getPlayerRuntimeChapterAssetRefs({
+        supabaseUrl,
+        bundle,
+        branchFlags: {}
+      })
+    ).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "portrait",
+          url: publicUrl("runtime/media/future-left.svg")
+        })
+      ])
+    );
+  });
+
+  it("resolves carry-disabled scene assets with default dress flags", () => {
+    const character = createRuntimeCharacter({
+      id: "character_ocnoer",
+      name: "Ocnoer",
+      slug: "ocnoer",
+      imagePath: "runtime/media/ocnoer-default.png",
+      dresses: [
+        {
+          key: "gala",
+          label: "Gala",
+          emotionOverrides: [
+            {
+              emotionKey: "default",
+              imagePath: "runtime/media/ocnoer-gala.png"
+            }
+          ]
+        }
+      ]
+    });
+    const bundle = createBundle({
+      characterPool: [character],
+      entry: createDialogueEntry({
+        speaker: {
+          type: "character",
+          characterId: "character_ocnoer",
+          characterName: "Ocnoer",
+          characterSlug: "ocnoer",
+          emotionKey: "default",
+          emotionLabel: "Default",
+          emotionImagePath: "runtime/media/ocnoer-default.png"
+        },
+        stage: {
+          left: createStageCharacter({
+            characterId: "character_ocnoer",
+            characterName: "Ocnoer",
+            characterSlug: "ocnoer",
+            imagePath: "runtime/media/ocnoer-default.png"
+          }),
+          right: null
+        }
+      })
+    });
+
+    bundle.chapter.scenes[0]!.carryOcnoerDressSelection = false;
+
+    const presentation = createNativeReaderPresentation({
+      supabaseUrl,
+      bundle,
+      readerState,
+      branchFlags: {
+        [getDressBranchFlagKey("character_ocnoer")]: "gala"
+      },
+      catName: null
+    });
+
+    expect(presentation?.leftPortrait?.imageUrl).toBe(
+      publicUrl("runtime/media/ocnoer-default.png")
+    );
+    expect(presentation?.blockingAssetRefs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          url: publicUrl("runtime/media/ocnoer-default.png")
+        })
+      ])
+    );
+    expect(presentation?.blockingAssetRefs).not.toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          url: publicUrl("runtime/media/ocnoer-gala.png")
+        })
+      ])
+    );
+    expect(
+      presentation?.effectiveBranchFlags[
+        getDressBranchFlagKey("character_ocnoer")
+      ]
+    ).toBe(BASE_DRESS_OPTION_KEY);
   });
 
   it("shows only the staged dress-prompt speaker", () => {

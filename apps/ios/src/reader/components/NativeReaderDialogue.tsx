@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BlurView } from "expo-blur";
+import { Image as ExpoImage } from "expo-image";
 import {
   ActivityIndicator,
   Animated,
@@ -12,12 +13,15 @@ import {
   type TextStyle,
   type ViewStyle
 } from "react-native";
-import { SvgUri } from "react-native-svg";
 
 import type {
   NativeReaderDressOption,
   NativeReaderPresentation
 } from "../readerPresentation";
+import {
+  createCachedReaderImageSource,
+  usePreloadedReaderImageRef
+} from "../imagePreload";
 import { OcnoerTextInput } from "../../ui/primitives";
 import { ocnoerTheme, ocnoerWebPlayer } from "../../ui/theme";
 import {
@@ -158,6 +162,13 @@ function DressOptionCard(props: {
   option: NativeReaderDressOption;
   onPress: () => void;
 }) {
+  const previewImageRef = usePreloadedReaderImageRef(
+    props.option.previewImageUrl
+  );
+  const previewImageSource = props.option.previewImageUrl
+    ? createCachedReaderImageSource(props.option.previewImageUrl)
+    : null;
+
   return (
     <Pressable
       accessibilityLabel={`Choose ${props.option.label}`}
@@ -168,12 +179,15 @@ function DressOptionCard(props: {
         pressed ? styles.pressed : null
       ]}
     >
-      {props.option.previewImageUrl ? (
-        <SvgUri
-          height="100%"
-          preserveAspectRatio="xMidYMid meet"
-          uri={props.option.previewImageUrl}
-          width="100%"
+      {props.option.previewImageUrl && previewImageSource ? (
+        <ExpoImage
+          cachePolicy="memory-disk"
+          contentFit="contain"
+          priority="high"
+          recyclingKey={props.option.previewImageUrl}
+          source={previewImageRef ?? previewImageSource}
+          style={styles.dressPreviewImage}
+          transition={0}
         />
       ) : (
         <View style={styles.emptyDressPreview}>
@@ -347,9 +361,12 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
   }, [canCompleteTyping, textCharacters, typingKey, visibleTextLength]);
 
   if (props.presentation.status === "unsupported") {
+    const animationKey = `${props.presentation.status}:${props.presentation.dialogueEntryId}`;
+
     return (
       <DirectionalSlideView
-        animationKey={`${props.presentation.status}:${props.presentation.dialogueEntryId}`}
+        key={animationKey}
+        animationKey={animationKey}
         direction={motionDirection}
         isExiting={props.isExiting}
         pointerEvents={props.isExiting ? "none" : "auto"}
@@ -393,10 +410,12 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
   const shouldShowDressOptions =
     isDressPrompt && selectedDressOption && isTextComplete;
   const shouldShowContinueArrow = !isDressPrompt && isTextComplete;
+  const animationKey = `${props.presentation.status}:${props.presentation.dialogueEntryId}`;
 
   return (
     <DirectionalSlideView
-      animationKey={`${props.presentation.status}:${props.presentation.dialogueEntryId}`}
+      key={animationKey}
+      animationKey={animationKey}
       direction={motionDirection}
       isExiting={props.isExiting}
       pointerEvents={props.isExiting ? "none" : "auto"}
@@ -639,6 +658,10 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     overflow: "hidden",
     padding: ocnoerTheme.spacing.sm,
+    width: "100%"
+  },
+  dressPreviewImage: {
+    height: "100%",
     width: "100%"
   },
   emptyDressPreview: {

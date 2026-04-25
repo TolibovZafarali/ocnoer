@@ -15,7 +15,11 @@ import type {
   RuntimeScene,
   RuntimeStageCharacter
 } from "./types";
-import { getSelectedDressKey, resolveDressImagePath } from "./wardrobe";
+import {
+  applySceneDressCarrySelection,
+  getSelectedDressKey,
+  resolveDressImagePath
+} from "./wardrobe";
 
 export type PlayerRuntimeAssetUrls = {
   backgroundImageUrl: string | null;
@@ -34,6 +38,19 @@ export type PlayerRuntimeStageCharacter = {
   emotionLabel: string;
   imageUrl: string;
   isActiveSpeaker: boolean;
+};
+
+export type PlayerRuntimeImageAssetRole =
+  | "background"
+  | "portrait"
+  | "dress-preview";
+
+export type PlayerRuntimeImageAssetRef = {
+  role: PlayerRuntimeImageAssetRole;
+  url: string;
+  storagePath: string;
+  cacheKey: string;
+  assetId?: string | null;
 };
 
 export type RuntimeFetchInit = {
@@ -206,6 +223,16 @@ function getVisiblePlayerStageImagePaths(input: {
           })
         : null
   };
+}
+
+export function resolveRuntimeSceneBranchFlags(input: {
+  scene: RuntimeScene | null;
+  branchFlags?: PlayerProgress["branchFlags"];
+}) {
+  return applySceneDressCarrySelection({
+    scene: input.scene,
+    branchFlags: input.branchFlags ?? {}
+  });
 }
 
 function getActiveSpeakerCharacterId(entry: RuntimeDialogueEntry) {
@@ -400,10 +427,14 @@ export function getPlayerRuntimeAssetUrls(input: {
     return createEmptyPlayerRuntimeAssetUrls();
   }
 
+  const branchFlags = resolveRuntimeSceneBranchFlags({
+    scene,
+    branchFlags: input.branchFlags
+  });
   const visibleStageImagePaths = getVisiblePlayerStageImagePaths({
     scene,
     entry,
-    branchFlags: input.branchFlags ?? {}
+    branchFlags
   });
 
   return {
@@ -439,7 +470,10 @@ export function getPlayerRuntimeStageCharacters(input: {
     return [];
   }
 
-  const branchFlags = input.branchFlags ?? {};
+  const branchFlags = resolveRuntimeSceneBranchFlags({
+    scene,
+    branchFlags: input.branchFlags
+  });
   const activeSpeakerCharacterId = getActiveSpeakerCharacterId(entry);
   const stageCharacters: PlayerRuntimeStageCharacter[] = [];
   const addStageCharacter = (
@@ -487,6 +521,109 @@ export function getPlayerRuntimeSceneAssetUrls(input: {
   readerState: ReaderState | null;
   branchFlags?: PlayerProgress["branchFlags"];
 }) {
+  return getPlayerRuntimeSceneAssetRefs(input).map((assetRef) => assetRef.url);
+}
+
+function getRuntimeSceneAssetRefs(input: {
+  supabaseUrl: string;
+  scene: RuntimeScene;
+  branchFlags?: PlayerProgress["branchFlags"];
+}) {
+  const branchFlags = resolveRuntimeSceneBranchFlags({
+    scene: input.scene,
+    branchFlags: input.branchFlags
+  });
+  const assetRefs = new Map<string, PlayerRuntimeImageAssetRef>();
+  const addAssetRef = (asset: {
+    role: PlayerRuntimeImageAssetRole;
+    storagePath: string | null | undefined;
+    assetId?: string | null;
+    cacheKey?: string;
+  }) => {
+    const storagePath = asset.storagePath ?? null;
+    const assetUrl = toPublicStorageUrl(input.supabaseUrl, storagePath);
+
+    if (!storagePath || !assetUrl) {
+      return;
+    }
+
+    assetRefs.set(assetUrl, {
+      role: asset.role,
+      url: assetUrl,
+      storagePath,
+      assetId: asset.assetId ?? null,
+      cacheKey:
+        asset.cacheKey ?? `${asset.role}:${asset.assetId ?? storagePath}`
+    });
+  };
+
+  addAssetRef({
+    role: "background",
+    storagePath: input.scene.backgroundImage?.filePath ?? null,
+    assetId: input.scene.backgroundImage?.id ?? null
+  });
+
+  input.scene.dialogue.forEach((dialogueEntry) => {
+    const addStageAssetRef = (stageCharacter: RuntimeStageCharacter | null) => {
+      if (!stageCharacter) {
+        return;
+      }
+
+      const storagePath = resolveStageCharacterImagePath({
+        scene: input.scene,
+        stageCharacter,
+        branchFlags
+      });
+
+      addAssetRef({
+        role: "portrait",
+        storagePath,
+        assetId: stageCharacter.characterId,
+        cacheKey: `portrait:${stageCharacter.characterId}:${stageCharacter.emotionKey}:${storagePath ?? ""}`
+      });
+    };
+
+    addStageAssetRef(dialogueEntry.stage.left);
+    addStageAssetRef(dialogueEntry.stage.right);
+
+    if (dialogueEntry.speaker.type === "cat_name_prompt") {
+      const storagePath = resolveSceneCharacterImagePath({
+        scene: input.scene,
+        characterId: dialogueEntry.speaker.characterId,
+        branchFlags
+      });
+
+      addAssetRef({
+        role: "portrait",
+        storagePath,
+        assetId: dialogueEntry.speaker.characterId,
+        cacheKey: `portrait:${dialogueEntry.speaker.characterId}:default:${storagePath ?? ""}`
+      });
+    }
+
+    if (dialogueEntry.speaker.type === "dress_prompt") {
+      const characterId = dialogueEntry.speaker.characterId;
+
+      dialogueEntry.speaker.dressOptions.forEach((dressOption) => {
+        addAssetRef({
+          role: "dress-preview",
+          storagePath: dressOption.previewImagePath,
+          assetId: characterId,
+          cacheKey: `dress-preview:${characterId}:${dressOption.key}`
+        });
+      });
+    }
+  });
+
+  return Array.from(assetRefs.values());
+}
+
+export function getPlayerRuntimeSceneAssetRefs(input: {
+  supabaseUrl: string;
+  bundle: RuntimeChapterBundle | null;
+  readerState: ReaderState | null;
+  branchFlags?: PlayerProgress["branchFlags"];
+}): PlayerRuntimeImageAssetRef[] {
   if (!input.bundle || !input.readerState) {
     return [];
   }
@@ -497,52 +634,35 @@ export function getPlayerRuntimeSceneAssetUrls(input: {
     return [];
   }
 
-  const branchFlags = input.branchFlags ?? {};
-  const assetUrls = new Set<string>();
-  const addAssetUrl = (storagePath: string | null | undefined) => {
-    const assetUrl = toPublicStorageUrl(input.supabaseUrl, storagePath ?? null);
+  return getRuntimeSceneAssetRefs({
+    supabaseUrl: input.supabaseUrl,
+    scene,
+    branchFlags: input.branchFlags
+  });
+}
 
-    if (assetUrl) {
-      assetUrls.add(assetUrl);
-    }
-  };
+export function getPlayerRuntimeChapterAssetRefs(input: {
+  supabaseUrl: string;
+  bundle: RuntimeChapterBundle | null;
+  branchFlags?: PlayerProgress["branchFlags"];
+}): PlayerRuntimeImageAssetRef[] {
+  if (!input.bundle) {
+    return [];
+  }
 
-  addAssetUrl(scene.backgroundImage?.filePath ?? null);
+  const assetRefs = new Map<string, PlayerRuntimeImageAssetRef>();
 
-  scene.dialogue.forEach((dialogueEntry) => {
-    addAssetUrl(
-      resolveStageCharacterImagePath({
-        scene,
-        stageCharacter: dialogueEntry.stage.left,
-        branchFlags
-      })
-    );
-    addAssetUrl(
-      resolveStageCharacterImagePath({
-        scene,
-        stageCharacter: dialogueEntry.stage.right,
-        branchFlags
-      })
-    );
-
-    if (dialogueEntry.speaker.type === "cat_name_prompt") {
-      addAssetUrl(
-        resolveSceneCharacterImagePath({
-          scene,
-          characterId: dialogueEntry.speaker.characterId,
-          branchFlags
-        })
-      );
-    }
-
-    if (dialogueEntry.speaker.type === "dress_prompt") {
-      dialogueEntry.speaker.dressOptions.forEach((dressOption) => {
-        addAssetUrl(dressOption.previewImagePath);
-      });
-    }
+  input.bundle.chapter.scenes.forEach((scene) => {
+    getRuntimeSceneAssetRefs({
+      supabaseUrl: input.supabaseUrl,
+      scene,
+      branchFlags: input.branchFlags
+    }).forEach((assetRef) => {
+      assetRefs.set(assetRef.url, assetRef);
+    });
   });
 
-  return Array.from(assetUrls);
+  return Array.from(assetRefs.values());
 }
 
 export function decidePlayerResumeAction(input: {

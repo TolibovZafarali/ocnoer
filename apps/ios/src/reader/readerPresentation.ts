@@ -4,10 +4,14 @@ import {
   getCurrentScene,
   getDressBranchFlagKey,
   getPlayerRuntimeAssetUrls,
+  getPlayerRuntimeSceneAssetRefs,
+  getPlayerRuntimeSceneAssetUrls,
   getPlayerRuntimeStageCharacters,
+  resolveRuntimeSceneBranchFlags,
   resolveDialogueTextTemplate,
   toPublicStorageUrl,
   type PlayerProgress,
+  type PlayerRuntimeImageAssetRef,
   type PlayerRuntimeStageCharacter,
   type ReaderState,
   type RuntimeChapterBundle,
@@ -38,6 +42,8 @@ export type NativeReaderDressOption = {
   previewImageUrl: string | null;
 };
 
+export type NativeReaderAssetRef = PlayerRuntimeImageAssetRef;
+
 export type NativeDialogueCardPlacement =
   | "speaker-left"
   | "speaker-right"
@@ -59,7 +65,11 @@ type NativeReaderPresentationBase = {
   rightPortrait: NativeReaderPortrait | null;
   stageCharacters: NativeReaderPortrait[];
   dialogueCardPlacement: NativeDialogueCardPlacement;
+  blockingPreloadImageUrls: string[];
   preloadImageUrls: string[];
+  blockingAssetRefs: NativeReaderAssetRef[];
+  preloadAssetRefs: NativeReaderAssetRef[];
+  effectiveBranchFlags: PlayerProgress["branchFlags"];
 };
 
 export type NativeReaderPresentation =
@@ -284,7 +294,27 @@ function uniqueImageUrls(imageUrls: Array<string | null | undefined>) {
   );
 }
 
-function getNextBackgroundImageUrl(input: {
+function findAssetRefsByUrls(input: {
+  assetRefs: NativeReaderAssetRef[];
+  imageUrls: string[];
+}) {
+  const assetRefsByUrl = new Map(
+    input.assetRefs.map((assetRef) => [assetRef.url, assetRef])
+  );
+
+  return input.imageUrls.map(
+    (imageUrl): NativeReaderAssetRef =>
+      assetRefsByUrl.get(imageUrl) ?? {
+        role: "portrait",
+        url: imageUrl,
+        storagePath: imageUrl,
+        cacheKey: imageUrl,
+        assetId: null
+      }
+  );
+}
+
+function getNextSceneAssetRefs(input: {
   supabaseUrl: string;
   bundle: RuntimeChapterBundle;
   readerState: ReaderState;
@@ -296,15 +326,15 @@ function getNextBackgroundImageUrl(input: {
   );
 
   if (!nextState) {
-    return null;
+    return [];
   }
 
-  return getPlayerRuntimeAssetUrls({
+  return getPlayerRuntimeSceneAssetRefs({
     supabaseUrl: input.supabaseUrl,
     bundle: input.bundle,
     readerState: nextState.state,
     branchFlags: input.branchFlags
-  }).backgroundImageUrl;
+  });
 }
 
 export function createNativeReaderPresentation(input: {
@@ -321,11 +351,15 @@ export function createNativeReaderPresentation(input: {
     return null;
   }
 
+  const effectiveBranchFlags = resolveRuntimeSceneBranchFlags({
+    scene,
+    branchFlags: input.branchFlags
+  });
   const assetUrls = getPlayerRuntimeAssetUrls({
     supabaseUrl: input.supabaseUrl,
     bundle: input.bundle,
     readerState: input.readerState,
-    branchFlags: input.branchFlags
+    branchFlags: effectiveBranchFlags
   });
   const entryType = getRuntimeSpeakerType(entry);
   const speakerName = isSupportedNativeReaderEntryType(entryType)
@@ -342,23 +376,52 @@ export function createNativeReaderPresentation(input: {
         supabaseUrl: input.supabaseUrl,
         bundle: input.bundle,
         readerState: input.readerState,
-        branchFlags: input.branchFlags
+        branchFlags: effectiveBranchFlags
       }),
       catName: input.catName
     });
-  const nextBackgroundImageUrl = getNextBackgroundImageUrl({
+  const nextSceneAssetRefs = getNextSceneAssetRefs({
     supabaseUrl: input.supabaseUrl,
     bundle: input.bundle,
     readerState: input.readerState,
-    branchFlags: input.branchFlags
+    branchFlags: effectiveBranchFlags
   });
   const dressOptions = getDressOptions({
     supabaseUrl: input.supabaseUrl,
     entry
   });
-  const preloadImageUrls = uniqueImageUrls([
+  const sceneAssetRefs = getPlayerRuntimeSceneAssetRefs({
+    supabaseUrl: input.supabaseUrl,
+    bundle: input.bundle,
+    readerState: input.readerState,
+    branchFlags: effectiveBranchFlags
+  });
+  const sceneAssetUrls = getPlayerRuntimeSceneAssetUrls({
+    supabaseUrl: input.supabaseUrl,
+    bundle: input.bundle,
+    readerState: input.readerState,
+    branchFlags: effectiveBranchFlags
+  });
+  const blockingPreloadImageUrls = uniqueImageUrls([
     assetUrls.backgroundImageUrl,
-    nextBackgroundImageUrl,
+    ...stageCharacters.map((portrait) => portrait.imageUrl),
+    ...dressOptions.map((option) => option.previewImageUrl)
+  ]);
+  const blockingAssetRefs = findAssetRefsByUrls({
+    assetRefs: sceneAssetRefs,
+    imageUrls: blockingPreloadImageUrls
+  });
+  const preloadAssetRefs = Array.from(
+    new Map(
+      [...sceneAssetRefs, ...nextSceneAssetRefs].map((assetRef) => [
+        assetRef.url,
+        assetRef
+      ])
+    ).values()
+  );
+  const preloadImageUrls = uniqueImageUrls([
+    ...sceneAssetUrls,
+    ...nextSceneAssetRefs.map((assetRef) => assetRef.url),
     ...stageCharacters.map((portrait) => portrait.imageUrl),
     ...dressOptions.map((option) => option.previewImageUrl)
   ]);
@@ -377,7 +440,11 @@ export function createNativeReaderPresentation(input: {
     rightPortrait,
     stageCharacters,
     dialogueCardPlacement: getDialogueCardPlacement(entry),
-    preloadImageUrls
+    blockingPreloadImageUrls,
+    preloadImageUrls,
+    blockingAssetRefs,
+    preloadAssetRefs,
+    effectiveBranchFlags
   } satisfies NativeReaderPresentationBase;
   if (!isSupportedNativeReaderEntryType(entryType)) {
     return {
@@ -390,7 +457,7 @@ export function createNativeReaderPresentation(input: {
 
   const selectedDressOptionKey = getSelectedDressOptionKey({
     entry,
-    branchFlags: input.branchFlags
+    branchFlags: effectiveBranchFlags
   });
 
   return {

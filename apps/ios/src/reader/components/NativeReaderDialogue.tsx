@@ -530,7 +530,17 @@ const styles = StyleSheet.create({
     zIndex: 20
   },
   dialogueSurface: {
-    maxHeight: "100%"
+    backgroundColor: "rgba(0, 0, 0, 0.94)",
+    borderColor: "rgba(255, 255, 255, 0.08)",
+    elevation: 6,
+    maxHeight: "100%",
+    shadowColor: "#000000",
+    shadowOffset: {
+      width: 0,
+      height: 12
+    },
+    shadowOpacity: 0.22,
+    shadowRadius: 14
   },
   dialogueSurfacePressable: {
     maxHeight: "100%"

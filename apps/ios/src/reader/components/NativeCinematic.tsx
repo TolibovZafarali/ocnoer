@@ -8,7 +8,7 @@ import {
   type ViewStyle
 } from "react-native";
 
-import { ocnoerTheme, ocnoerWebPlayer } from "../../ui/theme";
+import { ocnoerTheme } from "../../ui/theme";
 
 export type NativeMotionDirection = "from-left" | "from-right" | "from-bottom";
 
@@ -171,7 +171,6 @@ export function StageScrims() {
     <>
       <View pointerEvents="none" style={styles.sceneTint} />
       <View pointerEvents="none" style={styles.topScrim} />
-      <View pointerEvents="none" style={styles.bottomScrim} />
     </>
   );
 }
@@ -193,13 +192,5 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 0,
     top: 0
-  },
-  bottomScrim: {
-    backgroundColor: ocnoerWebPlayer.stage.overlayBottom,
-    bottom: 0,
-    height: "46%",
-    left: 0,
-    position: "absolute",
-    right: 0
   }
 });

@@ -13,6 +13,7 @@ import {
   type TextStyle,
   type ViewStyle
 } from "react-native";
+import { SvgAst } from "react-native-svg";
 
 import type {
   NativeReaderDressOption,
@@ -20,8 +21,12 @@ import type {
 } from "../readerPresentation";
 import {
   createCachedReaderImageSource,
-  usePreloadedReaderImageRef
+  getAssetRenderMode,
+  usePreloadedReaderImageRef,
+  usePreloadedReaderSvgAst
 } from "../imagePreload";
+import { createNativeReaderDialogueAnimationKey } from "../nativeReaderDialogueMotion";
+import { NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND } from "../nativeReaderStageStyle";
 import { OcnoerTextInput } from "../../ui/primitives";
 import { ocnoerTheme, ocnoerWebPlayer } from "../../ui/theme";
 import {
@@ -162,6 +167,14 @@ function DressOptionCard(props: {
   option: NativeReaderDressOption;
   onPress: () => void;
 }) {
+  const renderMode = props.option.previewImageUrl
+    ? getAssetRenderMode(props.option.previewImageUrl)
+    : "unknown";
+  const svgAst = usePreloadedReaderSvgAst(
+    renderMode === "original-svg" || renderMode === "true-vector-svg"
+      ? props.option.previewImageUrl
+      : null
+  );
   const previewImageRef = usePreloadedReaderImageRef(
     props.option.previewImageUrl
   );
@@ -179,7 +192,21 @@ function DressOptionCard(props: {
         pressed ? styles.pressed : null
       ]}
     >
-      {props.option.previewImageUrl && previewImageSource ? (
+      {props.option.previewImageUrl &&
+      (renderMode === "original-svg" || renderMode === "true-vector-svg") ? (
+        <View pointerEvents="none" style={styles.dressPreviewSvg}>
+          {svgAst ? (
+            <SvgAst
+              ast={svgAst}
+              override={{
+                height: "100%",
+                preserveAspectRatio: "xMidYMid meet",
+                width: "100%"
+              }}
+            />
+          ) : null}
+        </View>
+      ) : props.option.previewImageUrl && previewImageSource ? (
         <ExpoImage
           cachePolicy="memory-disk"
           contentFit="contain"
@@ -361,7 +388,9 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
   }, [canCompleteTyping, textCharacters, typingKey, visibleTextLength]);
 
   if (props.presentation.status === "unsupported") {
-    const animationKey = `${props.presentation.status}:${props.presentation.dialogueEntryId}`;
+    const animationKey = createNativeReaderDialogueAnimationKey(
+      props.presentation
+    );
 
     return (
       <DirectionalSlideView
@@ -410,7 +439,9 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
   const shouldShowDressOptions =
     isDressPrompt && selectedDressOption && isTextComplete;
   const shouldShowContinueArrow = !isDressPrompt && isTextComplete;
-  const animationKey = `${props.presentation.status}:${props.presentation.dialogueEntryId}`;
+  const animationKey = createNativeReaderDialogueAnimationKey(
+    props.presentation
+  );
 
   return (
     <DirectionalSlideView
@@ -661,6 +692,12 @@ const styles = StyleSheet.create({
     width: "100%"
   },
   dressPreviewImage: {
+    backgroundColor: NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND,
+    height: "100%",
+    width: "100%"
+  },
+  dressPreviewSvg: {
+    backgroundColor: NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND,
     height: "100%",
     width: "100%"
   },

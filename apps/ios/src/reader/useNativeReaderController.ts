@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
   advanceRuntimePosition,
@@ -33,12 +33,16 @@ import { loadProgressByPlayerId } from "../storage/playerProgressStorage";
 import { saveSyncedPlayerProgress } from "../sync/playerProgressSync";
 import { createNativeReaderBoundaryPresentation } from "./boundaryPresentation";
 import {
+  READER_ASSET_RENDER_CACHE_VERSION,
   ensureChapterAssetsReady,
   ensureSceneAssetsReady,
   getAssetCacheErrorMessage,
   warmNextSceneAssets
 } from "./imagePreload";
-import { createNativeReaderPresentation } from "./readerPresentation";
+import {
+  createNativeReaderPresentation,
+  type NativeReaderPresentation
+} from "./readerPresentation";
 
 type NativeReaderRuntimeState =
   | {
@@ -73,6 +77,20 @@ type ActiveNativeReaderRuntimeState = Extract<
 
 type RuntimeAdvanceResult = Awaited<ReturnType<typeof advanceRuntimePosition>>;
 
+type NativeReaderAdvanceTarget = {
+  result: RuntimeAdvanceResult;
+  targetBundle: RuntimeChapterBundle | null;
+  targetKey: string | null;
+  targetPresentation: NativeReaderPresentation | null;
+  targetState: ReaderState | null;
+};
+
+type PreparedNativeReaderPresentation = {
+  key: string;
+  presentation: NativeReaderPresentation;
+  readyAt: number;
+};
+
 type UseNativeReaderControllerInput = {
   bootstrap: PlayerRuntimeBootstrap;
   config: MobileRuntimeConfig;
@@ -81,6 +99,242 @@ type UseNativeReaderControllerInput = {
   onProgressSaved?: () => void;
   onUpdateCatName: (catName: string) => Promise<void>;
 };
+
+const PRESENTATION_READY_CACHE_LIMIT = 6;
+const PRESENTATION_LOOKAHEAD_DEPTH = 2;
+
+function isDevelopment() {
+  return typeof __DEV__ !== "undefined" ? __DEV__ : false;
+}
+
+function logReaderTiming(message: string, details?: Record<string, unknown>) {
+  if (!isDevelopment()) {
+    return;
+  }
+
+  if (details) {
+    console.info(`[reader-timing] ${message}`, details);
+    return;
+  }
+
+  console.info(`[reader-timing] ${message}`);
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map((item) => stableJson(item)).join(",")}]`;
+  }
+
+  if (value && typeof value === "object") {
+    return `{${Object.keys(value)
+      .sort()
+      .map(
+        (key) =>
+          `${JSON.stringify(key)}:${stableJson((value as Record<string, unknown>)[key])}`
+      )
+      .join(",")}}`;
+  }
+
+  return JSON.stringify(value);
+}
+
+export function createNativeReaderPresentationReadinessKey(
+  presentation: NativeReaderPresentation
+) {
+  return stableJson({
+    version: 1,
+    assetRenderVersion: READER_ASSET_RENDER_CACHE_VERSION,
+    backgroundImageUrl: presentation.backgroundImageUrl,
+    blockingAssets: presentation.blockingAssetRefs.map((assetRef) => ({
+      assetId: assetRef.assetId ?? null,
+      cacheKey: assetRef.cacheKey,
+      role: assetRef.role,
+      storagePath: assetRef.storagePath,
+      url: assetRef.url
+    })),
+    branchFlags: presentation.effectiveBranchFlags,
+    chapterId: presentation.chapterId,
+    dialogueCardPlacement: presentation.dialogueCardPlacement,
+    dialogueEntryId: presentation.dialogueEntryId,
+    dialogueIndex: presentation.dialogueIndex,
+    dressOptions:
+      presentation.status === "supported"
+        ? presentation.dressOptions.map((option) => ({
+            key: option.key,
+            previewImageUrl: option.previewImageUrl
+          }))
+        : [],
+    entryType: presentation.entryType,
+    leftPortrait: presentation.leftPortrait
+      ? {
+          imageUrl: presentation.leftPortrait.imageUrl,
+          key: presentation.leftPortrait.key,
+          side: presentation.leftPortrait.side
+        }
+      : null,
+    renderModeVersion: READER_ASSET_RENDER_CACHE_VERSION,
+    rightPortrait: presentation.rightPortrait
+      ? {
+          imageUrl: presentation.rightPortrait.imageUrl,
+          key: presentation.rightPortrait.key,
+          side: presentation.rightPortrait.side
+        }
+      : null,
+    sceneId: presentation.sceneId,
+    speakerName:
+      presentation.status === "supported" ? presentation.speakerName : null,
+    status: presentation.status
+  });
+}
+
+function getAdvanceTargetBundleAndState(input: {
+  currentRuntimeState: ActiveNativeReaderRuntimeState;
+  result: RuntimeAdvanceResult;
+}) {
+  if (input.result.type === "story-finished") {
+    return {
+      bundle: null,
+      state: null
+    };
+  }
+
+  return {
+    bundle:
+      input.result.type === "chapter-break"
+        ? input.result.bundle
+        : input.currentRuntimeState.bundle,
+    state: input.result.state
+  };
+}
+
+export async function computeNativeReaderNextAdvanceTarget(input: {
+  branchFlags: PlayerProgress["branchFlags"];
+  catName: string | null;
+  currentRuntimeState: ActiveNativeReaderRuntimeState;
+  loadChapter: Parameters<typeof advanceRuntimePosition>[0]["loadChapter"];
+  supabaseUrl: string;
+}): Promise<NativeReaderAdvanceTarget> {
+  const result = await advanceRuntimePosition({
+    manifest: input.currentRuntimeState.manifest,
+    bundle: input.currentRuntimeState.bundle,
+    state: input.currentRuntimeState.readerState,
+    loadChapter: input.loadChapter
+  });
+  const target = getAdvanceTargetBundleAndState({
+    currentRuntimeState: input.currentRuntimeState,
+    result
+  });
+  const targetPresentation =
+    target.bundle && target.state
+      ? createNativeReaderPresentation({
+          supabaseUrl: input.supabaseUrl,
+          bundle: target.bundle,
+          readerState: target.state,
+          branchFlags: input.branchFlags,
+          catName: input.catName
+        })
+      : null;
+
+  return {
+    result,
+    targetBundle: target.bundle,
+    targetKey: targetPresentation
+      ? createNativeReaderPresentationReadinessKey(targetPresentation)
+      : null,
+    targetPresentation,
+    targetState: target.state
+  };
+}
+
+export async function computeNativeReaderAdvanceTargets(input: {
+  branchFlags: PlayerProgress["branchFlags"];
+  catName: string | null;
+  currentRuntimeState: ActiveNativeReaderRuntimeState;
+  depth?: number;
+  loadChapter: Parameters<typeof advanceRuntimePosition>[0]["loadChapter"];
+  supabaseUrl: string;
+}) {
+  const targets: NativeReaderAdvanceTarget[] = [];
+  let currentRuntimeState = input.currentRuntimeState;
+
+  for (
+    let index = 0;
+    index < (input.depth ?? PRESENTATION_LOOKAHEAD_DEPTH);
+    index += 1
+  ) {
+    const target = await computeNativeReaderNextAdvanceTarget({
+      branchFlags: input.branchFlags,
+      catName: input.catName,
+      currentRuntimeState,
+      loadChapter: input.loadChapter,
+      supabaseUrl: input.supabaseUrl
+    });
+
+    targets.push(target);
+
+    if (!target.targetBundle || !target.targetState) {
+      break;
+    }
+
+    currentRuntimeState = {
+      status: "ready",
+      manifest: currentRuntimeState.manifest,
+      bundle: target.targetBundle,
+      readerState: target.targetState
+    };
+  }
+
+  return targets;
+}
+
+export function resolveNativeReaderAdvanceCommitPlan(input: {
+  targetKey: string | null;
+  targetRenderReady: boolean;
+}) {
+  if (!input.targetKey || input.targetRenderReady) {
+    return {
+      type: "commit-instant" as const
+    };
+  }
+
+  return {
+    reason: "target-presentation-not-render-ready" as const,
+    type: "wait-for-render-ready" as const
+  };
+}
+
+export async function commitNativeReaderAdvanceAfterPresentationGate(input: {
+  commit: () => void;
+  ensureRenderReady: () => Promise<void>;
+  now?: () => number;
+  targetKey: string | null;
+  targetRenderReady: boolean;
+}) {
+  const plan = resolveNativeReaderAdvanceCommitPlan({
+    targetKey: input.targetKey,
+    targetRenderReady: input.targetRenderReady
+  });
+
+  if (plan.type === "commit-instant") {
+    input.commit();
+    return {
+      commitMode: "instant" as const,
+      waitDurationMs: 0
+    };
+  }
+
+  const now = input.now ?? Date.now;
+  const startedAt = now();
+
+  await input.ensureRenderReady();
+  input.commit();
+
+  return {
+    commitMode: "waited" as const,
+    reason: plan.reason,
+    waitDurationMs: now() - startedAt
+  };
+}
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
@@ -167,6 +421,49 @@ async function ensureNativeReaderPresentationAssets(input: {
   }
 
   void warmNextSceneAssets(presentation.sceneId, presentation.preloadAssetRefs);
+}
+
+export async function ensureNativeReaderPresentationRenderReady(input: {
+  presentation: NativeReaderPresentation;
+  reason: "initial" | "lookahead" | "tap-wait";
+}) {
+  const startedAt = Date.now();
+  const readinessKey = createNativeReaderPresentationReadinessKey(
+    input.presentation
+  );
+
+  logReaderTiming("next presentation warm started", {
+    dialogueEntryId: input.presentation.dialogueEntryId,
+    key: readinessKey,
+    reason: input.reason,
+    sceneId: input.presentation.sceneId
+  });
+
+  const result = await ensureSceneAssetsReady(
+    input.presentation.dialogueEntryId,
+    input.presentation.blockingAssetRefs
+  );
+  const errorMessage = getAssetCacheErrorMessage(result);
+
+  logReaderTiming("next presentation file ready", {
+    assetCount: result.assets.length,
+    dialogueEntryId: input.presentation.dialogueEntryId,
+    durationMs: result.durationMs,
+    key: readinessKey,
+    reason: input.reason,
+    status: result.status
+  });
+
+  if (errorMessage) {
+    throw new Error(errorMessage);
+  }
+
+  logReaderTiming("next presentation render-ready", {
+    dialogueEntryId: input.presentation.dialogueEntryId,
+    durationMs: Date.now() - startedAt,
+    key: readinessKey,
+    reason: input.reason
+  });
 }
 
 async function ensureReadyRuntimeStateAssets(input: {
@@ -293,6 +590,13 @@ export function useNativeReaderController(
   const [actionError, setActionError] = useState<string | null>(null);
   const [persistenceError, setPersistenceError] = useState<string | null>(null);
   const [loadRequestId, setLoadRequestId] = useState(0);
+  const preparedPresentationsRef = useRef(
+    new Map<string, PreparedNativeReaderPresentation>()
+  );
+  const inFlightPresentationWarmupsRef = useRef(
+    new Map<string, Promise<PreparedNativeReaderPresentation>>()
+  );
+  const isAdvanceInFlightRef = useRef(false);
 
   const reload = useCallback(() => {
     setLoadRequestId((currentValue) => currentValue + 1);
@@ -528,6 +832,170 @@ export function useNativeReaderController(
     () => presentation?.preloadAssetRefs ?? [],
     [presentation]
   );
+  const presentationRenderKey = useMemo(
+    () =>
+      presentation
+        ? createNativeReaderPresentationReadinessKey(presentation)
+        : null,
+    [presentation]
+  );
+
+  const rememberPreparedPresentation = useCallback(
+    (preparedPresentation: PreparedNativeReaderPresentation) => {
+      const cache = preparedPresentationsRef.current;
+
+      cache.set(preparedPresentation.key, preparedPresentation);
+
+      while (cache.size > PRESENTATION_READY_CACHE_LIMIT) {
+        const oldestKey = cache.keys().next().value as string | undefined;
+
+        if (!oldestKey) {
+          break;
+        }
+
+        cache.delete(oldestKey);
+      }
+    },
+    []
+  );
+
+  const getPreparedPresentation = useCallback((key: string | null) => {
+    return key ? (preparedPresentationsRef.current.get(key) ?? null) : null;
+  }, []);
+
+  const warmPresentation = useCallback(
+    (
+      targetPresentation: NativeReaderPresentation,
+      reason: "initial" | "lookahead" | "tap-wait"
+    ) => {
+      const key =
+        createNativeReaderPresentationReadinessKey(targetPresentation);
+      const preparedPresentation = getPreparedPresentation(key);
+
+      if (preparedPresentation) {
+        return Promise.resolve(preparedPresentation);
+      }
+
+      const existingWarmup = inFlightPresentationWarmupsRef.current.get(key);
+
+      if (existingWarmup) {
+        return existingWarmup;
+      }
+
+      const warmup = ensureNativeReaderPresentationRenderReady({
+        presentation: targetPresentation,
+        reason
+      })
+        .then(() => {
+          const prepared: PreparedNativeReaderPresentation = {
+            key,
+            presentation: targetPresentation,
+            readyAt: Date.now()
+          };
+
+          rememberPreparedPresentation(prepared);
+          return prepared;
+        })
+        .finally(() => {
+          inFlightPresentationWarmupsRef.current.delete(key);
+        });
+
+      inFlightPresentationWarmupsRef.current.set(key, warmup);
+      return warmup;
+    },
+    [getPreparedPresentation, rememberPreparedPresentation]
+  );
+
+  const warmAdvanceTargetsFromState = useCallback(
+    async (input: {
+      currentRuntimeState: ActiveNativeReaderRuntimeState;
+      sourceKey: string;
+    }) => {
+      if (
+        presentation?.status === "supported" &&
+        (presentation.needsCatNameInput || presentation.needsDressSelection)
+      ) {
+        logReaderTiming("next presentation warm skipped", {
+          reason: presentation.needsCatNameInput
+            ? "cat-name-required"
+            : "dress-selection-required",
+          sourceKey: input.sourceKey
+        });
+        return;
+      }
+
+      const targets = await computeNativeReaderAdvanceTargets({
+        branchFlags,
+        catName,
+        currentRuntimeState: input.currentRuntimeState,
+        depth: PRESENTATION_LOOKAHEAD_DEPTH,
+        loadChapter: repository.loadChapter,
+        supabaseUrl: config.supabaseUrl
+      });
+
+      await Promise.all(
+        targets.map((target) =>
+          target.targetPresentation
+            ? warmPresentation(target.targetPresentation, "lookahead")
+            : Promise.resolve(null)
+        )
+      );
+    },
+    [
+      branchFlags,
+      catName,
+      config.supabaseUrl,
+      presentation,
+      repository.loadChapter,
+      warmPresentation
+    ]
+  );
+
+  useEffect(() => {
+    if (!presentation || !presentationRenderKey) {
+      return;
+    }
+
+    rememberPreparedPresentation({
+      key: presentationRenderKey,
+      presentation,
+      readyAt: Date.now()
+    });
+    logReaderTiming("current presentation committed", {
+      dialogueEntryId: presentation.dialogueEntryId,
+      key: presentationRenderKey,
+      sceneId: presentation.sceneId
+    });
+  }, [presentation, presentationRenderKey, rememberPreparedPresentation]);
+
+  useEffect(() => {
+    if (
+      !presentationRenderKey ||
+      (runtimeState.status !== "ready" && runtimeState.status !== "finished")
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+
+    void warmAdvanceTargetsFromState({
+      currentRuntimeState: runtimeState,
+      sourceKey: presentationRenderKey
+    }).catch((error) => {
+      if (cancelled) {
+        return;
+      }
+
+      logReaderTiming("next presentation warm failed", {
+        message: getErrorMessage(error, "Unable to warm next presentation."),
+        sourceKey: presentationRenderKey
+      });
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [presentationRenderKey, runtimeState, warmAdvanceTargetsFromState]);
 
   const canRetreat = useMemo(() => {
     if (runtimeState.status === "finished") {
@@ -639,33 +1107,86 @@ export function useNativeReaderController(
     ) => {
       const resolvedBranchFlags = options?.branchFlags ?? branchFlags;
       const resolvedCatName = options?.catName ?? catName;
-      const result = await advanceRuntimePosition({
-        manifest: currentRuntimeState.manifest,
-        bundle: currentRuntimeState.bundle,
-        state: currentRuntimeState.readerState,
-        loadChapter: repository.loadChapter
+      const tappedAt = Date.now();
+
+      logReaderTiming("user tapped advance", {
+        chapterId: currentRuntimeState.bundle.chapter.id,
+        dialogueIndex: currentRuntimeState.readerState.dialogueIndex,
+        sceneIndex: currentRuntimeState.readerState.sceneIndex
       });
 
-      await commitNativeReaderStateAfterAssetGate({
-        ensureAssets: () =>
-          ensureAdvanceResultAssets({
-            supabaseUrl: config.supabaseUrl,
-            currentRuntimeState,
-            result,
-            branchFlags: resolvedBranchFlags,
-            catName: resolvedCatName
-          }),
-        commit: () => {
-          commitAdvanceResult(currentRuntimeState, result);
-        }
+      const target = await computeNativeReaderNextAdvanceTarget({
+        branchFlags: resolvedBranchFlags,
+        catName: resolvedCatName,
+        currentRuntimeState,
+        loadChapter: repository.loadChapter,
+        supabaseUrl: config.supabaseUrl
       });
+      const targetRenderReady = Boolean(
+        !target.targetKey || getPreparedPresentation(target.targetKey)
+      );
+      const plan = resolveNativeReaderAdvanceCommitPlan({
+        targetKey: target.targetKey,
+        targetRenderReady
+      });
+
+      if (plan.type === "wait-for-render-ready") {
+        setIsMoving(true);
+        logReaderTiming("advance waiting for render-ready target", {
+          reason: plan.reason,
+          targetKey: target.targetKey
+        });
+      }
+
+      try {
+        const commitResult =
+          await commitNativeReaderAdvanceAfterPresentationGate({
+            targetKey: target.targetKey,
+            targetRenderReady,
+            ensureRenderReady: async () => {
+              if (target.targetPresentation) {
+                await warmPresentation(target.targetPresentation, "tap-wait");
+                return;
+              }
+
+              await ensureAdvanceResultAssets({
+                supabaseUrl: config.supabaseUrl,
+                currentRuntimeState,
+                result: target.result,
+                branchFlags: resolvedBranchFlags,
+                catName: resolvedCatName
+              });
+            },
+            commit: () => {
+              commitAdvanceResult(currentRuntimeState, target.result);
+            }
+          });
+
+        logReaderTiming("target committed", {
+          commitMode: commitResult.commitMode,
+          targetKey: target.targetKey,
+          waitDurationMs: commitResult.waitDurationMs,
+          waitSinceTapMs: Date.now() - tappedAt,
+          ...("reason" in commitResult
+            ? {
+                reason: commitResult.reason
+              }
+            : {})
+        });
+      } finally {
+        if (plan.type === "wait-for-render-ready") {
+          setIsMoving(false);
+        }
+      }
     },
     [
       branchFlags,
       catName,
       commitAdvanceResult,
       config.supabaseUrl,
-      repository.loadChapter
+      getPreparedPresentation,
+      repository.loadChapter,
+      warmPresentation
     ]
   );
 
@@ -765,7 +1286,8 @@ export function useNativeReaderController(
   const advance = useCallback(async () => {
     if (
       (runtimeState.status !== "ready" && runtimeState.status !== "finished") ||
-      isMoving
+      isMoving ||
+      isAdvanceInFlightRef.current
     ) {
       return;
     }
@@ -822,15 +1344,15 @@ export function useNativeReaderController(
       return;
     }
 
-    setIsMoving(true);
     setActionError(null);
+    isAdvanceInFlightRef.current = true;
 
     try {
       await advanceFromRuntimeState(runtimeState);
     } catch (error) {
       setActionError(getErrorMessage(error, "Unable to advance the story."));
     } finally {
-      setIsMoving(false);
+      isAdvanceInFlightRef.current = false;
     }
   }, [
     boundaryState,

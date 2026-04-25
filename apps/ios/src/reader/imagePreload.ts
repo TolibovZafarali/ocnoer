@@ -9,26 +9,37 @@ import { parse, type JsxAST } from "react-native-svg";
 
 import type { PlayerRuntimeImageAssetRef } from "@ocnoer/story-core";
 
-const READER_ASSET_CACHE_DIRECTORY = "ocnoer-reader-assets-v1";
+const READER_ASSET_CACHE_DIRECTORY = "ocnoer-reader-assets-v2";
+export const READER_ASSET_RENDER_CACHE_VERSION = 2;
 const MAX_CONCURRENT_ASSET_DOWNLOADS = 3;
 const PRELOAD_TIMEOUT_MS = 3500;
-const KNOWN_CACHE_EXTENSIONS = [
+const SOURCE_SVG_CACHE_EXTENSIONS = ["svg"];
+const EXTRACTED_RASTER_CACHE_EXTENSIONS = [
   "embedded.png",
   "embedded.jpg",
   "embedded.jpeg",
   "embedded.webp",
-  "png",
-  "jpg",
-  "jpeg",
-  "webp",
-  "svg",
-  "bin"
+  "embedded.bin"
 ];
+const BITMAP_CACHE_EXTENSIONS = ["png", "jpg", "jpeg", "webp", "bin"];
 
 export type ReaderAssetRenderKind =
   | "bitmap"
   | "svg-vector"
   | "svg-raster-wrapper"
+  | "unknown";
+
+export type ReaderAssetRenderMode =
+  | "original-svg"
+  | "extracted-raster"
+  | "bitmap"
+  | "true-vector-svg";
+
+export type ReaderAssetDetectedSourceType =
+  | "svg"
+  | "png"
+  | "jpg"
+  | "webp"
   | "unknown";
 
 export type ReaderAssetRef = PlayerRuntimeImageAssetRef & {
@@ -40,14 +51,17 @@ export type ReaderCachedAsset = {
   cacheKey: string;
   localUri: string;
   renderKind: ReaderAssetRenderKind;
+  renderMode: ReaderAssetRenderMode;
   role: ReaderAssetRef["role"];
   sourceUrl: string;
   storagePath: string;
   bytes: number;
   contentType: string | null;
+  detectedSourceType: ReaderAssetDetectedSourceType;
   fromCache: boolean;
   warnings: string[];
   layoutMetrics: ReaderAssetLayoutMetrics | null;
+  alphaMode: ReaderAssetAlphaMode;
 };
 
 export type ReaderAssetCacheError = {
@@ -100,9 +114,32 @@ export type ReaderAssetLayoutMetrics = {
   } | null;
 };
 
+export type ReaderAssetAlphaMode = "alpha-safe" | "opaque" | "unknown";
+
 type ReaderCacheMetadata = {
+  alphaMode?: ReaderAssetAlphaMode;
+  contentType?: string | null;
+  detectedSourceType?: ReaderAssetDetectedSourceType;
   layoutMetrics?: ReaderAssetLayoutMetrics | null;
+  renderKind?: ReaderAssetRenderKind;
+  renderMode?: ReaderAssetRenderMode;
 };
+
+export type ReaderPortraitDebugRenderModeOverride = {
+  assetId?: string | null;
+  mode: "original-svg" | "extracted-raster";
+  storagePathIncludes?: string;
+  urlIncludes?: string;
+};
+
+declare global {
+  // Set in development from the simulator debugger to compare SVG vs extraction:
+  // globalThis.__OCNOER_READER_PORTRAIT_RENDER_MODE_OVERRIDES = [{ storagePathIncludes: "ocnoer", mode: "extracted-raster" }]
+  // eslint-disable-next-line no-var
+  var __OCNOER_READER_PORTRAIT_RENDER_MODE_OVERRIDES:
+    | ReaderPortraitDebugRenderModeOverride[]
+    | undefined;
+}
 
 const nativeImageRefCache = new Map<string, ImageRef>();
 const inFlightNativeImageLoads = new Map<string, Promise<ImageRef | null>>();
@@ -111,6 +148,8 @@ const inFlightSvgAstLoads = new Map<string, Promise<JsxAST | null>>();
 const cachedAssetsByUrl = new Map<string, ReaderCachedAsset>();
 const cachedAssetsByKey = new Map<string, ReaderCachedAsset>();
 const inFlightAssetLoads = new Map<string, Promise<ReaderCachedAsset>>();
+let readerPortraitDebugRenderModeOverrides: ReaderPortraitDebugRenderModeOverride[] =
+  [];
 
 let activeDownloadCount = 0;
 const queuedDownloads: Array<() => void> = [];
@@ -143,6 +182,53 @@ function logAssetWarning(message: string, details?: Record<string, unknown>) {
   }
 
   console.warn(`[reader-assets] ${message}`);
+}
+
+export function setReaderPortraitDebugRenderModeOverrides(
+  overrides: ReaderPortraitDebugRenderModeOverride[]
+) {
+  if (!isDevelopment()) {
+    return;
+  }
+
+  readerPortraitDebugRenderModeOverrides = overrides;
+}
+
+function getReaderPortraitDebugRenderModeOverride(assetRef: ReaderAssetRef) {
+  if (!isDevelopment() || assetRef.role !== "portrait") {
+    return null;
+  }
+
+  const overrides = [
+    ...readerPortraitDebugRenderModeOverrides,
+    ...(globalThis.__OCNOER_READER_PORTRAIT_RENDER_MODE_OVERRIDES ?? [])
+  ];
+
+  return (
+    overrides.find((override) => {
+      if (override.assetId && override.assetId !== assetRef.assetId) {
+        return false;
+      }
+
+      if (
+        override.storagePathIncludes &&
+        !assetRef.storagePath.includes(override.storagePathIncludes)
+      ) {
+        return false;
+      }
+
+      if (
+        override.urlIncludes &&
+        !assetRef.url.includes(override.urlIncludes)
+      ) {
+        return false;
+      }
+
+      return Boolean(
+        override.assetId || override.storagePathIncludes || override.urlIncludes
+      );
+    })?.mode ?? null
+  );
 }
 
 function isRemoteImageUrl(value: string) {
@@ -214,12 +300,41 @@ function normalizeCacheToken(value: string) {
   return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
 }
 
-function getResolvedCacheKey(assetRef: ReaderAssetRef) {
+function getResolvedBaseCacheKey(assetRef: ReaderAssetRef) {
   return normalizeCacheToken(
     `${assetRef.role}-${stableHash(
       assetRef.cacheKey || assetRef.storagePath || assetRef.url
     )}`
   );
+}
+
+function getRenderModeCacheToken(renderMode: ReaderAssetRenderMode) {
+  switch (renderMode) {
+    case "original-svg":
+      return `source-svg-v${READER_ASSET_RENDER_CACHE_VERSION}`;
+    case "extracted-raster":
+      return `extracted-raster-v${READER_ASSET_RENDER_CACHE_VERSION}`;
+    case "true-vector-svg":
+      return `true-vector-svg-v${READER_ASSET_RENDER_CACHE_VERSION}`;
+    case "bitmap":
+      return `bitmap-v${READER_ASSET_RENDER_CACHE_VERSION}`;
+  }
+}
+
+function getResolvedCacheKey(
+  assetRef: ReaderAssetRef,
+  renderMode: ReaderAssetRenderMode
+) {
+  return normalizeCacheToken(
+    `${getResolvedBaseCacheKey(assetRef)}-${getRenderModeCacheToken(renderMode)}`
+  );
+}
+
+export function getReaderAssetCacheKeyForRenderMode(
+  assetRef: ReaderAssetRef,
+  renderMode: ReaderAssetRenderMode
+) {
+  return getResolvedCacheKey(assetRef, renderMode);
 }
 
 function getCacheDirectory() {
@@ -274,7 +389,7 @@ function writeCacheMetadata(
   cacheKey: string,
   metadata: ReaderCacheMetadata | null
 ) {
-  if (!metadata?.layoutMetrics) {
+  if (!metadata) {
     return;
   }
 
@@ -293,6 +408,60 @@ function getPathExtension(value: string | null | undefined) {
   const match = fileName.match(/\.([a-zA-Z0-9]+)$/);
 
   return match?.[1]?.toLowerCase() ?? null;
+}
+
+function isLikelySvgAsset(assetRef: ReaderAssetRef) {
+  return (
+    assetRef.renderKind === "svg-vector" ||
+    assetRef.renderKind === "svg-raster-wrapper" ||
+    extensionFromContentType(assetRef.contentType) === "svg" ||
+    getPathExtension(assetRef.storagePath) === "svg" ||
+    getPathExtension(assetRef.url) === "svg"
+  );
+}
+
+function getPreferredCacheRenderMode(
+  assetRef: ReaderAssetRef
+): ReaderAssetRenderMode {
+  if (assetRef.renderKind === "svg-vector") {
+    return "true-vector-svg";
+  }
+
+  if (isLikelySvgAsset(assetRef)) {
+    return "original-svg";
+  }
+
+  return "bitmap";
+}
+
+function uniqueRenderModes(
+  renderModes: ReaderAssetRenderMode[]
+): ReaderAssetRenderMode[] {
+  return Array.from(new Set(renderModes));
+}
+
+function getCacheRenderModeCandidates(assetRef: ReaderAssetRef) {
+  const preferred = getPreferredCacheRenderMode(assetRef);
+
+  return uniqueRenderModes([
+    preferred,
+    "original-svg",
+    "true-vector-svg",
+    "extracted-raster",
+    "bitmap"
+  ]);
+}
+
+function getCacheExtensionsForRenderMode(renderMode: ReaderAssetRenderMode) {
+  if (renderMode === "original-svg" || renderMode === "true-vector-svg") {
+    return SOURCE_SVG_CACHE_EXTENSIONS;
+  }
+
+  if (renderMode === "extracted-raster") {
+    return EXTRACTED_RASTER_CACHE_EXTENSIONS;
+  }
+
+  return BITMAP_CACHE_EXTENSIONS;
 }
 
 function extensionFromContentType(contentType: string | null | undefined) {
@@ -348,6 +517,28 @@ function extensionFromBytes(bytes: Uint8Array) {
   }
 
   return null;
+}
+
+function getDetectedSourceTypeFromExtension(
+  extension: string | null
+): ReaderAssetDetectedSourceType {
+  if (extension === "svg") {
+    return "svg";
+  }
+
+  if (extension === "png") {
+    return "png";
+  }
+
+  if (extension === "jpg" || extension === "jpeg") {
+    return "jpg";
+  }
+
+  if (extension === "webp") {
+    return "webp";
+  }
+
+  return "unknown";
 }
 
 function decodeBytePrefix(bytes: Uint8Array, maxBytes: number) {
@@ -474,33 +665,155 @@ function getRasterDimensionsFromBytes(input: {
   return null;
 }
 
+function bytesContainAscii(bytes: Uint8Array, value: string, startIndex = 0) {
+  const encodedValue = Array.from(value).map((char) => char.charCodeAt(0));
+
+  for (
+    let index = startIndex;
+    index <= bytes.length - encodedValue.length;
+    index += 1
+  ) {
+    if (
+      encodedValue.every(
+        (charCode, offset) => bytes[index + offset] === charCode
+      )
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+function getPngAlphaMode(bytes: Uint8Array): ReaderAssetAlphaMode {
+  if (bytes.length < 26) {
+    return "unknown";
+  }
+
+  const colorType = bytes[25];
+
+  if (colorType === 4 || colorType === 6) {
+    return "alpha-safe";
+  }
+
+  return bytesContainAscii(bytes, "tRNS", 8) ? "alpha-safe" : "opaque";
+}
+
+function getWebpAlphaMode(bytes: Uint8Array): ReaderAssetAlphaMode {
+  if (
+    bytes.length > 21 &&
+    bytes[12] === 0x56 &&
+    bytes[13] === 0x50 &&
+    bytes[14] === 0x38 &&
+    bytes[15] === 0x58
+  ) {
+    return (bytes[20] ?? 0) & 0x10 ? "alpha-safe" : "opaque";
+  }
+
+  return "unknown";
+}
+
+function getRasterFileInfoFromBytes(input: {
+  bytes: Uint8Array;
+  declaredMimeType: string;
+}) {
+  const extension = extensionFromBytes(input.bytes);
+
+  if (extension === "png") {
+    return {
+      extension: "png",
+      mimeType: "image/png",
+      alphaMode: getPngAlphaMode(input.bytes)
+    } as const;
+  }
+
+  if (extension === "webp") {
+    return {
+      extension: "webp",
+      mimeType: "image/webp",
+      alphaMode: getWebpAlphaMode(input.bytes)
+    } as const;
+  }
+
+  if (extension === "jpg") {
+    return {
+      extension: "jpg",
+      mimeType: "image/jpeg",
+      alphaMode: "opaque"
+    } as const;
+  }
+
+  return {
+    extension: extensionFromContentType(input.declaredMimeType) ?? "bin",
+    mimeType: input.declaredMimeType,
+    alphaMode:
+      input.declaredMimeType === "image/png" ||
+      input.declaredMimeType === "image/webp"
+        ? "alpha-safe"
+        : "unknown"
+  } as const;
+}
+
+function bytesEqual(left: Uint8Array, right: Uint8Array) {
+  if (left.length !== right.length) {
+    return false;
+  }
+
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
+function getWrittenFileByteIdentity(file: File, expectedBytes: Uint8Array) {
+  try {
+    return bytesEqual(file.bytesSync(), expectedBytes);
+  } catch {
+    return false;
+  }
+}
+
 function createAssetRecord(input: {
   assetRef: ReaderAssetRef;
   cacheKey: string;
   file: File;
   renderKind: ReaderAssetRenderKind;
+  renderMode: ReaderAssetRenderMode;
   contentType: string | null;
+  detectedSourceType?: ReaderAssetDetectedSourceType;
   fromCache: boolean;
   layoutMetrics?: ReaderAssetLayoutMetrics | null;
+  alphaMode?: ReaderAssetAlphaMode;
   warnings?: string[];
 }): ReaderCachedAsset {
   const record: ReaderCachedAsset = {
     cacheKey: input.cacheKey,
     localUri: input.file.uri,
     renderKind: input.renderKind,
+    renderMode: input.renderMode,
     role: input.assetRef.role,
     sourceUrl: input.assetRef.url,
     storagePath: input.assetRef.storagePath,
     bytes: getFileSize(input.file),
     contentType: input.contentType,
+    detectedSourceType: input.detectedSourceType ?? "unknown",
     fromCache: input.fromCache,
     warnings: input.warnings ?? [],
-    layoutMetrics: input.layoutMetrics ?? null
+    layoutMetrics: input.layoutMetrics ?? null,
+    alphaMode: input.alphaMode ?? "unknown"
   };
 
   if (!input.fromCache) {
     writeCacheMetadata(input.cacheKey, {
-      layoutMetrics: record.layoutMetrics
+      layoutMetrics: record.layoutMetrics,
+      alphaMode: record.alphaMode,
+      contentType: record.contentType,
+      detectedSourceType: record.detectedSourceType,
+      renderKind: record.renderKind,
+      renderMode: record.renderMode
     });
   }
 
@@ -527,7 +840,29 @@ function getCachedRecord(assetRefOrUrl: ReaderAssetRef | string) {
   return null;
 }
 
-function findExistingCachedAsset(assetRef: ReaderAssetRef, cacheKey: string) {
+function getCachedRenderKind(input: {
+  extension: string;
+  metadata: ReaderCacheMetadata | null;
+  renderMode: ReaderAssetRenderMode;
+}): ReaderAssetRenderKind {
+  if (input.metadata?.renderKind) {
+    return input.metadata.renderKind;
+  }
+
+  if (input.extension === "svg") {
+    return input.renderMode === "true-vector-svg"
+      ? "svg-vector"
+      : "svg-raster-wrapper";
+  }
+
+  return "bitmap";
+}
+
+function findExistingCachedAsset(
+  assetRef: ReaderAssetRef,
+  cacheKey: string,
+  renderMode: ReaderAssetRenderMode
+) {
   const knownRecord = cachedAssetsByKey.get(cacheKey) ?? null;
 
   if (knownRecord && isReadyFile(new File(knownRecord.localUri))) {
@@ -535,24 +870,32 @@ function findExistingCachedAsset(assetRef: ReaderAssetRef, cacheKey: string) {
     return knownRecord;
   }
 
-  for (const extension of KNOWN_CACHE_EXTENSIONS) {
+  for (const extension of getCacheExtensionsForRenderMode(renderMode)) {
     const file = getCacheFile(cacheKey, extension);
 
     if (!isReadyFile(file)) {
       continue;
     }
 
-    const renderKind = extension === "svg" ? "svg-vector" : "bitmap";
     const metadata = readCacheMetadata(cacheKey);
+    const resolvedRenderMode = metadata?.renderMode ?? renderMode;
+    const renderKind = getCachedRenderKind({
+      extension,
+      metadata,
+      renderMode: resolvedRenderMode
+    });
 
     return createAssetRecord({
       assetRef,
       cacheKey,
       file,
       renderKind,
-      contentType: null,
+      renderMode: resolvedRenderMode,
+      contentType: metadata?.contentType ?? null,
+      detectedSourceType: metadata?.detectedSourceType ?? "unknown",
       fromCache: true,
       layoutMetrics: metadata?.layoutMetrics ?? null,
+      alphaMode: metadata?.alphaMode ?? "unknown",
       warnings: extension.startsWith("embedded.")
         ? ["Using extracted embedded raster from cached SVG wrapper."]
         : []
@@ -560,6 +903,50 @@ function findExistingCachedAsset(assetRef: ReaderAssetRef, cacheKey: string) {
   }
 
   return null;
+}
+
+function findExistingCachedAssetForAnyRenderMode(assetRef: ReaderAssetRef) {
+  for (const renderMode of getCacheRenderModeCandidates(assetRef)) {
+    const cachedAsset = findExistingCachedAsset(
+      assetRef,
+      getResolvedCacheKey(assetRef, renderMode),
+      renderMode
+    );
+
+    if (cachedAsset) {
+      return cachedAsset;
+    }
+  }
+
+  return null;
+}
+
+function logPortraitAssetDiagnostics(input: {
+  assetRef: ReaderAssetRef;
+  declaredContentType: string | null;
+  detectedSourceType: ReaderAssetDetectedSourceType;
+  extractedRasterByteIdentical?: boolean | null;
+  record: ReaderCachedAsset;
+  svgFallbackTriggered?: boolean;
+}) {
+  if (input.assetRef.role !== "portrait") {
+    return;
+  }
+
+  logAssetMetric("portrait render diagnostics", {
+    assetId: input.assetRef.assetId ?? null,
+    cachedUri: input.record.localUri,
+    cacheKey: input.record.cacheKey,
+    declaredContentType: input.declaredContentType,
+    detectedSourceType: input.detectedSourceType,
+    extractedRasterByteIdentical: input.extractedRasterByteIdentical ?? null,
+    originalPath: input.assetRef.storagePath,
+    originalUrl: input.assetRef.url,
+    renderKind: input.record.renderKind,
+    renderMode: input.record.renderMode,
+    sourceContentType: input.record.contentType,
+    svgFallbackTriggered: Boolean(input.svgFallbackTriggered)
+  });
 }
 
 function responseNeedsTextBody(
@@ -775,7 +1162,10 @@ export function classifySvgAssetPayload(
 }
 
 async function predecodeBitmapAsset(record: ReaderCachedAsset) {
-  if (record.renderKind === "svg-vector") {
+  if (
+    record.renderMode === "original-svg" ||
+    record.renderMode === "true-vector-svg"
+  ) {
     return;
   }
 
@@ -785,21 +1175,66 @@ async function predecodeBitmapAsset(record: ReaderCachedAsset) {
   await loadReaderImageRef(record.sourceUrl);
 }
 
+export async function prepareReaderCachedAssetRenderReady(
+  record: ReaderCachedAsset
+) {
+  if (
+    record.renderMode === "original-svg" ||
+    record.renderMode === "true-vector-svg"
+  ) {
+    const svgAst = await loadReaderSvgAst(record.sourceUrl);
+
+    if (!svgAst) {
+      throw new Error(
+        `Unable to prepare SVG render tree for ${record.storagePath}.`
+      );
+    }
+
+    logAssetMetric("SVG prepared", {
+      assetId: record.cacheKey,
+      cachedUri: record.localUri,
+      renderMode: record.renderMode,
+      role: record.role,
+      storagePath: record.storagePath
+    });
+    return;
+  }
+
+  await loadReaderImageRef(record.sourceUrl);
+  logAssetMetric("bitmap render warmed", {
+    assetId: record.cacheKey,
+    cachedUri: record.localUri,
+    renderMode: record.renderMode,
+    role: record.role,
+    storagePath: record.storagePath
+  });
+}
+
 async function writeSvgAsset(input: {
   assetRef: ReaderAssetRef;
-  cacheKey: string;
   contentType: string | null;
+  detectedSourceType: ReaderAssetDetectedSourceType;
   svgXml: string;
 }) {
   const classification = classifySvgAssetPayload(input.svgXml);
+  const forcedPortraitRenderMode = getReaderPortraitDebugRenderModeOverride(
+    input.assetRef
+  );
+  const shouldExtractRaster =
+    forcedPortraitRenderMode === "extracted-raster" &&
+    Boolean(classification.embeddedRaster);
 
-  if (classification.embeddedRaster) {
+  if (shouldExtractRaster && classification.embeddedRaster) {
     const embeddedRasterBytes = decodeBase64Bytes(
       classification.embeddedRaster.base64
     );
+    const rasterFileInfo = getRasterFileInfoFromBytes({
+      bytes: embeddedRasterBytes,
+      declaredMimeType: classification.embeddedRaster.mimeType
+    });
     const embeddedRasterDimensions = getRasterDimensionsFromBytes({
       bytes: embeddedRasterBytes,
-      mimeType: classification.embeddedRaster.mimeType
+      mimeType: rasterFileInfo.mimeType
     });
     const layoutMetrics: ReaderAssetLayoutMetrics | null = {
       ...classification.layoutMetrics,
@@ -810,30 +1245,71 @@ async function writeSvgAsset(input: {
         embeddedRasterDimensions?.height ??
         classification.layoutMetrics?.naturalHeight
     };
-    const file = getCacheFile(
-      input.cacheKey,
-      `embedded.${classification.embeddedRaster.extension}`
-    );
+    const warnings = [...classification.warnings];
+
+    if (rasterFileInfo.mimeType !== classification.embeddedRaster.mimeType) {
+      warnings.push(
+        `Embedded raster MIME ${classification.embeddedRaster.mimeType} did not match ${rasterFileInfo.mimeType} bytes.`
+      );
+    }
+
+    if (rasterFileInfo.alphaMode === "opaque") {
+      warnings.push(
+        "Embedded raster format is opaque; transparent portrait background cannot be recovered from this source."
+      );
+    }
+
+    const cacheKey = getResolvedCacheKey(input.assetRef, "extracted-raster");
+    const file = getCacheFile(cacheKey, `embedded.${rasterFileInfo.extension}`);
 
     file.write(embeddedRasterBytes);
 
     if (!isReadyFile(file)) {
       throw new Error("Cached embedded raster file is empty.");
     }
+    const extractedRasterByteIdentical = getWrittenFileByteIdentity(
+      file,
+      embeddedRasterBytes
+    );
 
-    return createAssetRecord({
+    const record = createAssetRecord({
       assetRef: input.assetRef,
-      cacheKey: input.cacheKey,
+      cacheKey,
       file,
       renderKind: "bitmap",
-      contentType: classification.embeddedRaster.mimeType,
+      renderMode: "extracted-raster",
+      contentType: rasterFileInfo.mimeType,
+      detectedSourceType: input.detectedSourceType,
       fromCache: false,
       layoutMetrics,
-      warnings: classification.warnings
+      alphaMode: rasterFileInfo.alphaMode,
+      warnings: extractedRasterByteIdentical
+        ? warnings
+        : [
+            ...warnings,
+            "Cached embedded raster bytes differ from the SVG data URL payload."
+          ]
     });
+
+    logPortraitAssetDiagnostics({
+      assetRef: input.assetRef,
+      declaredContentType: input.contentType,
+      detectedSourceType: input.detectedSourceType,
+      extractedRasterByteIdentical,
+      record
+    });
+
+    return record;
   }
 
-  const file = getCacheFile(input.cacheKey, "svg");
+  const renderMode: ReaderAssetRenderMode =
+    forcedPortraitRenderMode === "original-svg"
+      ? "original-svg"
+      : classification.renderKind === "svg-vector"
+        ? "true-vector-svg"
+        : "original-svg";
+  const cacheKey = getResolvedCacheKey(input.assetRef, renderMode);
+  const file = getCacheFile(cacheKey, "svg");
   file.write(input.svgXml);
 
   if (!isReadyFile(file)) {
@@ -846,26 +1322,53 @@ async function writeSvgAsset(input: {
     svgAstCache.set(input.assetRef.url, svgAst);
   }
 
-  return createAssetRecord({
+  const record = createAssetRecord({
     assetRef: input.assetRef,
-    cacheKey: input.cacheKey,
+    cacheKey,
     file,
     renderKind:
-      classification.renderKind === "svg-vector" ? "svg-vector" : "unknown",
-    contentType: input.contentType,
+      classification.renderKind === "svg-vector"
+        ? "svg-vector"
+        : classification.renderKind === "svg-raster-wrapper"
+          ? "svg-raster-wrapper"
+          : "unknown",
+    renderMode,
+    contentType:
+      extensionFromContentType(input.contentType) === "svg"
+        ? input.contentType
+        : "image/svg+xml",
+    detectedSourceType: input.detectedSourceType,
     fromCache: false,
     layoutMetrics: classification.layoutMetrics,
-    warnings: classification.warnings
+    alphaMode: "alpha-safe",
+    warnings:
+      forcedPortraitRenderMode === "extracted-raster" &&
+      !classification.embeddedRaster
+        ? [
+            ...classification.warnings,
+            "Debug extracted-raster mode was requested, but the SVG contains no embedded raster."
+          ]
+        : classification.warnings
   });
+
+  logPortraitAssetDiagnostics({
+    assetRef: input.assetRef,
+    declaredContentType: input.contentType,
+    detectedSourceType: input.detectedSourceType,
+    extractedRasterByteIdentical: null,
+    record,
+    svgFallbackTriggered:
+      Boolean(classification.embeddedRaster) &&
+      forcedPortraitRenderMode !== "extracted-raster"
+  });
+
+  return record;
 }
 
-async function downloadAndCacheAsset(
-  assetRef: ReaderAssetRef,
-  cacheKey: string
-) {
+async function downloadAndCacheAsset(assetRef: ReaderAssetRef) {
   ensureCacheDirectory();
 
-  const existingCachedAsset = findExistingCachedAsset(assetRef, cacheKey);
+  const existingCachedAsset = findExistingCachedAssetForAnyRenderMode(assetRef);
 
   if (existingCachedAsset) {
     logAssetMetric("cache hit", {
@@ -888,8 +1391,8 @@ async function downloadAndCacheAsset(
   if (responseNeedsTextBody(assetRef, contentType)) {
     record = await writeSvgAsset({
       assetRef,
-      cacheKey,
       contentType,
+      detectedSourceType: "svg",
       svgXml: await response.text()
     });
   } else {
@@ -898,16 +1401,25 @@ async function downloadAndCacheAsset(
     if (bytesLookLikeSvg(bytes)) {
       record = await writeSvgAsset({
         assetRef,
-        cacheKey,
         contentType,
+        detectedSourceType: "svg",
         svgXml: decodeUtf8Bytes(bytes)
       });
     } else {
-      const extension = inferBitmapExtension({
-        assetRef,
-        contentType,
-        bytes
+      const rasterFileInfo = getRasterFileInfoFromBytes({
+        bytes,
+        declaredMimeType: contentType ?? "application/octet-stream"
       });
+      const extension =
+        rasterFileInfo.extension === "bin"
+          ? inferBitmapExtension({
+              assetRef,
+              contentType,
+              bytes
+            })
+          : rasterFileInfo.extension;
+      const renderMode: ReaderAssetRenderMode = "bitmap";
+      const cacheKey = getResolvedCacheKey(assetRef, renderMode);
       const file = getCacheFile(cacheKey, extension);
 
       file.write(bytes);
@@ -921,8 +1433,20 @@ async function downloadAndCacheAsset(
         cacheKey,
         file,
         renderKind: "bitmap",
-        contentType,
-        fromCache: false
+        renderMode,
+        contentType: rasterFileInfo.mimeType,
+        detectedSourceType: getDetectedSourceTypeFromExtension(
+          extensionFromBytes(bytes) ?? extension
+        ),
+        fromCache: false,
+        alphaMode: rasterFileInfo.alphaMode
+      });
+
+      logPortraitAssetDiagnostics({
+        assetRef,
+        declaredContentType: contentType,
+        detectedSourceType: record.detectedSourceType,
+        record
       });
     }
   }
@@ -932,6 +1456,7 @@ async function downloadAndCacheAsset(
     bytes: record.bytes,
     durationMs: Date.now() - startedAt,
     renderKind: record.renderKind,
+    renderMode: record.renderMode,
     role: record.role,
     storagePath: record.storagePath
   });
@@ -949,6 +1474,7 @@ async function downloadAndCacheAsset(
 export async function ensureReaderAssetReady(assetRef: ReaderAssetRef) {
   if (!isRemoteImageUrl(assetRef.url)) {
     const file = new File(assetRef.url);
+    const renderMode = getPreferredCacheRenderMode(assetRef);
 
     if (isLocalUri(assetRef.url) && !isReadyFile(file)) {
       throw new Error(`Local asset is missing or empty: ${assetRef.url}`);
@@ -956,34 +1482,43 @@ export async function ensureReaderAssetReady(assetRef: ReaderAssetRef) {
 
     return createAssetRecord({
       assetRef,
-      cacheKey: getResolvedCacheKey(assetRef),
+      cacheKey: getResolvedCacheKey(assetRef, renderMode),
       file,
-      renderKind: assetRef.renderKind ?? "bitmap",
+      renderKind:
+        assetRef.renderKind ??
+        (renderMode === "bitmap" ? "bitmap" : "svg-raster-wrapper"),
+      renderMode,
       contentType: assetRef.contentType ?? null,
+      detectedSourceType: getDetectedSourceTypeFromExtension(
+        extensionFromContentType(assetRef.contentType) ??
+          getPathExtension(assetRef.url)
+      ),
       fromCache: true
     });
   }
 
-  const cacheKey = getResolvedCacheKey(assetRef);
-  const cachedRecord = findExistingCachedAsset(assetRef, cacheKey);
+  const cachedRecord = findExistingCachedAssetForAnyRenderMode(assetRef);
 
   if (cachedRecord) {
     return cachedRecord;
   }
 
-  const existingLoad = inFlightAssetLoads.get(cacheKey);
+  const downloadKey = `${getResolvedBaseCacheKey(
+    assetRef
+  )}-download-v${READER_ASSET_RENDER_CACHE_VERSION}`;
+  const existingLoad = inFlightAssetLoads.get(downloadKey);
 
   if (existingLoad) {
     return existingLoad;
   }
 
   const load = runWithDownloadLimit(() =>
-    downloadAndCacheAsset(assetRef, cacheKey)
+    downloadAndCacheAsset(assetRef)
   ).finally(() => {
-    inFlightAssetLoads.delete(cacheKey);
+    inFlightAssetLoads.delete(downloadKey);
   });
 
-  inFlightAssetLoads.set(cacheKey, load);
+  inFlightAssetLoads.set(downloadKey, load);
   return load;
 }
 
@@ -1035,6 +1570,46 @@ async function ensureAssetRefsReady(input: {
     assets,
     errors
   };
+
+  if (cacheResult.status === "success") {
+    logAssetMetric(`${input.scope} files ready`, {
+      assetCount: assets.length,
+      durationMs: Date.now() - startedAt,
+      scopeId: input.scopeId
+    });
+
+    const renderReadyResults = await Promise.allSettled(
+      assets.map((asset) => prepareReaderCachedAssetRenderReady(asset))
+    );
+
+    renderReadyResults.forEach((result, index) => {
+      if (result.status === "fulfilled") {
+        return;
+      }
+
+      const asset = assets[index];
+
+      if (!asset) {
+        return;
+      }
+
+      errors.push({
+        assetRef: {
+          role: asset.role,
+          url: asset.sourceUrl,
+          storagePath: asset.storagePath,
+          cacheKey: asset.cacheKey
+        },
+        message:
+          result.reason instanceof Error
+            ? result.reason.message
+            : "Unable to prepare reader asset render tree."
+      });
+    });
+
+    cacheResult.status = errors.length > 0 ? "error" : "success";
+    cacheResult.durationMs = Date.now() - startedAt;
+  }
 
   if (cacheResult.status === "success") {
     logAssetMetric(`${input.scope} ready`, {
@@ -1103,6 +1678,12 @@ export function getAssetRenderKind(assetRefOrUrl: ReaderAssetRef | string) {
   return getCachedRecord(assetRefOrUrl)?.renderKind ?? "unknown";
 }
 
+export function getAssetRenderMode(
+  assetRefOrUrl: ReaderAssetRef | string
+): ReaderAssetRenderMode | "unknown" {
+  return getCachedRecord(assetRefOrUrl)?.renderMode ?? "unknown";
+}
+
 export function getAssetLayoutMetrics(assetRefOrUrl: ReaderAssetRef | string) {
   return getCachedRecord(assetRefOrUrl)?.layoutMetrics ?? null;
 }
@@ -1132,6 +1713,12 @@ export function getPreloadedReaderImageRef(imageUrl: string) {
 }
 
 export function loadReaderImageRef(imageUrl: string) {
+  const renderMode = getAssetRenderMode(imageUrl);
+
+  if (renderMode === "original-svg" || renderMode === "true-vector-svg") {
+    return Promise.resolve(null);
+  }
+
   const cachedUri = getCachedAssetUri(imageUrl);
   const renderUri = cachedUri ?? (isRemoteImageUrl(imageUrl) ? null : imageUrl);
 
@@ -1159,10 +1746,19 @@ export function loadReaderImageRef(imageUrl: string) {
       const record = cachedAssetsByUrl.get(imageUrl) ?? null;
 
       if (record) {
+        const naturalWidth =
+          typeof imageRef.width === "number" && imageRef.width > 0
+            ? imageRef.width
+            : record.layoutMetrics?.naturalWidth;
+        const naturalHeight =
+          typeof imageRef.height === "number" && imageRef.height > 0
+            ? imageRef.height
+            : record.layoutMetrics?.naturalHeight;
+
         record.layoutMetrics = {
           ...record.layoutMetrics,
-          naturalWidth: imageRef.width,
-          naturalHeight: imageRef.height
+          naturalWidth,
+          naturalHeight
         };
         cachedAssetsByKey.set(record.cacheKey, record);
       }
@@ -1184,7 +1780,9 @@ export function getPreloadedReaderSvgAst(imageUrl: string) {
 }
 
 export function loadReaderSvgAst(imageUrl: string) {
-  if (getAssetRenderKind(imageUrl) !== "svg-vector") {
+  const renderMode = getAssetRenderMode(imageUrl);
+
+  if (renderMode !== "original-svg" && renderMode !== "true-vector-svg") {
     return Promise.resolve(null);
   }
 

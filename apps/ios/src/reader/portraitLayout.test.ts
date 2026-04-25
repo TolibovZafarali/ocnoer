@@ -8,7 +8,7 @@ const stage = {
 };
 
 describe("resolveNativeReaderPortraitLayout", () => {
-  it("keeps a left portrait fully inside the stage horizontally", () => {
+  it("keeps a left portrait flush left and inside the stage horizontally", () => {
     const layout = resolveNativeReaderPortraitLayout({
       ...stage,
       side: "left",
@@ -16,13 +16,14 @@ describe("resolveNativeReaderPortraitLayout", () => {
       assetHeight: 1600
     });
 
-    expect(layout.bounds.left).toBeGreaterThanOrEqual(layout.safeInsets.left);
+    expect(layout.left).toBe(0);
+    expect(layout.bounds.left).toBe(0);
     expect(layout.bounds.right).toBeLessThanOrEqual(
       stage.stageWidth - layout.safeInsets.right
     );
   });
 
-  it("keeps a right portrait fully inside the stage horizontally", () => {
+  it("keeps a right portrait flush right and inside the stage horizontally", () => {
     const layout = resolveNativeReaderPortraitLayout({
       ...stage,
       side: "right",
@@ -31,12 +32,11 @@ describe("resolveNativeReaderPortraitLayout", () => {
     });
 
     expect(layout.bounds.left).toBeGreaterThanOrEqual(layout.safeInsets.left);
-    expect(layout.bounds.right).toBeLessThanOrEqual(
-      stage.stageWidth - layout.safeInsets.right
-    );
+    expect(layout.right).toBe(0);
+    expect(layout.bounds.right).toBe(stage.stageWidth);
   });
 
-  it("bottom anchors portraits without pushing them below the stage", () => {
+  it("bottom anchors portraits flush to the stage bottom", () => {
     const layout = resolveNativeReaderPortraitLayout({
       ...stage,
       side: "left",
@@ -44,11 +44,11 @@ describe("resolveNativeReaderPortraitLayout", () => {
       assetHeight: 1600
     });
 
-    expect(layout.bottom).toBeGreaterThanOrEqual(0);
-    expect(layout.bounds.bottom).toBeLessThanOrEqual(stage.stageHeight);
+    expect(layout.bottom).toBe(0);
+    expect(layout.bounds.bottom).toBe(stage.stageHeight);
   });
 
-  it("respects a custom safe inset", () => {
+  it("keeps the opposite side inside a custom safe inset", () => {
     const layout = resolveNativeReaderPortraitLayout({
       ...stage,
       side: "left",
@@ -62,8 +62,9 @@ describe("resolveNativeReaderPortraitLayout", () => {
       }
     });
 
-    expect(layout.bounds.left).toBe(42);
-    expect(layout.bottom).toBe(12);
+    expect(layout.bounds.left).toBe(0);
+    expect(layout.bottom).toBe(0);
+    expect(layout.bounds.right).toBeLessThanOrEqual(stage.stageWidth - 42);
   });
 
   it("scales a large tall portrait down instead of clipping vertically", () => {
@@ -87,9 +88,7 @@ describe("resolveNativeReaderPortraitLayout", () => {
     });
 
     expect(layout.bounds.left).toBeGreaterThanOrEqual(layout.safeInsets.left);
-    expect(layout.bounds.right).toBeLessThanOrEqual(
-      stage.stageWidth - layout.safeInsets.right
-    );
+    expect(layout.bounds.right).toBe(stage.stageWidth);
   });
 
   it("uses embedded-raster SVG wrapper dimensions before tight bitmap dimensions", () => {
@@ -132,11 +131,11 @@ describe("resolveNativeReaderPortraitLayout", () => {
       }
     });
 
-    expect(layout.bounds.left).toBe(-8);
-    expect(layout.bottom).toBe(-4);
+    expect(layout.bounds.left).toBe(-24);
+    expect(layout.bottom).toBe(-12);
   });
 
-  it("does not give Ocnoer-style left placement a negative left edge by default", () => {
+  it("places Ocnoer-style left placement flush left by default", () => {
     const layout = resolveNativeReaderPortraitLayout({
       ...stage,
       side: "left",
@@ -144,10 +143,10 @@ describe("resolveNativeReaderPortraitLayout", () => {
       assetHeight: 1344
     });
 
-    expect(layout.bounds.left).toBeGreaterThanOrEqual(0);
+    expect(layout.bounds.left).toBe(0);
   });
 
-  it("does not let Lucair-style right placement exceed stage width by default", () => {
+  it("places Lucair-style right placement flush right by default", () => {
     const layout = resolveNativeReaderPortraitLayout({
       ...stage,
       side: "right",
@@ -155,6 +154,22 @@ describe("resolveNativeReaderPortraitLayout", () => {
       assetHeight: 1344
     });
 
-    expect(layout.bounds.right).toBeLessThanOrEqual(stage.stageWidth);
+    expect(layout.bounds.right).toBe(stage.stageWidth);
+  });
+
+  it("keeps a portrait fully visible while corner-flush", () => {
+    const layout = resolveNativeReaderPortraitLayout({
+      ...stage,
+      side: "left",
+      assetWidth: 900,
+      assetHeight: 1600
+    });
+
+    expect(layout.bounds.left).toBe(0);
+    expect(layout.bounds.bottom).toBe(stage.stageHeight);
+    expect(layout.bounds.top).toBeGreaterThanOrEqual(layout.safeInsets.top);
+    expect(layout.bounds.right).toBeLessThanOrEqual(
+      stage.stageWidth - layout.safeInsets.right
+    );
   });
 });

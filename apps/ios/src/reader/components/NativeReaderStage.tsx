@@ -1,5 +1,5 @@
 import { Image as ExpoImage } from "expo-image";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   type LayoutChangeEvent,
   StyleSheet,
@@ -18,9 +18,12 @@ import {
   createCachedReaderImageSource,
   getAssetLayoutMetrics,
   getAssetRenderKind,
+  getAssetRenderMode,
+  getCachedAssetUri,
   usePreloadedReaderImageRef,
   usePreloadedReaderSvgAst
 } from "../imagePreload";
+import { NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND } from "../nativeReaderStageStyle";
 import { resolveNativeReaderPortraitLayout } from "../portraitLayout";
 import { ocnoerTheme, ocnoerWebPlayer } from "../../ui/theme";
 import {
@@ -79,6 +82,14 @@ function getEmbeddedImageStyle(input: {
   };
 }
 
+function isDevelopment() {
+  return typeof __DEV__ !== "undefined" ? __DEV__ : false;
+}
+
+function isSvgRenderMode(renderMode: ReturnType<typeof getAssetRenderMode>) {
+  return renderMode === "original-svg" || renderMode === "true-vector-svg";
+}
+
 function CachedPortraitAsset(props: {
   accessibilityLabel: string;
   imageUrl: string;
@@ -86,6 +97,7 @@ function CachedPortraitAsset(props: {
   side: "left" | "right";
 }) {
   const renderKind = getAssetRenderKind(props.imageUrl);
+  const renderMode = getAssetRenderMode(props.imageUrl);
   const layoutMetrics = getAssetLayoutMetrics(props.imageUrl);
   const svgAst = usePreloadedReaderSvgAst(props.imageUrl);
   const preserveAspectRatio =
@@ -96,7 +108,23 @@ function CachedPortraitAsset(props: {
     width: "100%"
   };
 
-  if (renderKind !== "svg-vector") {
+  useEffect(() => {
+    if (!isDevelopment()) {
+      return;
+    }
+
+    console.info("[reader-assets] portrait render tree diagnostics", {
+      cachedUri: getCachedAssetUri(props.imageUrl),
+      imageBackgroundColor: NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND,
+      imageUrl: props.imageUrl,
+      renderKind,
+      renderMode,
+      side: props.side,
+      wrapperBackgroundColor: NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND
+    });
+  }, [props.imageUrl, props.side, renderKind, renderMode]);
+
+  if (!isSvgRenderMode(renderMode)) {
     const svgWrapper = layoutMetrics?.svgWrapper ?? null;
 
     if (svgWrapper) {
@@ -319,6 +347,7 @@ const styles = StyleSheet.create({
     zIndex: 8
   },
   portraitSlot: {
+    backgroundColor: NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND,
     overflow: "visible",
     position: "absolute",
     zIndex: 1
@@ -328,15 +357,18 @@ const styles = StyleSheet.create({
     width: "100%"
   },
   portraitAsset: {
+    backgroundColor: NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND,
     height: "100%",
     width: "100%"
   },
   portraitVirtualCanvas: {
+    backgroundColor: NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND,
     height: "100%",
     overflow: "hidden",
     width: "100%"
   },
   portraitBitmap: {
+    backgroundColor: NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND,
     height: "100%",
     width: "100%"
   },

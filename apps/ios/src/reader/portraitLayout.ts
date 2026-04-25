@@ -40,6 +40,11 @@ export type NativeReaderPortraitLayout = {
     bottom: number;
     top: number;
   };
+  anchorInsets: {
+    left: number;
+    right: number;
+    bottom: number;
+  };
 };
 
 const FALLBACK_PORTRAIT_ASPECT_RATIO = 0.58;
@@ -80,6 +85,11 @@ export function resolveNativeReaderPortraitLayout(
     bottom: input.safeInsets?.bottom ?? defaultInsets.bottom,
     top: input.safeInsets?.top ?? defaultInsets.top
   };
+  const anchorInsets = {
+    left: input.side === "left" ? 0 : safeInsets.left,
+    right: input.side === "right" ? 0 : safeInsets.right,
+    bottom: 0
+  };
   const sourceWidth =
     getPositiveDimension(input.wrapperWidth) ??
     getPositiveDimension(input.assetWidth);
@@ -93,14 +103,18 @@ export function resolveNativeReaderPortraitLayout(
   const maxHeight = Math.max(
     1,
     Math.min(
-      stageHeight - safeInsets.top - safeInsets.bottom,
+      stageHeight - safeInsets.top - anchorInsets.bottom,
       stageHeight * (input.maxHeightRatio ?? DEFAULT_MAX_HEIGHT_RATIO)
     )
   );
   const maxWidth = Math.max(
     1,
     Math.min(
-      stageWidth - safeInsets.left - safeInsets.right,
+      input.side === "left"
+        ? stageWidth - anchorInsets.left - safeInsets.right
+        : input.side === "right"
+          ? stageWidth - safeInsets.left - anchorInsets.right
+          : stageWidth - safeInsets.left - safeInsets.right,
       stageWidth *
         (input.maxWidthRatio ??
           (input.side === "center"
@@ -117,20 +131,20 @@ export function resolveNativeReaderPortraitLayout(
   }
 
   const horizontalBleed = input.explicitBleed?.horizontal ?? 0;
-  const bottom = safeInsets.bottom - (input.explicitBleed?.bottom ?? 0);
+  const bottom = anchorInsets.bottom - (input.explicitBleed?.bottom ?? 0);
   const top = stageHeight - bottom - height;
   let left: number | undefined;
   let right: number | undefined;
   let resolvedLeft: number;
 
   if (input.side === "right") {
-    right = safeInsets.right - horizontalBleed;
+    right = anchorInsets.right - horizontalBleed;
     resolvedLeft = stageWidth - right - width;
   } else if (input.side === "center") {
     resolvedLeft = (stageWidth - width) / 2;
     left = resolvedLeft;
   } else {
-    left = safeInsets.left - horizontalBleed;
+    left = anchorInsets.left - horizontalBleed;
     resolvedLeft = left;
   }
 
@@ -146,6 +160,7 @@ export function resolveNativeReaderPortraitLayout(
       top,
       bottom: top + height
     },
-    safeInsets
+    safeInsets,
+    anchorInsets
   };
 }

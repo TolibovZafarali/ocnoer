@@ -18,7 +18,9 @@ import {
 
 import {
   createNativeReaderPresentation,
-  getNativeReaderChapterPortraitAuditEntries
+  getNativeReaderChapterPortraitAuditEntries,
+  getNativeReaderPortraitTransitionContinuity,
+  shouldKeepNativeReaderPortraitsMountedForTransition
 } from "./readerPresentation";
 
 const supabaseUrl = "https://example.supabase.co";
@@ -76,13 +78,15 @@ function createRuntimeCharacter(input: {
 }
 
 function createDialogueEntry(input: {
+  id?: string;
   speaker: RuntimeDialogueSpeaker;
   stage: RuntimeDialogueEntry["stage"];
+  text?: string;
 }): RuntimeDialogueEntry {
   return {
-    id: "line_one",
+    id: input.id ?? "line_one",
     orderIndex: 1,
-    text: "Line one.",
+    text: input.text ?? "Line one.",
     speaker: input.speaker,
     stage: input.stage
   };
@@ -515,6 +519,228 @@ describe("createNativeReaderPresentation", () => {
       isActiveSpeaker: true
     });
     expect(presentation?.stageCharacters).toHaveLength(1);
+  });
+
+  it("keeps portrait transitions mounted when consecutive lines use the same image", () => {
+    const firstEntry = createDialogueEntry({
+      id: "line_one",
+      speaker: {
+        type: "character",
+        characterId: "character_left",
+        characterName: "Left",
+        characterSlug: "left",
+        emotionKey: "default",
+        emotionLabel: "Default",
+        emotionImagePath: "runtime/media/left.png"
+      },
+      stage: {
+        left: createStageCharacter({
+          characterId: "character_left",
+          characterName: "Left",
+          characterSlug: "left",
+          imagePath: "runtime/media/left.png"
+        }),
+        right: null
+      }
+    });
+    const secondEntry = createDialogueEntry({
+      id: "line_two",
+      text: "Line two.",
+      speaker: {
+        type: "character",
+        characterId: "character_left",
+        characterName: "Left",
+        characterSlug: "left",
+        emotionKey: "default",
+        emotionLabel: "Default",
+        emotionImagePath: "runtime/media/left.png"
+      },
+      stage: {
+        left: createStageCharacter({
+          characterId: "character_left",
+          characterName: "Left",
+          characterSlug: "left",
+          imagePath: "runtime/media/left.png"
+        }),
+        right: null
+      }
+    });
+    const bundle = createBundle({
+      entry: firstEntry,
+      entries: [firstEntry, secondEntry]
+    });
+    const current = createNativeReaderPresentation({
+      supabaseUrl,
+      bundle,
+      readerState,
+      branchFlags: {},
+      catName: null
+    });
+    const next = createNativeReaderPresentation({
+      supabaseUrl,
+      bundle,
+      readerState: {
+        ...readerState,
+        dialogueIndex: 1
+      },
+      branchFlags: {},
+      catName: null
+    });
+
+    expect(
+      shouldKeepNativeReaderPortraitsMountedForTransition({
+        current: current!,
+        next
+      })
+    ).toBe(true);
+    expect(current?.leftPortrait?.key).toBe(next?.leftPortrait?.key);
+  });
+
+  it("does not persist portraits when the same character changes image", () => {
+    const firstEntry = createDialogueEntry({
+      id: "line_one",
+      speaker: {
+        type: "character",
+        characterId: "character_left",
+        characterName: "Left",
+        characterSlug: "left",
+        emotionKey: "default",
+        emotionLabel: "Default",
+        emotionImagePath: "runtime/media/left-calm.png"
+      },
+      stage: {
+        left: createStageCharacter({
+          characterId: "character_left",
+          characterName: "Left",
+          characterSlug: "left",
+          imagePath: "runtime/media/left-calm.png"
+        }),
+        right: null
+      }
+    });
+    const secondEntry = createDialogueEntry({
+      id: "line_two",
+      text: "Line two.",
+      speaker: {
+        type: "character",
+        characterId: "character_left",
+        characterName: "Left",
+        characterSlug: "left",
+        emotionKey: "default",
+        emotionLabel: "Default",
+        emotionImagePath: "runtime/media/left-smile.png"
+      },
+      stage: {
+        left: createStageCharacter({
+          characterId: "character_left",
+          characterName: "Left",
+          characterSlug: "left",
+          imagePath: "runtime/media/left-smile.png"
+        }),
+        right: null
+      }
+    });
+    const bundle = createBundle({
+      entry: firstEntry,
+      entries: [firstEntry, secondEntry]
+    });
+    const current = createNativeReaderPresentation({
+      supabaseUrl,
+      bundle,
+      readerState,
+      branchFlags: {},
+      catName: null
+    });
+    const next = createNativeReaderPresentation({
+      supabaseUrl,
+      bundle,
+      readerState: {
+        ...readerState,
+        dialogueIndex: 1
+      },
+      branchFlags: {},
+      catName: null
+    });
+
+    expect(
+      shouldKeepNativeReaderPortraitsMountedForTransition({
+        current: current!,
+        next
+      })
+    ).toBe(false);
+  });
+
+  it("compares portrait continuity by exact image instead of character key", () => {
+    const imageUrl = publicUrl("runtime/media/shared.png");
+
+    expect(
+      shouldKeepNativeReaderPortraitsMountedForTransition({
+        current: {
+          leftPortrait: {
+            key: `left:character_one:default:${imageUrl}`,
+            imageUrl,
+            label: "One",
+            side: "left",
+            isActiveSpeaker: true
+          },
+          rightPortrait: null
+        },
+        next: {
+          leftPortrait: {
+            key: `left:character_two:smile:${imageUrl}`,
+            imageUrl,
+            label: "Two",
+            side: "left",
+            isActiveSpeaker: true
+          },
+          rightPortrait: null
+        }
+      })
+    ).toBe(true);
+  });
+
+  it("reports portrait continuity independently for each stage side", () => {
+    const sharedImageUrl = publicUrl("runtime/media/shared-left.png");
+
+    expect(
+      getNativeReaderPortraitTransitionContinuity({
+        current: {
+          leftPortrait: {
+            key: `left:${sharedImageUrl}`,
+            imageUrl: sharedImageUrl,
+            label: "Left",
+            side: "left",
+            isActiveSpeaker: true
+          },
+          rightPortrait: {
+            key: `right:${publicUrl("runtime/media/old-right.png")}`,
+            imageUrl: publicUrl("runtime/media/old-right.png"),
+            label: "Old Right",
+            side: "right",
+            isActiveSpeaker: true
+          }
+        },
+        next: {
+          leftPortrait: {
+            key: `left:${sharedImageUrl}`,
+            imageUrl: sharedImageUrl,
+            label: "Left",
+            side: "left",
+            isActiveSpeaker: true
+          },
+          rightPortrait: {
+            key: `right:${publicUrl("runtime/media/new-right.png")}`,
+            imageUrl: publicUrl("runtime/media/new-right.png"),
+            label: "New Right",
+            side: "right",
+            isActiveSpeaker: true
+          }
+        }
+      })
+    ).toEqual({
+      left: true,
+      right: false
+    });
   });
 
   it("audits all character portrait variants in the loaded chapter", () => {

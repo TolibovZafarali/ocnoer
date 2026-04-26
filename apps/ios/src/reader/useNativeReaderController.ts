@@ -782,6 +782,8 @@ export function useNativeReaderController(
       sourceKey: null,
       targetKey: null
     });
+  const [advanceTargetPresentation, setAdvanceTargetPresentation] =
+    useState<NativeReaderPresentation | null>(null);
   const preparedPresentationsRef = useRef(
     new Map<string, PreparedNativeReaderPresentation>()
   );
@@ -1293,11 +1295,13 @@ export function useNativeReaderController(
       !presentationRenderKey ||
       (runtimeState.status !== "ready" && runtimeState.status !== "finished")
     ) {
+      setAdvanceTargetPresentation(null);
       return;
     }
 
     let cancelled = false;
 
+    setAdvanceTargetPresentation(null);
     setAdvanceReadiness({
       status: "pending",
       sourceKey: presentationRenderKey,
@@ -1318,6 +1322,9 @@ export function useNativeReaderController(
         const targetKey = immediateTarget?.targetKey ?? null;
 
         rememberPreparedAdvanceTarget(presentationRenderKey, immediateTarget);
+        setAdvanceTargetPresentation(
+          immediateTarget?.targetPresentation ?? null
+        );
 
         setAdvanceReadiness({
           status: "pending",
@@ -2007,6 +2014,7 @@ export function useNativeReaderController(
   return {
     state: runtimeState,
     presentation,
+    advanceTargetPresentation,
     boundaryState,
     boundaryPresentation,
     preloadImageUrls,

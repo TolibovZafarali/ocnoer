@@ -42,6 +42,7 @@ import {
   type NativeReaderSceneTransitionPhase,
   useNativeReaderController
 } from "../reader/useNativeReaderController";
+import { getNativeReaderPortraitTransitionContinuity } from "../reader/readerPresentation";
 import type { NativeAudioPreferences } from "../storage/audioPreferenceStorage";
 import { OcnoerButton, OcnoerSurface } from "../ui/primitives";
 import { ocnoerTheme, ocnoerWebPlayer } from "../ui/theme";
@@ -63,6 +64,16 @@ type ReaderScreenProps = {
   onSignOut: () => void;
   onToggleAudioMuted: () => void;
   onUpdateCatName: (catName: string) => Promise<void>;
+};
+
+type PortraitExitState = {
+  left: boolean;
+  right: boolean;
+};
+
+const NO_EXITING_PORTRAITS: PortraitExitState = {
+  left: false,
+  right: false
 };
 
 function waitForDuration(durationMs: number) {
@@ -491,6 +502,8 @@ export function ReaderScreen(props: ReaderScreenProps) {
   const dimensions = useWindowDimensions();
   const [isChromeVisible, setIsChromeVisible] = useState(false);
   const [isLineExiting, setIsLineExiting] = useState(false);
+  const [portraitExitState, setPortraitExitState] =
+    useState<PortraitExitState>(NO_EXITING_PORTRAITS);
   const [isMapOpen, setIsMapOpen] = useState(false);
   const reader = useNativeReaderController({
     bootstrap: props.bootstrap,
@@ -528,20 +541,49 @@ export function ReaderScreen(props: ReaderScreenProps) {
     dimensions.width,
     dimensions.height * ocnoerTheme.stage.preferredAspectRatio
   );
+  const advancePortraitContinuity = useMemo(
+    () =>
+      presentation
+        ? getNativeReaderPortraitTransitionContinuity({
+            current: presentation,
+            next: reader.advanceTargetPresentation
+          })
+        : NO_EXITING_PORTRAITS,
+    [presentation, reader.advanceTargetPresentation]
+  );
   const revealChrome = useCallback(() => {
     setIsChromeVisible(true);
   }, []);
   const runWithLineExit = useCallback(
-    async (action: () => Promise<void> | void) => {
+    async (
+      action: () => Promise<void> | void,
+      options?: {
+        animatePortraitExit?: boolean;
+        portraitContinuity?: PortraitExitState;
+      }
+    ) => {
       if (isLineExiting) {
         return;
       }
 
       const shouldAnimateExit =
         !hasBoundaryPresentation && reader.state.status === "ready";
+      const shouldAnimatePortraitExit =
+        shouldAnimateExit && (options?.animatePortraitExit ?? true);
 
       if (shouldAnimateExit) {
+        const portraitContinuity =
+          options?.portraitContinuity ?? NO_EXITING_PORTRAITS;
+
         setIsLineExiting(true);
+        setPortraitExitState(
+          shouldAnimatePortraitExit
+            ? {
+                left: !portraitContinuity.left,
+                right: !portraitContinuity.right
+              }
+            : NO_EXITING_PORTRAITS
+        );
         await waitForDuration(ocnoerTheme.motion.lineExitMs);
       }
 
@@ -550,6 +592,7 @@ export function ReaderScreen(props: ReaderScreenProps) {
       } finally {
         if (shouldAnimateExit) {
           setIsLineExiting(false);
+          setPortraitExitState(NO_EXITING_PORTRAITS);
         }
       }
     },
@@ -557,8 +600,10 @@ export function ReaderScreen(props: ReaderScreenProps) {
   );
   const handleAdvance = useCallback(() => {
     setIsChromeVisible(false);
-    void runWithLineExit(reader.advance);
-  }, [reader.advance, runWithLineExit]);
+    void runWithLineExit(reader.advance, {
+      portraitContinuity: advancePortraitContinuity
+    });
+  }, [advancePortraitContinuity, reader.advance, runWithLineExit]);
   const handleRetreat = useCallback(() => {
     setIsChromeVisible(false);
     void runWithLineExit(reader.retreat);
@@ -666,7 +711,7 @@ export function ReaderScreen(props: ReaderScreenProps) {
             ]}
           >
             <NativeReaderStage
-              isLineExiting={isLineExiting}
+              portraitExitState={portraitExitState}
               presentation={presentation}
             />
             <BlackoutOverlay

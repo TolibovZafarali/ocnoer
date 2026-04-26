@@ -252,7 +252,7 @@ function createNativeReaderPortrait(input: {
   isActiveSpeaker: boolean;
 }): NativeReaderPortrait {
   return {
-    key: `${input.placement}:${input.character.characterId}:${input.character.emotionKey}:${input.imageUrl}`,
+    key: `${input.placement}:${input.imageUrl}`,
     imageUrl: input.imageUrl,
     label: resolveDialogueTextTemplate(
       input.character.characterName,
@@ -261,6 +261,85 @@ function createNativeReaderPortrait(input: {
     side: input.placement,
     isActiveSpeaker: input.isActiveSpeaker
   };
+}
+
+function getNativeReaderPortraitImageIdentity(
+  portrait: NativeReaderPortrait | null
+) {
+  return portrait ? `${portrait.side}:${portrait.imageUrl}` : null;
+}
+
+function shouldKeepNativeReaderPortraitMountedForTransition(input: {
+  current: NativeReaderPortrait | null;
+  next: NativeReaderPortrait | null;
+}) {
+  const currentIdentity = getNativeReaderPortraitImageIdentity(input.current);
+  const nextIdentity = getNativeReaderPortraitImageIdentity(input.next);
+
+  return Boolean(currentIdentity) && currentIdentity === nextIdentity;
+}
+
+export function getNativeReaderPortraitTransitionContinuity(input: {
+  current: {
+    leftPortrait: NativeReaderPortrait | null;
+    rightPortrait: NativeReaderPortrait | null;
+  };
+  next: {
+    leftPortrait: NativeReaderPortrait | null;
+    rightPortrait: NativeReaderPortrait | null;
+  } | null;
+}) {
+  if (!input.next) {
+    return {
+      left: false,
+      right: false
+    };
+  }
+
+  return {
+    left: shouldKeepNativeReaderPortraitMountedForTransition({
+      current: input.current.leftPortrait,
+      next: input.next.leftPortrait
+    }),
+    right: shouldKeepNativeReaderPortraitMountedForTransition({
+      current: input.current.rightPortrait,
+      next: input.next.rightPortrait
+    })
+  };
+}
+
+export function shouldKeepNativeReaderPortraitsMountedForTransition(input: {
+  current: {
+    leftPortrait: NativeReaderPortrait | null;
+    rightPortrait: NativeReaderPortrait | null;
+  };
+  next: {
+    leftPortrait: NativeReaderPortrait | null;
+    rightPortrait: NativeReaderPortrait | null;
+  } | null;
+}) {
+  if (!input.next) {
+    return false;
+  }
+
+  const currentLeftIdentity = getNativeReaderPortraitImageIdentity(
+    input.current.leftPortrait
+  );
+  const currentRightIdentity = getNativeReaderPortraitImageIdentity(
+    input.current.rightPortrait
+  );
+  const nextLeftIdentity = getNativeReaderPortraitImageIdentity(
+    input.next.leftPortrait
+  );
+  const nextRightIdentity = getNativeReaderPortraitImageIdentity(
+    input.next.rightPortrait
+  );
+
+  return (
+    Boolean(currentLeftIdentity || currentRightIdentity) &&
+    currentLeftIdentity === nextLeftIdentity &&
+    currentRightIdentity === nextRightIdentity
+  );
 }
 
 function getPromptFallbackCharacter(entry: RuntimeDialogueEntry) {

@@ -38,6 +38,11 @@ import {
   StageScrims
 } from "./NativeCinematic";
 
+export type NativeReaderPortraitExitState = {
+  left: boolean;
+  right: boolean;
+};
+
 function NativeCachedImage(props: {
   accessibilityLabel?: string;
   contentFit: "cover" | "contain" | "fill";
@@ -457,7 +462,7 @@ const Portrait = memo(function Portrait(props: {
 });
 
 export const NativeReaderStage = memo(function NativeReaderStage(props: {
-  isLineExiting: boolean;
+  portraitExitState: NativeReaderPortraitExitState;
   presentation: NativeReaderPresentation;
 }) {
   const renderCountRef = useRef(0);
@@ -517,13 +522,13 @@ export const NativeReaderStage = memo(function NativeReaderStage(props: {
       <StageScrims />
       <View pointerEvents="none" style={styles.portraitLayer}>
         <Portrait
-          isExiting={props.isLineExiting}
+          isExiting={props.portraitExitState.left}
           portrait={props.presentation.leftPortrait}
           side="left"
           stageSize={stageSize}
         />
         <Portrait
-          isExiting={props.isLineExiting}
+          isExiting={props.portraitExitState.right}
           portrait={props.presentation.rightPortrait}
           side="right"
           stageSize={stageSize}

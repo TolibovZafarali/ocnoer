@@ -122,6 +122,12 @@ type NativeReaderAdvanceReadiness =
       message: string;
     };
 
+export type NativeReaderSceneTransitionPhase =
+  | "idle"
+  | "covering"
+  | "blackout"
+  | "revealing";
+
 type UseNativeReaderControllerInput = {
   bootstrap: PlayerRuntimeBootstrap;
   config: MobileRuntimeConfig;
@@ -139,6 +145,16 @@ type NativeReaderPresentationUsage = {
 
 const PRESENTATION_READY_CACHE_LIMIT = 6;
 const PRESENTATION_LOOKAHEAD_DEPTH = 2;
+export const NATIVE_SCENE_TRANSITION_COVER_MS = 900;
+export const NATIVE_SCENE_TRANSITION_MIN_BLACKOUT_MS = 2000;
+export const NATIVE_SCENE_TRANSITION_POST_COMMIT_HOLD_MS = 380;
+export const NATIVE_SCENE_TRANSITION_REVEAL_MS = 880;
+
+function waitForDuration(durationMs: number) {
+  return new Promise<void>((resolve) => {
+    setTimeout(resolve, durationMs);
+  });
+}
 
 function logReaderTiming(message: string, details?: Record<string, unknown>) {
   if (!isReaderPerfDiagnosticsEnabled()) {
@@ -657,6 +673,68 @@ export async function commitNativeReaderStateAfterAssetGate(input: {
   input.commit();
 }
 
+export async function runNativeReaderSceneTransition(input: {
+  commit: () => void;
+  coverDurationMs?: number;
+  minimumBlackoutMs?: number;
+  postCommitHoldMs?: number;
+  prepare: () => Promise<void>;
+  revealDurationMs?: number;
+  setPhase: (phase: NativeReaderSceneTransitionPhase) => void;
+  wait?: (durationMs: number) => Promise<void>;
+}) {
+  const wait = input.wait ?? waitForDuration;
+  const revealDurationMs =
+    input.revealDurationMs ?? NATIVE_SCENE_TRANSITION_REVEAL_MS;
+
+  input.setPhase("covering");
+  await wait(input.coverDurationMs ?? NATIVE_SCENE_TRANSITION_COVER_MS);
+  input.setPhase("blackout");
+
+  try {
+    await Promise.all([
+      input.prepare(),
+      wait(input.minimumBlackoutMs ?? NATIVE_SCENE_TRANSITION_MIN_BLACKOUT_MS)
+    ]);
+    input.commit();
+    await wait(
+      input.postCommitHoldMs ?? NATIVE_SCENE_TRANSITION_POST_COMMIT_HOLD_MS
+    );
+    input.setPhase("revealing");
+    await wait(revealDurationMs);
+    input.setPhase("idle");
+  } catch (error) {
+    input.setPhase("revealing");
+    await wait(revealDurationMs);
+    input.setPhase("idle");
+    throw error;
+  }
+}
+
+export function canNativeReaderAdvanceWithReadiness(input: {
+  advanceResultType: RuntimeAdvanceResult["type"] | null;
+  presentationRenderKey: string | null;
+  readinessSourceKey: string | null;
+  readinessStatus: NativeReaderAdvanceReadiness["status"];
+}) {
+  if (!input.presentationRenderKey) {
+    return false;
+  }
+
+  if (
+    input.readinessStatus === "ready" &&
+    input.readinessSourceKey === input.presentationRenderKey
+  ) {
+    return true;
+  }
+
+  return (
+    input.advanceResultType === "scene-transition" &&
+    input.readinessStatus === "pending" &&
+    input.readinessSourceKey === input.presentationRenderKey
+  );
+}
+
 export function useNativeReaderController(
   input: UseNativeReaderControllerInput
 ) {
@@ -693,6 +771,8 @@ export function useNativeReaderController(
   );
   const [isSavingCatName, setIsSavingCatName] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
+  const [sceneTransitionPhase, setSceneTransitionPhase] =
+    useState<NativeReaderSceneTransitionPhase>("idle");
   const [actionError, setActionError] = useState<string | null>(null);
   const [persistenceError, setPersistenceError] = useState<string | null>(null);
   const [loadRequestId, setLoadRequestId] = useState(0);
@@ -1380,13 +1460,17 @@ export function useNativeReaderController(
       return false;
     }
 
-    return (
-      advanceReadiness.status === "ready" &&
-      advanceReadiness.sourceKey === presentationRenderKey
-    );
+    const advanceTarget = getPreparedAdvanceTarget(presentationRenderKey);
+    return canNativeReaderAdvanceWithReadiness({
+      advanceResultType: advanceTarget?.result.type ?? null,
+      presentationRenderKey,
+      readinessSourceKey: advanceReadiness.sourceKey,
+      readinessStatus: advanceReadiness.status
+    });
   }, [
     advanceReadiness,
     boundaryState,
+    getPreparedAdvanceTarget,
     presentation,
     presentationRenderKey,
     runtimeState.status
@@ -1395,7 +1479,10 @@ export function useNativeReaderController(
   const commitAdvanceResult = useCallback(
     (
       currentRuntimeState: ActiveNativeReaderRuntimeState,
-      result: RuntimeAdvanceResult
+      result: RuntimeAdvanceResult,
+      options?: {
+        showSceneTransitionBoundary?: boolean;
+      }
     ) => {
       if (result.type === "story-finished") {
         const nextBoundaryState = createBoundaryStateForAdvance({
@@ -1447,13 +1534,15 @@ export function useNativeReaderController(
           readerState: result.state
         });
         setBoundaryState(
-          createBoundaryStateForAdvance({
-            manifest: currentRuntimeState.manifest,
-            currentChapter: currentRuntimeState.bundle.chapter,
-            action: {
-              type: "scene-transition"
-            }
-          })
+          options?.showSceneTransitionBoundary === false
+            ? null
+            : createBoundaryStateForAdvance({
+                manifest: currentRuntimeState.manifest,
+                currentChapter: currentRuntimeState.bundle.chapter,
+                action: {
+                  type: "scene-transition"
+                }
+              })
         );
         return;
       }
@@ -1506,10 +1595,12 @@ export function useNativeReaderController(
         targetKey: target.targetKey,
         targetRenderReady
       });
+      const isSceneTransition = target.result.type === "scene-transition";
 
       if (
         plan.type === "blocked-until-render-ready" &&
-        !options?.allowUnreadyTargetWait
+        !options?.allowUnreadyTargetWait &&
+        !isSceneTransition
       ) {
         logReaderTiming("advance blocked before target ready", {
           COLD_RENDER_ON_VISIBLE_PATH: false,
@@ -1518,6 +1609,47 @@ export function useNativeReaderController(
           reason: plan.reason,
           targetKey: target.targetKey
         });
+        return;
+      }
+
+      if (isSceneTransition) {
+        setIsMoving(true);
+        logReaderTiming("scene transition blackout started", {
+          targetKey: target.targetKey,
+          targetRenderReady
+        });
+        try {
+          await runNativeReaderSceneTransition({
+            prepare: async () => {
+              if (target.targetPresentation) {
+                await warmPresentation(target.targetPresentation, "tap-wait");
+                return;
+              }
+
+              await ensureAdvanceResultAssets({
+                supabaseUrl: config.supabaseUrl,
+                currentRuntimeState,
+                result: target.result,
+                branchFlags: resolvedBranchFlags,
+                catName: resolvedCatName
+              });
+            },
+            commit: () => {
+              commitAdvanceResult(currentRuntimeState, target.result, {
+                showSceneTransitionBoundary: false
+              });
+            },
+            setPhase: setSceneTransitionPhase
+          });
+          logReaderTiming("scene transition blackout completed", {
+            COLD_RENDER_ON_VISIBLE_PATH: !targetRenderReady,
+            INSTANT_COMMIT: targetRenderReady,
+            targetKey: target.targetKey,
+            TAP_WAIT_MS: Date.now() - tappedAt
+          });
+        } finally {
+          setIsMoving(false);
+        }
         return;
       }
 
@@ -1806,6 +1938,31 @@ export function useNativeReaderController(
         return;
       }
 
+      if (result.type === "scene-transition") {
+        await runNativeReaderSceneTransition({
+          prepare: async () => {
+            await ensureRetreatResultAssets({
+              supabaseUrl: config.supabaseUrl,
+              currentRuntimeState: runtimeState,
+              result,
+              branchFlags,
+              catName
+            });
+          },
+          commit: () => {
+            setBoundaryState(null);
+            setRuntimeState({
+              status: "ready",
+              manifest: runtimeState.manifest,
+              bundle: runtimeState.bundle,
+              readerState: result.state
+            });
+          },
+          setPhase: setSceneTransitionPhase
+        });
+        return;
+      }
+
       await ensureRetreatResultAssets({
         supabaseUrl: config.supabaseUrl,
         currentRuntimeState: runtimeState,
@@ -1855,6 +2012,7 @@ export function useNativeReaderController(
     preloadImageUrls,
     preloadAssetRefs,
     isMoving,
+    sceneTransitionPhase,
     actionError,
     persistenceError,
     catNameInputValue,

@@ -73,12 +73,18 @@ import type {
 import type { NativeReaderPresentation } from "./readerPresentation";
 import { ensureSceneAssetsReady } from "./imagePreload";
 import {
+  NATIVE_SCENE_TRANSITION_COVER_MS,
+  NATIVE_SCENE_TRANSITION_MIN_BLACKOUT_MS,
+  NATIVE_SCENE_TRANSITION_POST_COMMIT_HOLD_MS,
+  NATIVE_SCENE_TRANSITION_REVEAL_MS,
+  canNativeReaderAdvanceWithReadiness,
   commitNativeReaderAdvanceAfterPresentationGate,
   commitNativeReaderStateAfterAssetGate,
   computeNativeReaderAdvanceTargets,
   createNativeReaderPresentationReadinessKey,
   ensureNativeReaderPresentationRenderReady,
-  resolveNativeReaderAdvanceCommitPlan
+  resolveNativeReaderAdvanceCommitPlan,
+  runNativeReaderSceneTransition
 } from "./useNativeReaderController";
 
 const supabaseUrl = "https://example.supabase.co";
@@ -660,5 +666,169 @@ describe("presentation render readiness", () => {
     expect(createNativeReaderPresentationReadinessKey(next)).not.toBe(
       createNativeReaderPresentationReadinessKey(base)
     );
+  });
+});
+
+describe("native scene transition choreography", () => {
+  function createDeferredWait() {
+    const waits: Array<{
+      durationMs: number;
+      resolve: () => void;
+    }> = [];
+    const wait = vi.fn(
+      (durationMs: number) =>
+        new Promise<void>((resolve) => {
+          waits.push({
+            durationMs,
+            resolve
+          });
+        })
+    );
+
+    return {
+      wait,
+      waits
+    };
+  }
+
+  async function flushPromises() {
+    await Promise.resolve();
+    await Promise.resolve();
+  }
+
+  it("waits for the full fade, minimum blackout, preparation, and reveal", async () => {
+    const events: string[] = [];
+    const { wait, waits } = createDeferredWait();
+    let resolvePrepare!: () => void;
+    const prepare = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          events.push("prepare:start");
+          resolvePrepare = () => {
+            events.push("prepare:ready");
+            resolve();
+          };
+        })
+    );
+    const commit = vi.fn(() => {
+      events.push("commit");
+    });
+    const transitionPromise = runNativeReaderSceneTransition({
+      commit,
+      prepare,
+      setPhase: (phase) => {
+        events.push(`phase:${phase}`);
+      },
+      wait
+    });
+
+    expect(events).toEqual(["phase:covering"]);
+    expect(waits[0]?.durationMs).toBe(NATIVE_SCENE_TRANSITION_COVER_MS);
+    expect(commit).not.toHaveBeenCalled();
+
+    waits[0]?.resolve();
+    await flushPromises();
+
+    expect(events).toEqual([
+      "phase:covering",
+      "phase:blackout",
+      "prepare:start"
+    ]);
+    expect(waits[1]?.durationMs).toBe(NATIVE_SCENE_TRANSITION_MIN_BLACKOUT_MS);
+    expect(commit).not.toHaveBeenCalled();
+
+    waits[1]?.resolve();
+    await flushPromises();
+    expect(commit).not.toHaveBeenCalled();
+
+    resolvePrepare();
+    await flushPromises();
+
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(waits[2]?.durationMs).toBe(
+      NATIVE_SCENE_TRANSITION_POST_COMMIT_HOLD_MS
+    );
+
+    waits[2]?.resolve();
+    await flushPromises();
+
+    expect(events.at(-1)).toBe("phase:revealing");
+    expect(waits[3]?.durationMs).toBe(NATIVE_SCENE_TRANSITION_REVEAL_MS);
+
+    waits[3]?.resolve();
+    await transitionPromise;
+
+    expect(events.at(-1)).toBe("phase:idle");
+  });
+
+  it("does not commit the next scene when preparation fails", async () => {
+    const events: string[] = [];
+    const { wait, waits } = createDeferredWait();
+    let rejectPrepare!: (error: Error) => void;
+    const prepare = vi.fn(
+      () =>
+        new Promise<void>((_resolve, reject) => {
+          events.push("prepare:start");
+          rejectPrepare = reject;
+        })
+    );
+    const commit = vi.fn();
+    const transitionPromise = runNativeReaderSceneTransition({
+      commit,
+      prepare,
+      setPhase: (phase) => {
+        events.push(`phase:${phase}`);
+      },
+      wait
+    });
+
+    waits[0]?.resolve();
+    await flushPromises();
+    waits[1]?.resolve();
+    rejectPrepare(new Error("asset missing"));
+    await flushPromises();
+
+    expect(commit).not.toHaveBeenCalled();
+    expect(events.at(-1)).toBe("phase:revealing");
+
+    waits[2]?.resolve();
+
+    await expect(transitionPromise).rejects.toThrow("asset missing");
+    expect(events.at(-1)).toBe("phase:idle");
+  });
+});
+
+describe("native advance readiness", () => {
+  it("allows pending scene transitions to enter blackout before preloading completes", () => {
+    expect(
+      canNativeReaderAdvanceWithReadiness({
+        advanceResultType: "scene-transition",
+        presentationRenderKey: "current",
+        readinessSourceKey: "current",
+        readinessStatus: "pending"
+      })
+    ).toBe(true);
+  });
+
+  it("keeps non-transition advances blocked until the target is ready", () => {
+    expect(
+      canNativeReaderAdvanceWithReadiness({
+        advanceResultType: "line",
+        presentationRenderKey: "current",
+        readinessSourceKey: "current",
+        readinessStatus: "pending"
+      })
+    ).toBe(false);
+  });
+
+  it("allows any matching ready advance target", () => {
+    expect(
+      canNativeReaderAdvanceWithReadiness({
+        advanceResultType: "line",
+        presentationRenderKey: "current",
+        readinessSourceKey: "current",
+        readinessStatus: "ready"
+      })
+    ).toBe(true);
   });
 });

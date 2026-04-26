@@ -36,7 +36,12 @@ import {
   setReaderDecodeSchedulerInteractionState,
   useReaderAssetWarmup
 } from "../reader/imagePreload";
-import { useNativeReaderController } from "../reader/useNativeReaderController";
+import {
+  NATIVE_SCENE_TRANSITION_COVER_MS,
+  NATIVE_SCENE_TRANSITION_REVEAL_MS,
+  type NativeReaderSceneTransitionPhase,
+  useNativeReaderController
+} from "../reader/useNativeReaderController";
 import type { NativeAudioPreferences } from "../storage/audioPreferenceStorage";
 import { OcnoerButton, OcnoerSurface } from "../ui/primitives";
 import { ocnoerTheme, ocnoerWebPlayer } from "../ui/theme";
@@ -348,6 +353,59 @@ function ReaderChromeLayer(props: {
   );
 }
 
+function SceneTransitionBlackoutOverlay(props: {
+  phase: NativeReaderSceneTransitionPhase;
+}) {
+  const opacity = useRef(
+    new Animated.Value(props.phase === "covering" ? 0 : 1)
+  ).current;
+
+  useEffect(() => {
+    if (props.phase === "idle") {
+      return;
+    }
+
+    if (props.phase === "blackout") {
+      opacity.setValue(1);
+      return;
+    }
+
+    if (props.phase === "covering") {
+      opacity.setValue(0);
+    }
+
+    const animation = Animated.timing(opacity, {
+      toValue: props.phase === "revealing" ? 0 : 1,
+      duration:
+        props.phase === "revealing"
+          ? NATIVE_SCENE_TRANSITION_REVEAL_MS
+          : NATIVE_SCENE_TRANSITION_COVER_MS,
+      easing:
+        props.phase === "revealing"
+          ? Easing.out(Easing.cubic)
+          : Easing.in(Easing.cubic),
+      useNativeDriver: true
+    });
+
+    animation.start();
+
+    return () => {
+      animation.stop();
+    };
+  }, [opacity, props.phase]);
+
+  if (props.phase === "idle") {
+    return null;
+  }
+
+  return (
+    <Animated.View
+      pointerEvents="auto"
+      style={[styles.sceneTransitionOverlay, { opacity }]}
+    />
+  );
+}
+
 function WorldMapOverlay(props: { onClose: () => void }) {
   const dimensions = useWindowDimensions();
   const mapViewportSize = {
@@ -532,12 +590,15 @@ export function ReaderScreen(props: ReaderScreenProps) {
 
   useReaderAssetWarmup(reader.preloadAssetRefs);
 
+  const showSceneTransitionOverlay =
+    Platform.OS === "ios" && reader.sceneTransitionPhase !== "idle";
   const showTransitionBlackout =
-    boundaryPresentation?.type === "scene-transition" || reader.isMoving;
+    !showSceneTransitionOverlay &&
+    (boundaryPresentation?.type === "scene-transition" || reader.isMoving);
 
   useEffect(() => {
     setReaderDecodeSchedulerInteractionState({
-      transitioning: showTransitionBlackout
+      transitioning: showTransitionBlackout || showSceneTransitionOverlay
     });
 
     return () => {
@@ -545,7 +606,7 @@ export function ReaderScreen(props: ReaderScreenProps) {
         transitioning: false
       });
     };
-  }, [showTransitionBlackout]);
+  }, [showSceneTransitionOverlay, showTransitionBlackout]);
 
   if (reader.state.status === "loading") {
     return (
@@ -678,6 +739,9 @@ export function ReaderScreen(props: ReaderScreenProps) {
           />
         ) : null}
       </KeyboardAvoidingView>
+      {showSceneTransitionOverlay ? (
+        <SceneTransitionBlackoutOverlay phase={reader.sceneTransitionPhase} />
+      ) : null}
     </View>
   );
 }
@@ -685,7 +749,8 @@ export function ReaderScreen(props: ReaderScreenProps) {
 const styles = StyleSheet.create({
   safeArea: {
     backgroundColor: ocnoerTheme.colors.black,
-    flex: 1
+    flex: 1,
+    position: "relative"
   },
   readerRoot: {
     backgroundColor: ocnoerTheme.colors.black,
@@ -817,5 +882,11 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     backgroundColor: ocnoerTheme.colors.black,
     zIndex: 22
+  },
+  sceneTransitionOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: ocnoerTheme.colors.black,
+    elevation: 100,
+    zIndex: 100
   }
 });

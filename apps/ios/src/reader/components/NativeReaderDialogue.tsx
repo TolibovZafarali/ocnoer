@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BlurView } from "expo-blur";
 import { Image as ExpoImage } from "expo-image";
 import {
@@ -22,11 +22,14 @@ import type {
 import {
   createCachedReaderImageSource,
   getAssetRenderMode,
+  isReaderPerfDiagnosticsEnabled,
+  setReaderDecodeSchedulerInteractionState,
   usePreloadedReaderImageRef,
   usePreloadedReaderSvgAst
 } from "../imagePreload";
 import {
   createNativeReaderDialogueAnimationKey,
+  getNativeReaderTextUpdateCadenceMs,
   getNativeReaderTypingExpectedDurationMs,
   getNativeReaderVisibleTextLengthAtElapsedMs
 } from "../nativeReaderDialogueMotion";
@@ -65,18 +68,15 @@ declare global {
   var __OCNOER_READER_INSTANT_DIALOGUE_TEXT: boolean | undefined;
 }
 
-function isDevelopment() {
-  return typeof __DEV__ !== "undefined" ? __DEV__ : false;
-}
-
 function shouldUseInstantDialogueText() {
   return (
-    isDevelopment() && Boolean(globalThis.__OCNOER_READER_INSTANT_DIALOGUE_TEXT)
+    isReaderPerfDiagnosticsEnabled() &&
+    Boolean(globalThis.__OCNOER_READER_INSTANT_DIALOGUE_TEXT)
   );
 }
 
 function logDialogueTiming(message: string, details?: Record<string, unknown>) {
-  if (!isDevelopment()) {
+  if (!isReaderPerfDiagnosticsEnabled()) {
     return;
   }
 
@@ -175,7 +175,7 @@ function SpeakerLabel(props: { presentation: NativeReaderPresentation }) {
   );
 }
 
-function TypedDialogueText(props: {
+const VisibleDialogueText = memo(function VisibleDialogueText(props: {
   characters: string[];
   style: StyleProp<TextStyle>;
   visibleTextLength: number;
@@ -193,7 +193,278 @@ function TypedDialogueText(props: {
       ) : null}
     </Text>
   );
-}
+});
+
+const BatchedTypedDialogueText = memo(function BatchedTypedDialogueText(props: {
+  characterPortraitCount: number;
+  characters: string[];
+  dialogueEntryId: string;
+  forceCompleteSignal: number;
+  isExiting: boolean;
+  onCompleteChange: (isComplete: boolean) => void;
+  renderModeCount: Record<string, number>;
+  speakerId: string | null;
+  style: StyleProp<TextStyle>;
+  textExpectedDurationMs: number;
+  typingKey: string;
+}) {
+  const textRenderCountRef = useRef(0);
+  const textStateUpdateCountRef = useRef(0);
+  const textFrameStallsOver16MsRef = useRef(0);
+  const textFrameStallsOver50MsRef = useRef(0);
+  const textFrameStallsOver100MsRef = useRef(0);
+  const textCompletionLoggedKeyRef = useRef<string | null>(null);
+  const [typingState, setTypingState] = useState({
+    key: props.typingKey,
+    startedAt: Date.now(),
+    visibleTextLength: 0
+  });
+  const visibleTextLength =
+    typingState.key === props.typingKey ? typingState.visibleTextLength : 0;
+  const typingStartedAt =
+    typingState.key === props.typingKey ? typingState.startedAt : Date.now();
+  const isTextComplete = visibleTextLength >= props.characters.length;
+
+  textRenderCountRef.current += 1;
+
+  const logCompletion = useCallback(
+    (actualMs: number, instantTextProbe = false) => {
+      if (textCompletionLoggedKeyRef.current === props.typingKey) {
+        return;
+      }
+
+      textCompletionLoggedKeyRef.current = props.typingKey;
+      setReaderDecodeSchedulerInteractionState({
+        textRevealing: false
+      });
+      props.onCompleteChange(true);
+      logDialogueTiming("text animation completed", {
+        dialogueEntryId: props.dialogueEntryId,
+        instantTextProbe,
+        lineId: props.dialogueEntryId,
+        speakerId: props.speakerId,
+        characterPortraitCount: props.characterPortraitCount,
+        renderModeCount: props.renderModeCount,
+        JS_FRAME_STALLS_OVER_16MS: textFrameStallsOver16MsRef.current,
+        JS_FRAME_STALLS_OVER_50MS: textFrameStallsOver50MsRef.current,
+        JS_FRAME_STALLS_OVER_100MS: textFrameStallsOver100MsRef.current,
+        TEXT_ACTUAL_MS: actualMs,
+        TEXT_EXPECTED_MS: props.textExpectedDurationMs,
+        TEXT_RENDER_COUNT: textRenderCountRef.current,
+        TEXT_STATE_UPDATES: textStateUpdateCountRef.current,
+        typingKey: props.typingKey
+      });
+    },
+    [
+      props.characterPortraitCount,
+      props.dialogueEntryId,
+      props.onCompleteChange,
+      props.renderModeCount,
+      props.speakerId,
+      props.textExpectedDurationMs,
+      props.typingKey
+    ]
+  );
+
+  useEffect(() => {
+    const startedAt = Date.now();
+
+    textRenderCountRef.current = 0;
+    textStateUpdateCountRef.current = 0;
+    textFrameStallsOver16MsRef.current = 0;
+    textFrameStallsOver50MsRef.current = 0;
+    textFrameStallsOver100MsRef.current = 0;
+    textCompletionLoggedKeyRef.current = null;
+    props.onCompleteChange(props.characters.length === 0);
+    setTypingState({
+      key: props.typingKey,
+      startedAt,
+      visibleTextLength: shouldUseInstantDialogueText()
+        ? props.characters.length
+        : 0
+    });
+
+    logDialogueTiming("text animation started", {
+      dialogueEntryId: props.dialogueEntryId,
+      lineId: props.dialogueEntryId,
+      speakerId: props.speakerId,
+      characterPortraitCount: props.characterPortraitCount,
+      renderModeCount: props.renderModeCount,
+      TEXT_EXPECTED_MS: props.textExpectedDurationMs,
+      typingKey: props.typingKey
+    });
+
+    if (props.characters.length === 0) {
+      setReaderDecodeSchedulerInteractionState({
+        textRevealing: false
+      });
+      return;
+    }
+
+    if (shouldUseInstantDialogueText()) {
+      logCompletion(0, true);
+      return;
+    }
+
+    setReaderDecodeSchedulerInteractionState({
+      textRevealing: true
+    });
+  }, [
+    logCompletion,
+    props.characterPortraitCount,
+    props.characters.length,
+    props.dialogueEntryId,
+    props.onCompleteChange,
+    props.renderModeCount,
+    props.speakerId,
+    props.textExpectedDurationMs,
+    props.typingKey
+  ]);
+
+  useEffect(() => {
+    if (props.forceCompleteSignal <= 0 || isTextComplete) {
+      return;
+    }
+
+    setTypingState((currentState) => {
+      if (currentState.key !== props.typingKey) {
+        return currentState;
+      }
+
+      textStateUpdateCountRef.current += 1;
+      return {
+        key: props.typingKey,
+        startedAt: currentState.startedAt,
+        visibleTextLength: props.characters.length
+      };
+    });
+    logCompletion(Date.now() - typingStartedAt);
+  }, [
+    isTextComplete,
+    logCompletion,
+    props.characters.length,
+    props.forceCompleteSignal,
+    props.typingKey,
+    typingStartedAt
+  ]);
+
+  useEffect(() => {
+    if (
+      props.characters.length === 0 ||
+      props.isExiting ||
+      shouldUseInstantDialogueText() ||
+      isTextComplete
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let lastTickAt = Date.now();
+    const cadenceMs = getNativeReaderTextUpdateCadenceMs();
+
+    const tick = () => {
+      if (cancelled) {
+        return;
+      }
+
+      const now = Date.now();
+      const frameDeltaMs = now - lastTickAt;
+      const frameDelayBeyondCadenceMs = frameDeltaMs - cadenceMs;
+
+      if (frameDelayBeyondCadenceMs > 16) {
+        textFrameStallsOver16MsRef.current += 1;
+      }
+
+      if (frameDelayBeyondCadenceMs > 50) {
+        textFrameStallsOver50MsRef.current += 1;
+      }
+
+      if (frameDelayBeyondCadenceMs > TEXT_FRAME_STALL_WARNING_MS) {
+        textFrameStallsOver100MsRef.current += 1;
+        logDialogueTiming("JS frame stall during text animation", {
+          dialogueEntryId: props.dialogueEntryId,
+          lineId: props.dialogueEntryId,
+          speakerId: props.speakerId,
+          frameDelayBeyondCadenceMs,
+          frameDeltaMs,
+          characterPortraitCount: props.characterPortraitCount,
+          renderModeCount: props.renderModeCount
+        });
+      }
+
+      lastTickAt = now;
+
+      const nextVisibleTextLength = getNativeReaderVisibleTextLengthAtElapsedMs(
+        {
+          characters: props.characters,
+          elapsedMs: now - typingStartedAt,
+          initialDelayMs: ocnoerTheme.motion.normalMs
+        }
+      );
+
+      setTypingState((currentState) => {
+        if (currentState.key !== props.typingKey) {
+          return currentState;
+        }
+
+        const boundedVisibleTextLength = Math.min(
+          nextVisibleTextLength,
+          props.characters.length
+        );
+
+        if (currentState.visibleTextLength === boundedVisibleTextLength) {
+          return currentState;
+        }
+
+        textStateUpdateCountRef.current += 1;
+        return {
+          key: props.typingKey,
+          startedAt: currentState.startedAt,
+          visibleTextLength: boundedVisibleTextLength
+        };
+      });
+
+      if (nextVisibleTextLength >= props.characters.length) {
+        logCompletion(now - typingStartedAt);
+        return;
+      }
+
+      timeoutId = setTimeout(tick, cadenceMs);
+    };
+
+    timeoutId = setTimeout(tick, cadenceMs);
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+      setReaderDecodeSchedulerInteractionState({
+        textRevealing: false
+      });
+    };
+  }, [
+    isTextComplete,
+    logCompletion,
+    props.characterPortraitCount,
+    props.characters,
+    props.dialogueEntryId,
+    props.isExiting,
+    props.renderModeCount,
+    props.speakerId,
+    props.typingKey,
+    typingStartedAt
+  ]);
+
+  return (
+    <VisibleDialogueText
+      characters={props.characters}
+      style={props.style}
+      visibleTextLength={visibleTextLength}
+    />
+  );
+});
 
 function DressOptionCard(props: {
   option: NativeReaderDressOption;
@@ -321,7 +592,11 @@ function ContinueArrow(props: {
   );
 }
 
-export function NativeReaderDialogue(props: ReaderDialogueProps) {
+export const NativeReaderDialogue = memo(function NativeReaderDialogue(
+  props: ReaderDialogueProps
+) {
+  const dialogueRenderCountRef = useRef(0);
+  const dialogueRemountCountRef = useRef(0);
   const cardPosition = getDialogueCardPositionStyle(props.presentation);
   const motionDirection = getDialogueMotionDirection(props.presentation);
   const dialogueText =
@@ -333,15 +608,6 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
     () => Array.from(dialogueText),
     [dialogueText]
   );
-  const [typingState, setTypingState] = useState({
-    key: typingKey,
-    startedAt: Date.now(),
-    visibleTextLength: 0
-  });
-  const visibleTextLength =
-    typingState.key === typingKey ? typingState.visibleTextLength : 0;
-  const typingStartedAt =
-    typingState.key === typingKey ? typingState.startedAt : Date.now();
   const textExpectedDurationMs = useMemo(
     () =>
       getNativeReaderTypingExpectedDurationMs({
@@ -351,15 +617,13 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
     [textCharacters]
   );
   const [dressIndex, setDressIndex] = useState(0);
-  const textCompletionLoggedKeyRef = useRef<string | null>(null);
-  const textFrameStallCountRef = useRef(0);
+  const [forceCompleteSignal, setForceCompleteSignal] = useState(0);
+  const [isTextComplete, setIsTextComplete] = useState(
+    props.presentation.status !== "supported" || dialogueText.length === 0
+  );
   const portraitRenderModeSummary = useMemo(
     () => getPortraitRenderModeSummary(props.presentation),
     [props.presentation.stageCharacters]
-  );
-  const portraitRenderModeSummaryKey = useMemo(
-    () => JSON.stringify(portraitRenderModeSummary),
-    [portraitRenderModeSummary]
   );
   const characterPortraitCount = props.presentation.stageCharacters.length;
   const selectedDressOption = useMemo(() => {
@@ -374,38 +638,41 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
     );
   }, [dressIndex, props.presentation]);
 
+  dialogueRenderCountRef.current += 1;
+
+  useEffect(() => {
+    dialogueRemountCountRef.current += 1;
+    if (!isReaderPerfDiagnosticsEnabled()) {
+      return;
+    }
+
+    console.info("[reader-perf] DIALOGUE_REMOUNT_COUNT", {
+      count: dialogueRemountCountRef.current,
+      dialogueEntryId: props.presentation.dialogueEntryId
+    });
+  }, []);
+
+  useEffect(() => {
+    if (!isReaderPerfDiagnosticsEnabled()) {
+      return;
+    }
+
+    console.info("[reader-perf] DIALOGUE_RENDER_COUNT", {
+      count: dialogueRenderCountRef.current,
+      dialogueEntryId: props.presentation.dialogueEntryId
+    });
+  });
+
   useEffect(() => {
     setDressIndex(0);
   }, [props.presentation.dialogueEntryId]);
 
   useEffect(() => {
-    setTypingState({
-      key: typingKey,
-      startedAt: Date.now(),
-      visibleTextLength: 0
-    });
-    textCompletionLoggedKeyRef.current = null;
-    textFrameStallCountRef.current = 0;
-
-    logDialogueTiming("text animation started", {
-      dialogueEntryId: props.presentation.dialogueEntryId,
-      entryType: props.presentation.entryType,
-      lineId: props.presentation.dialogueEntryId,
-      speakerId: props.presentation.speakerId,
-      characterPortraitCount,
-      renderModeCount: portraitRenderModeSummary,
-      TEXT_EXPECTED_MS: textExpectedDurationMs,
-      typingKey
-    });
-  }, [
-    characterPortraitCount,
-    portraitRenderModeSummary,
-    props.presentation.dialogueEntryId,
-    props.presentation.entryType,
-    props.presentation.speakerId,
-    textExpectedDurationMs,
-    typingKey
-  ]);
+    setIsTextComplete(
+      props.presentation.status !== "supported" || dialogueText.length === 0
+    );
+    setForceCompleteSignal(0);
+  }, [dialogueText.length, props.presentation.status, typingKey]);
 
   useEffect(() => {
     logDialogueTiming("dialogue component mounted", {
@@ -424,8 +691,6 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
 
   const hasTypeableDialogueText =
     props.presentation.status === "supported" && dialogueText.length > 0;
-  const isTextComplete =
-    !hasTypeableDialogueText || visibleTextLength >= textCharacters.length;
   const canCompleteTyping =
     hasTypeableDialogueText && !isTextComplete && !props.isExiting;
   const handleCompleteTyping = useCallback(() => {
@@ -433,162 +698,9 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
       return;
     }
 
-    setTypingState((currentState) => {
-      if (currentState.key !== typingKey) {
-        return currentState;
-      }
-
-      return {
-        key: typingKey,
-        startedAt: currentState.startedAt,
-        visibleTextLength: textCharacters.length
-      };
-    });
-  }, [canCompleteTyping, textCharacters.length, typingKey]);
-
-  useEffect(() => {
-    if (!hasTypeableDialogueText || props.isExiting) {
-      return;
-    }
-
-    if (shouldUseInstantDialogueText()) {
-      setTypingState((currentState) => {
-        if (currentState.key !== typingKey) {
-          return currentState;
-        }
-
-        return {
-          key: typingKey,
-          startedAt: currentState.startedAt,
-          visibleTextLength: textCharacters.length
-        };
-      });
-      logDialogueTiming("text animation completed", {
-        dialogueEntryId: props.presentation.dialogueEntryId,
-        instantTextProbe: true,
-        lineId: props.presentation.dialogueEntryId,
-        speakerId: props.presentation.speakerId,
-        characterPortraitCount,
-        renderModeCount: portraitRenderModeSummary,
-        JS_FRAME_STALLS: 0,
-        TEXT_ACTUAL_MS: 0,
-        TEXT_EXPECTED_MS: textExpectedDurationMs,
-        typingKey
-      });
-      return;
-    }
-
-    let cancelled = false;
-    let frameId: number | null = null;
-    let timeoutId: ReturnType<typeof setTimeout> | null = null;
-    let lastFrameAt = Date.now();
-
-    const clearScheduledTick = () => {
-      if (frameId != null && typeof cancelAnimationFrame === "function") {
-        cancelAnimationFrame(frameId);
-      }
-
-      if (timeoutId != null) {
-        clearTimeout(timeoutId);
-      }
-    };
-
-    const scheduleTick = () => {
-      if (typeof requestAnimationFrame === "function") {
-        frameId = requestAnimationFrame(tick);
-        return;
-      }
-
-      timeoutId = setTimeout(tick, 16);
-    };
-
-    const tick = () => {
-      if (cancelled) {
-        return;
-      }
-
-      const now = Date.now();
-      const frameDeltaMs = now - lastFrameAt;
-
-      if (frameDeltaMs > TEXT_FRAME_STALL_WARNING_MS) {
-        textFrameStallCountRef.current += 1;
-        logDialogueTiming("JS frame stall during text animation", {
-          dialogueEntryId: props.presentation.dialogueEntryId,
-          lineId: props.presentation.dialogueEntryId,
-          speakerId: props.presentation.speakerId,
-          frameDeltaMs,
-          characterPortraitCount,
-          renderModeCount: portraitRenderModeSummary
-        });
-      }
-
-      lastFrameAt = now;
-
-      const nextVisibleTextLength = getNativeReaderVisibleTextLengthAtElapsedMs({
-        characters: textCharacters,
-        elapsedMs: now - typingStartedAt,
-        initialDelayMs: ocnoerTheme.motion.normalMs
-      });
-
-      setTypingState((currentState) => {
-        if (currentState.key !== typingKey) {
-          return currentState;
-        }
-
-        if (currentState.visibleTextLength === nextVisibleTextLength) {
-          return currentState;
-        }
-
-        return {
-          key: typingKey,
-          startedAt: currentState.startedAt,
-          visibleTextLength: Math.min(
-            nextVisibleTextLength,
-            textCharacters.length
-          )
-        };
-      });
-
-      if (nextVisibleTextLength >= textCharacters.length) {
-        if (textCompletionLoggedKeyRef.current !== typingKey) {
-          textCompletionLoggedKeyRef.current = typingKey;
-          logDialogueTiming("text animation completed", {
-            dialogueEntryId: props.presentation.dialogueEntryId,
-            lineId: props.presentation.dialogueEntryId,
-            speakerId: props.presentation.speakerId,
-            characterPortraitCount,
-            renderModeCount: portraitRenderModeSummary,
-            JS_FRAME_STALLS: textFrameStallCountRef.current,
-            TEXT_ACTUAL_MS: now - typingStartedAt,
-            TEXT_EXPECTED_MS: textExpectedDurationMs,
-            typingKey
-          });
-        }
-        return;
-      }
-
-      scheduleTick();
-    };
-
-    scheduleTick();
-
-    return () => {
-      cancelled = true;
-      clearScheduledTick();
-    };
-  }, [
-    hasTypeableDialogueText,
-    characterPortraitCount,
-    portraitRenderModeSummary,
-    portraitRenderModeSummaryKey,
-    props.isExiting,
-    props.presentation.dialogueEntryId,
-    props.presentation.speakerId,
-    textCharacters,
-    textExpectedDurationMs,
-    typingKey,
-    typingStartedAt
-  ]);
+    setIsTextComplete(true);
+    setForceCompleteSignal((currentValue) => currentValue + 1);
+  }, [canCompleteTyping]);
 
   if (props.presentation.status === "unsupported") {
     const animationKey = createNativeReaderDialogueAnimationKey(
@@ -669,12 +781,20 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
           <SpeakerLabel presentation={props.presentation} />
 
           {shouldShowDialogueText ? (
-            <TypedDialogueText
+            <BatchedTypedDialogueText
+              characterPortraitCount={characterPortraitCount}
               characters={textCharacters}
+              dialogueEntryId={supportedPresentation.dialogueEntryId}
+              forceCompleteSignal={forceCompleteSignal}
+              isExiting={props.isExiting}
+              renderModeCount={portraitRenderModeSummary}
+              speakerId={supportedPresentation.speakerId}
               style={
                 isDressPrompt ? styles.dressPromptText : styles.dialogueText
               }
-              visibleTextLength={visibleTextLength}
+              textExpectedDurationMs={textExpectedDurationMs}
+              typingKey={typingKey}
+              onCompleteChange={setIsTextComplete}
             />
           ) : null}
 
@@ -796,7 +916,7 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
       </Pressable>
     </DirectionalSlideView>
   );
-}
+});
 
 const styles = StyleSheet.create({
   dialogueCard: {

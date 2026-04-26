@@ -1,7 +1,8 @@
 import { Image as ExpoImage } from "expo-image";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import {
   type LayoutChangeEvent,
+  PixelRatio,
   StyleSheet,
   View,
   type ImageStyle,
@@ -20,8 +21,11 @@ import {
   getAssetRenderKind,
   getAssetRenderMode,
   getCachedAssetUri,
+  getPreloadedReaderImageRef,
   getReaderAssetRenderDiagnostics,
+  isReaderPerfDiagnosticsEnabled,
   recordReaderAssetVisibleTiming,
+  setReaderStageMetrics,
   usePreloadedReaderImageRef,
   usePreloadedReaderSvgAst
 } from "../imagePreload";
@@ -41,11 +45,36 @@ function NativeCachedImage(props: {
   debugLabel?: string;
   imageUrl: string;
   imageRef?: ReturnType<typeof usePreloadedReaderImageRef>;
+  requireImageRef?: boolean;
   style: StyleProp<ImageStyle>;
 }) {
   const loadedImageRef = usePreloadedReaderImageRef(props.imageUrl);
   const source = createCachedReaderImageSource(props.imageUrl);
+  const resolvedImageRef =
+    props.imageRef ??
+    loadedImageRef ??
+    getPreloadedReaderImageRef(props.imageUrl);
   const mountedAtRef = useRef(Date.now());
+
+  if (props.requireImageRef && !resolvedImageRef) {
+    const details = {
+      diagnostics: getReaderAssetRenderDiagnostics(props.imageUrl),
+      imageUrl: props.imageUrl
+    };
+
+    if (globalThis.__OCNOER_READER_STRICT_BITMAP_DERIVATIVES) {
+      throw new Error(
+        `Strict bitmap derivative violation: missing ImageRef for ${props.imageUrl}`
+      );
+    }
+
+    console.warn(
+      "[reader-assets] bitmap derivative portrait is rendering without ImageRef",
+      details
+    );
+
+    return <View style={[props.style, styles.missingImageRef]} />;
+  }
 
   if (!source) {
     return <View style={[props.style, styles.missingAsset]} />;
@@ -59,7 +88,7 @@ function NativeCachedImage(props: {
       contentFit={props.contentFit}
       contentPosition={props.contentPosition ?? "center"}
       onDisplay={() => {
-        if (!isDevelopment() || !props.debugLabel) {
+        if (!isReaderPerfDiagnosticsEnabled() || !props.debugLabel) {
           return;
         }
 
@@ -71,7 +100,7 @@ function NativeCachedImage(props: {
         });
       }}
       onLoad={() => {
-        if (!isDevelopment() || !props.debugLabel) {
+        if (!isReaderPerfDiagnosticsEnabled() || !props.debugLabel) {
           return;
         }
 
@@ -84,7 +113,7 @@ function NativeCachedImage(props: {
       }}
       priority="high"
       recyclingKey={props.imageUrl}
-      source={props.imageRef ?? loadedImageRef ?? source}
+      source={resolvedImageRef ?? source}
       style={props.style}
       transition={0}
     />
@@ -110,10 +139,6 @@ function getEmbeddedImageStyle(input: {
   };
 }
 
-function isDevelopment() {
-  return typeof __DEV__ !== "undefined" ? __DEV__ : false;
-}
-
 declare global {
   // Development probe for isolating portrait rendering from dialogue card/text.
   // eslint-disable-next-line no-var
@@ -124,7 +149,8 @@ declare global {
 
 function shouldDisablePortraitsForProbe() {
   return (
-    isDevelopment() && Boolean(globalThis.__OCNOER_READER_DISABLE_PORTRAITS)
+    isReaderPerfDiagnosticsEnabled() &&
+    Boolean(globalThis.__OCNOER_READER_DISABLE_PORTRAITS)
   );
 }
 
@@ -154,6 +180,7 @@ function CachedPortraitAsset(props: {
   const svgAst = usePreloadedReaderSvgAst(props.imageUrl);
   const preserveAspectRatio =
     props.side === "left" ? "xMinYMax meet" : "xMaxYMax meet";
+  const requireImageRef = renderMode === "bitmap-derivative";
   const svgProps = {
     height: "100%",
     preserveAspectRatio,
@@ -161,7 +188,7 @@ function CachedPortraitAsset(props: {
   };
 
   useEffect(() => {
-    if (!isDevelopment()) {
+    if (!isReaderPerfDiagnosticsEnabled()) {
       return;
     }
 
@@ -205,6 +232,26 @@ function CachedPortraitAsset(props: {
     }
   }, [props.imageUrl, props.side, renderKind, renderMode]);
 
+  useEffect(() => {
+    if (
+      !isReaderPerfDiagnosticsEnabled() ||
+      renderMode !== "bitmap-derivative"
+    ) {
+      return;
+    }
+
+    if (!props.imageRef) {
+      console.warn(
+        "[reader-assets] presentation ready but visible portrait has no ImageRef",
+        {
+          diagnostics: getReaderAssetRenderDiagnostics(props.imageUrl),
+          imageUrl: props.imageUrl,
+          side: props.side
+        }
+      );
+    }
+  }, [props.imageRef, props.imageUrl, props.side, renderMode]);
+
   if (!isSvgRenderMode(renderMode)) {
     if (renderMode === "source-svg-image") {
       return (
@@ -221,6 +268,7 @@ function CachedPortraitAsset(props: {
             debugLabel={`${props.side}:${props.accessibilityLabel}`}
             imageRef={props.imageRef}
             imageUrl={props.imageUrl}
+            requireImageRef={requireImageRef}
             style={styles.portraitBitmap}
           />
         </View>
@@ -243,6 +291,7 @@ function CachedPortraitAsset(props: {
             debugLabel={`${props.side}:${props.accessibilityLabel}`}
             imageRef={props.imageRef}
             imageUrl={props.imageUrl}
+            requireImageRef={requireImageRef}
             style={
               svgWrapper.embeddedImage
                 ? getEmbeddedImageStyle({
@@ -271,6 +320,7 @@ function CachedPortraitAsset(props: {
           debugLabel={`${props.side}:${props.accessibilityLabel}`}
           imageRef={props.imageRef}
           imageUrl={props.imageUrl}
+          requireImageRef={requireImageRef}
           style={styles.portraitBitmap}
         />
       </View>
@@ -289,7 +339,7 @@ function CachedPortraitAsset(props: {
   );
 }
 
-function Portrait(props: {
+const Portrait = memo(function Portrait(props: {
   isExiting: boolean;
   portrait: NativeReaderPortrait | null;
   side: "left" | "right";
@@ -298,6 +348,7 @@ function Portrait(props: {
     width: number;
   } | null;
 }) {
+  const renderCountRef = useRef(0);
   const imageUrl = props.portrait?.imageUrl ?? null;
   const imageRef = usePreloadedReaderImageRef(imageUrl);
   const layoutMetrics = imageUrl ? getAssetLayoutMetrics(imageUrl) : null;
@@ -328,56 +379,88 @@ function Portrait(props: {
     svgWrapper?.width
   ]);
 
-  if (!props.portrait || !layout || shouldDisablePortraitsForProbe()) {
+  const portraitsDisabled = shouldDisablePortraitsForProbe();
+  renderCountRef.current += 1;
+
+  useEffect(() => {
+    if (!isReaderPerfDiagnosticsEnabled()) {
+      return;
+    }
+
+    console.info("[reader-perf] PORTRAIT_SLOT_RENDER_COUNT", {
+      count: renderCountRef.current,
+      imageUrl,
+      side: props.side
+    });
+  });
+
+  if (!props.portrait || !layout || portraitsDisabled) {
     if (props.portrait && shouldDisablePortraitsForProbe()) {
       console.info("[reader-assets] portrait disabled for probe", {
         imageUrl: props.portrait.imageUrl,
         side: props.side
       });
     }
-    return null;
   }
 
-  const slotStyle: ViewStyle = {
-    bottom: layout.bottom,
-    height: layout.height,
-    width: layout.width,
-    ...(typeof layout.left === "number"
-      ? {
-          left: layout.left
-        }
-      : {}),
-    ...(typeof layout.right === "number"
-      ? {
-          right: layout.right
-        }
-      : {})
-  };
+  const slotStyle: ViewStyle = layout
+    ? {
+        bottom: layout.bottom,
+        height: layout.height,
+        opacity: props.portrait && !portraitsDisabled ? 1 : 0,
+        width: layout.width,
+        ...(typeof layout.left === "number"
+          ? {
+              left: layout.left
+            }
+          : {}),
+        ...(typeof layout.right === "number"
+          ? {
+              right: layout.right
+            }
+          : {})
+      }
+    : {
+        bottom: 0,
+        height: 1,
+        ...(props.side === "left"
+          ? {
+              left: 0
+            }
+          : {
+              right: 0
+            }),
+        opacity: 0,
+        width: 1
+      };
 
   return (
     <View pointerEvents="none" style={[styles.portraitSlot, slotStyle]}>
-      <DirectionalSlideView
-        animationKey={props.portrait.key}
-        direction={props.side === "left" ? "from-left" : "from-right"}
-        isExiting={props.isExiting}
-        pointerEvents="none"
-        style={styles.portraitFade}
-      >
-        <CachedPortraitAsset
-          accessibilityLabel={props.portrait.label}
-          imageRef={imageRef}
-          imageUrl={props.portrait.imageUrl}
-          side={props.side}
-        />
-      </DirectionalSlideView>
+      {props.portrait && layout && !portraitsDisabled ? (
+        <DirectionalSlideView
+          animationKey={props.portrait.key}
+          direction={props.side === "left" ? "from-left" : "from-right"}
+          isExiting={props.isExiting}
+          pointerEvents="none"
+          style={styles.portraitFade}
+        >
+          <CachedPortraitAsset
+            accessibilityLabel={props.portrait.label}
+            imageRef={imageRef}
+            imageUrl={props.portrait.imageUrl}
+            side={props.side}
+          />
+        </DirectionalSlideView>
+      ) : null}
     </View>
   );
-}
+});
 
-export function NativeReaderStage(props: {
+export const NativeReaderStage = memo(function NativeReaderStage(props: {
   isLineExiting: boolean;
   presentation: NativeReaderPresentation;
 }) {
+  const renderCountRef = useRef(0);
   const [stageSize, setStageSize] = useState<{
     height: number;
     width: number;
@@ -394,7 +477,24 @@ export function NativeReaderStage(props: {
             width: nextStageSize.width
           }
     );
+    setReaderStageMetrics({
+      deviceScale: PixelRatio.get(),
+      stageHeight: nextStageSize.height,
+      stageWidth: nextStageSize.width
+    });
   };
+  renderCountRef.current += 1;
+
+  useEffect(() => {
+    if (!isReaderPerfDiagnosticsEnabled()) {
+      return;
+    }
+
+    console.info("[reader-perf] STAGE_RENDER_COUNT", {
+      count: renderCountRef.current,
+      dialogueEntryId: props.presentation.dialogueEntryId
+    });
+  });
 
   return (
     <View style={styles.stage} onLayout={handleStageLayout}>
@@ -431,7 +531,7 @@ export function NativeReaderStage(props: {
       </View>
     </View>
   );
-}
+});
 
 const styles = StyleSheet.create({
   stage: {
@@ -484,5 +584,8 @@ const styles = StyleSheet.create({
   },
   missingAsset: {
     backgroundColor: "transparent"
+  },
+  missingImageRef: {
+    backgroundColor: "rgba(255, 0, 0, 0.28)"
   }
 });

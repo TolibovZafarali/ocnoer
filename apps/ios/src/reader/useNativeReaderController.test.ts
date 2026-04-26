@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./imagePreload", () => ({
-  READER_ASSET_RENDER_CACHE_VERSION: 2,
+  READER_ASSET_RENDER_CACHE_VERSION: 3,
   dumpReaderAssetRenderModes: vi.fn(() => ({
     generatedAt: "2026-04-25T00:00:00.000Z",
     assets: [],
@@ -14,12 +14,35 @@ vi.mock("./imagePreload", () => ({
       notLocallyCachedCount: 0,
       notImageRefWarmedCount: 0,
       coldVisibleRenderCount: 0,
+      imageRefReadyCount: 0,
       renderModeCounts: {}
     }
   })),
   ensureChapterAssetsReady: vi.fn(),
   ensureSceneAssetsReady: vi.fn(),
   getAssetCacheErrorMessage: vi.fn(() => null),
+  getSelectedReaderAssetDerivativeMetadata: vi.fn((assetRef: any) =>
+    assetRef.derivatives?.[0]
+      ? {
+          cacheVersion: assetRef.derivatives[0].cacheVersion ?? null,
+          compressedBytes: assetRef.derivatives[0].compressedBytes ?? null,
+          contentType: assetRef.derivatives[0].contentType,
+          decodedBytesEstimate:
+            assetRef.derivatives[0].decodedBytesEstimate ?? null,
+          hash: assetRef.derivatives[0].hash ?? null,
+          height: assetRef.derivatives[0].height ?? null,
+          renderVersion: assetRef.derivatives[0].renderVersion ?? null,
+          requiredHeightPx: 1026,
+          requiredWidthPx: 684,
+          stageHeight: 852,
+          stageWidth: 393,
+          storagePath: assetRef.derivatives[0].storagePath,
+          variantKey: assetRef.derivatives[0].variantKey ?? null,
+          width: assetRef.derivatives[0].width ?? null
+        }
+      : null
+  ),
+  isReaderPerfDiagnosticsEnabled: vi.fn(() => false),
   verifyReaderPortraitDerivativeUrls: vi.fn(async (dump) => dump),
   warmNextSceneAssets: vi.fn()
 }));
@@ -349,17 +372,21 @@ describe("presentation render readiness", () => {
 
     await Promise.resolve();
 
-    expect(ensureSceneAssetsReadyMock).toHaveBeenCalledWith("line_one", [
-      expect.objectContaining({
-        derivatives: [
-          expect.objectContaining({
-            contentType: "image/webp",
-            renderKind: "bitmap",
-            storagePath: "runtime/portraits/portrait-one.reader.webp"
-          })
-        ]
-      })
-    ]);
+    expect(ensureSceneAssetsReadyMock).toHaveBeenCalledWith(
+      "line_one",
+      [
+        expect.objectContaining({
+          derivatives: [
+            expect.objectContaining({
+              contentType: "image/webp",
+              renderKind: "bitmap",
+              storagePath: "runtime/portraits/portrait-one.reader.webp"
+            })
+          ]
+        })
+      ],
+      "high"
+    );
     expect(didResolve).toBe(false);
 
     resolveAssets({
@@ -408,14 +435,18 @@ describe("presentation render readiness", () => {
       reason: "lookahead"
     });
 
-    expect(ensureSceneAssetsReadyMock).toHaveBeenCalledWith("line_one", [
-      expect.objectContaining({
-        storagePath: "runtime/portraits/left.svg"
-      }),
-      expect.objectContaining({
-        storagePath: "runtime/portraits/right.svg"
-      })
-    ]);
+    expect(ensureSceneAssetsReadyMock).toHaveBeenCalledWith(
+      "line_one",
+      [
+        expect.objectContaining({
+          storagePath: "runtime/portraits/left.svg"
+        }),
+        expect.objectContaining({
+          storagePath: "runtime/portraits/right.svg"
+        })
+      ],
+      "high"
+    );
   });
 
   it("does not clear the current presentation when the target is not ready", async () => {
@@ -577,5 +608,57 @@ describe("presentation render readiness", () => {
         })
       )
     ).not.toBe(baseKey);
+  });
+
+  it("changes presentation readiness keys when the selected derivative variant changes", () => {
+    const base = createPresentation({
+      blockingAssetRefs: [
+        {
+          role: "portrait",
+          url: `${supabaseUrl}/storage/v1/object/public/runtime/portraits/portrait-one.svg`,
+          storagePath: "runtime/portraits/portrait-one.svg",
+          assetId: "character_one",
+          cacheKey: "portrait:character_one:default",
+          derivatives: [
+            {
+              storagePath:
+                "runtime/portraits/portrait-one.phone-3x.reader.webp",
+              url: `${supabaseUrl}/storage/v1/object/public/runtime/portraits/portrait-one.phone-3x.reader.webp`,
+              contentType: "image/webp",
+              renderKind: "bitmap",
+              variantKey: "phone-3x",
+              width: 752,
+              height: 1129,
+              hash: "phone3",
+              derivativeOf: "runtime/portraits/portrait-one.svg"
+            }
+          ]
+        }
+      ]
+    });
+    const next = createPresentation({
+      blockingAssetRefs: [
+        {
+          ...base.blockingAssetRefs[0]!,
+          derivatives: [
+            {
+              storagePath: "runtime/portraits/portrait-one.full.reader.webp",
+              url: `${supabaseUrl}/storage/v1/object/public/runtime/portraits/portrait-one.full.reader.webp`,
+              contentType: "image/webp",
+              renderKind: "bitmap",
+              variantKey: "full",
+              width: 1024,
+              height: 1536,
+              hash: "full",
+              derivativeOf: "runtime/portraits/portrait-one.svg"
+            }
+          ]
+        }
+      ]
+    });
+
+    expect(createNativeReaderPresentationReadinessKey(next)).not.toBe(
+      createNativeReaderPresentationReadinessKey(base)
+    );
   });
 });

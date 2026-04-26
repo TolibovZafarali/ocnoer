@@ -8,11 +8,17 @@ import {
 import { parse, type JsxAST } from "react-native-svg";
 
 import type { PlayerRuntimeImageAssetRef } from "@ocnoer/story-core";
+import { resolveNativeReaderPortraitLayout } from "./portraitLayout";
 
 const READER_ASSET_CACHE_DIRECTORY = "ocnoer-reader-assets-v2";
-export const READER_ASSET_RENDER_CACHE_VERSION = 2;
+export const READER_ASSET_RENDER_CACHE_VERSION = 3;
 const MAX_CONCURRENT_ASSET_DOWNLOADS = 3;
+const MAX_CONCURRENT_IMAGE_DECODE = 1;
 const PRELOAD_TIMEOUT_MS = 3500;
+const DEFAULT_READER_STAGE_WIDTH = 393;
+const DEFAULT_READER_STAGE_HEIGHT = 852;
+const DEFAULT_READER_DEVICE_SCALE = 3;
+const READER_PORTRAIT_VARIANT_SELECTION_MARGIN = 1.02;
 const SOURCE_SVG_CACHE_EXTENSIONS = ["svg"];
 const EXTRACTED_RASTER_CACHE_EXTENSIONS = [
   "embedded.png",
@@ -53,12 +59,18 @@ export type ReaderAssetRef = PlayerRuntimeImageAssetRef & {
 export type ReaderAssetDerivative = {
   cacheKey?: string;
   cacheVersion?: number | null;
+  compressedBytes?: number | null;
   contentType: string;
+  decodedBytesEstimate?: number | null;
   derivativeOf?: string | null;
+  displayHeightDp?: number | null;
+  displayScale?: number | null;
+  displayWidthDp?: number | null;
   hash?: string;
   height?: number | null;
   renderKind: "bitmap";
   renderVersion?: string | null;
+  scaleMargin?: number | null;
   sourceAssetId?: string | null;
   sourceHash?: string;
   sourceRenderKind?: "svg" | "bitmap" | "unknown";
@@ -66,6 +78,7 @@ export type ReaderAssetDerivative = {
   storagePath: string;
   targetPlatform?: "ios";
   url?: string;
+  variantKey?: string | null;
   visibleContentBox?: {
     x: number;
     y: number;
@@ -102,14 +115,21 @@ export type ReaderCachedAsset = {
   bytes: number;
   contentType: string | null;
   detectedSourceType: ReaderAssetDetectedSourceType;
+  fileReady: boolean;
   fromCache: boolean;
   derivativeAssetExists: boolean;
   derivativeAssetSelected: boolean;
   sourceSvgFallbackUsed: boolean;
   downloadDurationMs: number | null;
   decodeWarmDurationMs: number | null;
+  failureReason: string | null;
+  imageRefHeight: number | null;
+  imageRefReady: boolean;
+  imageRefWidth: number | null;
   imagePrefetchResult: boolean | null;
   nativeImageRefReady: boolean;
+  prefetchReady: boolean | null;
+  renderReady: boolean;
   onLoadDurationMs: number | null;
   onLoadTimestamp: number | null;
   onDisplayDurationMs: number | null;
@@ -136,17 +156,27 @@ export type ReaderAssetRenderDiagnostics = {
   iosDerivativeStoragePath: string | null;
   iosDerivativeUrl: string | null;
   iosDerivativeContentType: string | null;
+  iosDerivativeCompressedBytes: number | null;
+  iosDerivativeDecodedBytesEstimate: number | null;
   iosDerivativeWidth: number | null;
   iosDerivativeHeight: number | null;
   iosDerivativeHash: string | null;
+  iosDerivativeRenderVersion: string | null;
+  iosDerivativeVariantKey: string | null;
   selectedIosRenderMode: ReaderAssetRenderMode | "unknown";
   fallbackReason: string | null;
   localCachedUri: string | null;
   localCachedDerivativeUri: string | null;
   derivativeFileExists: boolean;
   derivativeLocalFileSize: number | null;
+  fileReady: boolean;
+  failureReason: string | null;
+  imageRefHeight: number | null;
   imagePrefetchResult: boolean | null;
   imageRefReady: boolean;
+  imageRefWidth: number | null;
+  prefetchReady: boolean | null;
+  renderReady: boolean;
   PORTRAIT_RENDER_MODE: ReaderAssetRenderMode | "unknown";
   derivativeAssetExists: boolean;
   derivativeAssetSelected: boolean;
@@ -208,8 +238,11 @@ export type ReaderAssetRenderModeDumpSummary = {
   notLocallyCachedCount: number;
   notImageRefWarmedCount: number;
   coldVisibleRenderCount: number;
+  imageRefReadyCount: number;
   renderModeCounts: Partial<Record<ReaderAssetRenderMode | "unknown", number>>;
 };
+
+export type ReaderDecodePriority = "high" | "medium" | "low";
 
 export type ReaderDerivativeNetworkStatus = {
   ok: boolean;
@@ -327,6 +360,10 @@ declare global {
   // eslint-disable-next-line no-var
   var __OCNOER_READER_STRICT_BITMAP_DERIVATIVES: boolean | undefined;
   // eslint-disable-next-line no-var
+  var __OCNOER_READER_PERF_DIAGNOSTICS: boolean | undefined;
+  // eslint-disable-next-line no-var
+  var __OCNOER_READER_DEVICE_SCALE: number | undefined;
+  // eslint-disable-next-line no-var
   var __OCNOER_READER_CLEAR_ASSET_CACHE:
     | (() => Promise<ReaderAssetCacheClearResult>)
     | undefined;
@@ -343,16 +380,49 @@ const cachedAssetsByKey = new Map<string, ReaderCachedAsset>();
 const inFlightAssetLoads = new Map<string, Promise<ReaderCachedAsset>>();
 let readerPortraitDebugRenderModeOverrides: ReaderPortraitDebugRenderModeOverride[] =
   [];
+let readerStageMetrics = {
+  stageWidth: DEFAULT_READER_STAGE_WIDTH,
+  stageHeight: DEFAULT_READER_STAGE_HEIGHT,
+  deviceScale: DEFAULT_READER_DEVICE_SCALE
+};
+let decodeSchedulerState = {
+  textRevealing: false,
+  transitioning: false
+};
 
 let activeDownloadCount = 0;
 const queuedDownloads: Array<() => void> = [];
+let activeDecodeCount = 0;
+let decodeTaskSequence = 0;
+const queuedDecodeTasks: Array<{
+  id: number;
+  priority: ReaderDecodePriority;
+  reject: (error: unknown) => void;
+  resolve: (value: unknown) => void;
+  task: () => Promise<unknown>;
+}> = [];
 
 function isDevelopment() {
   return typeof __DEV__ !== "undefined" ? __DEV__ : false;
 }
 
+function envFlag(name: string) {
+  const env = globalThis as { process?: { env?: Record<string, string> } };
+  const value = env.process?.env?.[name];
+
+  return value === "1" || value === "true";
+}
+
+export function isReaderPerfDiagnosticsEnabled() {
+  return (
+    isDevelopment() ||
+    Boolean(globalThis.__OCNOER_READER_PERF_DIAGNOSTICS) ||
+    envFlag("EXPO_PUBLIC_OCNOER_READER_PERF_DIAGNOSTICS")
+  );
+}
+
 function logAssetMetric(message: string, details?: Record<string, unknown>) {
-  if (!isDevelopment()) {
+  if (!isReaderPerfDiagnosticsEnabled()) {
     return;
   }
 
@@ -365,7 +435,7 @@ function logAssetMetric(message: string, details?: Record<string, unknown>) {
 }
 
 function logAssetWarning(message: string, details?: Record<string, unknown>) {
-  if (!isDevelopment()) {
+  if (!isReaderPerfDiagnosticsEnabled()) {
     return;
   }
 
@@ -380,7 +450,7 @@ function logAssetWarning(message: string, details?: Record<string, unknown>) {
 export function setReaderPortraitDebugRenderModeOverrides(
   overrides: ReaderPortraitDebugRenderModeOverride[]
 ) {
-  if (!isDevelopment()) {
+  if (!isReaderPerfDiagnosticsEnabled()) {
     return;
   }
 
@@ -388,7 +458,7 @@ export function setReaderPortraitDebugRenderModeOverrides(
 }
 
 function getReaderPortraitDebugRenderModeOverride(assetRef: ReaderAssetRef) {
-  if (!isDevelopment() || assetRef.role !== "portrait") {
+  if (!isReaderPerfDiagnosticsEnabled() || assetRef.role !== "portrait") {
     return null;
   }
 
@@ -438,7 +508,7 @@ function isDataUri(value: string) {
 
 function shouldForceAllCharacterPortraitsToLocalTestBitmap() {
   return (
-    isDevelopment() &&
+    isReaderPerfDiagnosticsEnabled() &&
     Boolean(
       globalThis.__OCNOER_READER_FORCE_ALL_CHARACTER_PORTRAITS_TO_LOCAL_TEST_BITMAP
     )
@@ -447,9 +517,47 @@ function shouldForceAllCharacterPortraitsToLocalTestBitmap() {
 
 function shouldUseStrictBitmapDerivatives() {
   return (
-    isDevelopment() &&
+    isReaderPerfDiagnosticsEnabled() &&
     Boolean(globalThis.__OCNOER_READER_STRICT_BITMAP_DERIVATIVES)
   );
+}
+
+export function setReaderStageMetrics(input: {
+  deviceScale?: number | null;
+  stageHeight?: number | null;
+  stageWidth?: number | null;
+}) {
+  readerStageMetrics = {
+    stageWidth:
+      typeof input.stageWidth === "number" && input.stageWidth > 0
+        ? input.stageWidth
+        : readerStageMetrics.stageWidth,
+    stageHeight:
+      typeof input.stageHeight === "number" && input.stageHeight > 0
+        ? input.stageHeight
+        : readerStageMetrics.stageHeight,
+    deviceScale:
+      typeof input.deviceScale === "number" && input.deviceScale > 0
+        ? input.deviceScale
+        : typeof globalThis.__OCNOER_READER_DEVICE_SCALE === "number"
+          ? globalThis.__OCNOER_READER_DEVICE_SCALE
+          : readerStageMetrics.deviceScale
+  };
+}
+
+export function getReaderStageMetrics() {
+  return readerStageMetrics;
+}
+
+export function setReaderDecodeSchedulerInteractionState(input: {
+  textRevealing?: boolean;
+  transitioning?: boolean;
+}) {
+  decodeSchedulerState = {
+    textRevealing: input.textRevealing ?? decodeSchedulerState.textRevealing,
+    transitioning: input.transitioning ?? decodeSchedulerState.transitioning
+  };
+  drainDecodeQueue();
 }
 
 function withTimeout(promise: Promise<unknown>) {
@@ -495,6 +603,76 @@ function runWithDownloadLimit<T>(task: () => Promise<T>) {
     }
 
     queuedDownloads.push(run);
+  });
+}
+
+function getDecodePriorityRank(priority: ReaderDecodePriority) {
+  switch (priority) {
+    case "high":
+      return 0;
+    case "medium":
+      return 1;
+    case "low":
+      return 2;
+  }
+}
+
+function shouldThrottleDecodePriority(priority: ReaderDecodePriority) {
+  return (
+    priority === "low" &&
+    (decodeSchedulerState.textRevealing || decodeSchedulerState.transitioning)
+  );
+}
+
+function drainDecodeQueue() {
+  if (activeDecodeCount >= MAX_CONCURRENT_IMAGE_DECODE) {
+    return;
+  }
+
+  const runnableTasks = queuedDecodeTasks
+    .map((task, index) => ({
+      index,
+      task
+    }))
+    .filter((entry) => !shouldThrottleDecodePriority(entry.task.priority))
+    .sort((left, right) => {
+      const priorityDelta =
+        getDecodePriorityRank(left.task.priority) -
+        getDecodePriorityRank(right.task.priority);
+
+      return priorityDelta === 0 ? left.task.id - right.task.id : priorityDelta;
+    });
+  const next = runnableTasks[0];
+
+  if (!next) {
+    return;
+  }
+
+  queuedDecodeTasks.splice(next.index, 1);
+  activeDecodeCount += 1;
+  void next.task
+    .task()
+    .then(next.task.resolve, next.task.reject)
+    .finally(() => {
+      activeDecodeCount -= 1;
+      drainDecodeQueue();
+    });
+}
+
+function runWithDecodeLimit<T>(
+  priority: ReaderDecodePriority,
+  task: () => Promise<T>
+) {
+  return new Promise<T>((resolve, reject) => {
+    queuedDecodeTasks.push({
+      id: decodeTaskSequence,
+      priority,
+      reject,
+      resolve: resolve as (value: unknown) => void,
+      task
+    });
+    decodeTaskSequence += 1;
+    drainDecodeQueue();
   });
 }
 
@@ -846,16 +1024,148 @@ function hasCompleteIosDerivativeMetadata(
   );
 }
 
-function getPreferredReaderAssetDerivative(assetRef: ReaderAssetRef) {
+function getIosBitmapDerivativeCandidates(assetRef: ReaderAssetRef) {
   return (
-    assetRef.derivatives?.find(
+    assetRef.derivatives?.filter(
       (derivative) =>
         isIosBitmapDerivative(derivative) &&
         typeof derivative.url === "string" &&
         derivative.url.length > 0 &&
-        isAlphaSafeBitmapContentType(derivative.contentType)
-    ) ?? null
+        isAlphaSafeBitmapContentType(derivative.contentType) &&
+        typeof derivative.width === "number" &&
+        derivative.width > 0 &&
+        typeof derivative.height === "number" &&
+        derivative.height > 0
+    ) ?? []
   );
+}
+
+function getDerivativeArea(derivative: ReaderAssetDerivative) {
+  return (derivative.width ?? 0) * (derivative.height ?? 0);
+}
+
+function getLargestDerivative(
+  derivatives: ReaderAssetDerivative[]
+): ReaderAssetDerivative | null {
+  return (
+    [...derivatives].sort(
+      (left, right) => getDerivativeArea(right) - getDerivativeArea(left)
+    )[0] ?? null
+  );
+}
+
+function getPortraitDerivativeSelectionTarget(input: {
+  assetRef: ReaderAssetRef;
+  derivatives: ReaderAssetDerivative[];
+}) {
+  const largestDerivative = getLargestDerivative(input.derivatives);
+  const side =
+    input.assetRef.stagePlacement === "right" ||
+    input.assetRef.stagePlacement === "left"
+      ? input.assetRef.stagePlacement
+      : "left";
+  const layout = resolveNativeReaderPortraitLayout({
+    stageWidth: readerStageMetrics.stageWidth,
+    stageHeight: readerStageMetrics.stageHeight,
+    side,
+    assetWidth: largestDerivative?.width,
+    assetHeight: largestDerivative?.height
+  });
+
+  return {
+    deviceScale: readerStageMetrics.deviceScale,
+    displayHeightDp: layout.height,
+    displayWidthDp: layout.width,
+    requiredHeightPx: Math.ceil(
+      layout.height *
+        readerStageMetrics.deviceScale *
+        READER_PORTRAIT_VARIANT_SELECTION_MARGIN
+    ),
+    requiredWidthPx: Math.ceil(
+      layout.width *
+        readerStageMetrics.deviceScale *
+        READER_PORTRAIT_VARIANT_SELECTION_MARGIN
+    ),
+    stageHeight: readerStageMetrics.stageHeight,
+    stageWidth: readerStageMetrics.stageWidth
+  };
+}
+
+export function selectReaderAssetDerivativeVariant(
+  assetRef: ReaderAssetRef,
+  metrics = readerStageMetrics
+) {
+  const previousMetrics = readerStageMetrics;
+
+  readerStageMetrics = metrics;
+
+  try {
+    const derivatives = getIosBitmapDerivativeCandidates(assetRef);
+    const target = getPortraitDerivativeSelectionTarget({
+      assetRef,
+      derivatives
+    });
+
+    if (derivatives.length === 0) {
+      return {
+        derivative: null,
+        target
+      };
+    }
+
+    const sortedDerivatives = [...derivatives].sort((left, right) => {
+      const areaDelta = getDerivativeArea(left) - getDerivativeArea(right);
+
+      if (areaDelta !== 0) {
+        return areaDelta;
+      }
+
+      return (left.variantKey ?? "").localeCompare(right.variantKey ?? "");
+    });
+    const sufficientDerivative =
+      sortedDerivatives.find(
+        (derivative) =>
+          (derivative.width ?? 0) >= target.requiredWidthPx &&
+          (derivative.height ?? 0) >= target.requiredHeightPx
+      ) ?? null;
+
+    return {
+      derivative: sufficientDerivative ?? sortedDerivatives.at(-1) ?? null,
+      target
+    };
+  } finally {
+    readerStageMetrics = previousMetrics;
+  }
+}
+
+function getPreferredReaderAssetDerivative(assetRef: ReaderAssetRef) {
+  return selectReaderAssetDerivativeVariant(assetRef).derivative;
+}
+
+export function getSelectedReaderAssetDerivativeMetadata(
+  assetRef: ReaderAssetRef
+) {
+  const selection = selectReaderAssetDerivativeVariant(assetRef);
+  const derivative = selection.derivative;
+
+  return derivative
+    ? {
+        cacheVersion: derivative.cacheVersion ?? null,
+        compressedBytes: derivative.compressedBytes ?? null,
+        contentType: derivative.contentType,
+        decodedBytesEstimate: derivative.decodedBytesEstimate ?? null,
+        hash: derivative.hash ?? null,
+        height: derivative.height ?? null,
+        renderVersion: derivative.renderVersion ?? null,
+        requiredHeightPx: selection.target.requiredHeightPx,
+        requiredWidthPx: selection.target.requiredWidthPx,
+        stageHeight: selection.target.stageHeight,
+        stageWidth: selection.target.stageWidth,
+        storagePath: derivative.storagePath,
+        variantKey: derivative.variantKey ?? null,
+        width: derivative.width ?? null
+      }
+    : null;
 }
 
 function hasReaderAssetBitmapDerivative(assetRef: ReaderAssetRef) {
@@ -986,13 +1296,32 @@ function resolveReaderAssetRefForVisibleRender(
     };
   }
 
+  logAssetMetric("portrait derivative variant selected", {
+    assetId: assetRef.assetId ?? null,
+    compressedBytes: derivative.compressedBytes ?? null,
+    decodedBytesEstimate:
+      derivative.decodedBytesEstimate ??
+      (typeof derivative.width === "number" &&
+      typeof derivative.height === "number"
+        ? derivative.width * derivative.height * 4
+        : null),
+    deviceScale: readerStageMetrics.deviceScale,
+    height: derivative.height ?? null,
+    renderVersion: derivative.renderVersion ?? null,
+    stageHeight: readerStageMetrics.stageHeight,
+    stageWidth: readerStageMetrics.stageWidth,
+    storagePath: derivative.storagePath,
+    variantKey: derivative.variantKey ?? null,
+    width: derivative.width ?? null
+  });
+
   return {
     ...assetRef,
     url: derivative.url,
     storagePath: derivative.storagePath,
     cacheKey:
       derivative.cacheKey ??
-      `${assetRef.cacheKey}:derivative:${derivative.hash ?? derivative.storagePath}`,
+      `${assetRef.cacheKey}:derivative:${derivative.renderVersion ?? "unknown-render"}:${derivative.hash ?? derivative.storagePath}`,
     assetId: assetRef.assetId,
     contentType: derivative.contentType,
     renderKind: derivative.renderKind,
@@ -1321,6 +1650,7 @@ function createAssetRecord(input: {
     bytes: getFileSize(input.file),
     contentType: input.contentType,
     detectedSourceType: input.detectedSourceType ?? "unknown",
+    fileReady: isReadyFile(input.file),
     fromCache: input.fromCache,
     derivativeAssetExists: Boolean(resolvedAssetRef.derivativeAssetExists),
     derivativeAssetSelected,
@@ -1332,8 +1662,14 @@ function createAssetRecord(input: {
         !derivativeAssetSelected),
     downloadDurationMs: input.downloadDurationMs ?? null,
     decodeWarmDurationMs: null,
+    failureReason: null,
+    imageRefHeight: null,
+    imageRefReady: false,
+    imageRefWidth: null,
     imagePrefetchResult: null,
     nativeImageRefReady: false,
+    prefetchReady: null,
+    renderReady: false,
     onLoadDurationMs: null,
     onLoadTimestamp: null,
     onDisplayDurationMs: null,
@@ -1395,14 +1731,21 @@ function createInlineAssetRecord(input: {
     bytes: getDataUriByteSize(input.assetRef.url),
     contentType: input.contentType,
     detectedSourceType: input.detectedSourceType ?? "webp",
+    fileReady: true,
     fromCache: true,
     derivativeAssetExists: Boolean(resolvedAssetRef.derivativeAssetExists),
     derivativeAssetSelected,
     sourceSvgFallbackUsed: Boolean(resolvedAssetRef.sourceSvgFallbackUsed),
     downloadDurationMs: 0,
     decodeWarmDurationMs: null,
+    failureReason: null,
+    imageRefHeight: null,
+    imageRefReady: false,
+    imageRefWidth: null,
     imagePrefetchResult: null,
     nativeImageRefReady: false,
+    prefetchReady: null,
+    renderReady: false,
     onLoadDurationMs: null,
     onLoadTimestamp: null,
     onDisplayDurationMs: null,
@@ -1450,10 +1793,7 @@ function isColdRenderOnVisiblePath(record: ReaderCachedAsset) {
     return !svgAstCache.has(record.sourceUrl);
   }
 
-  return (
-    !nativeImageRefCache.has(record.sourceUrl) &&
-    record.decodeWarmDurationMs == null
-  );
+  return !nativeImageRefCache.has(record.sourceUrl);
 }
 
 function getFileExistsForUri(uri: string | null) {
@@ -1491,11 +1831,20 @@ function getPreferredDerivativeDiagnostics(assetRef: ReaderAssetRef) {
     iosDerivativeUrl: derivative?.url ?? assetRef.iosDerivativeUrl ?? null,
     iosDerivativeContentType:
       derivative?.contentType ?? assetRef.iosDerivativeContentType ?? null,
+    iosDerivativeCompressedBytes: derivative?.compressedBytes ?? null,
+    iosDerivativeDecodedBytesEstimate:
+      derivative?.decodedBytesEstimate ??
+      (typeof derivative?.width === "number" &&
+      typeof derivative?.height === "number"
+        ? derivative.width * derivative.height * 4
+        : null),
     iosDerivativeWidth:
       derivative?.width ?? assetRef.iosDerivativeWidth ?? null,
     iosDerivativeHeight:
       derivative?.height ?? assetRef.iosDerivativeHeight ?? null,
     iosDerivativeHash: derivative?.hash ?? assetRef.iosDerivativeHash ?? null,
+    iosDerivativeRenderVersion: derivative?.renderVersion ?? null,
+    iosDerivativeVariantKey: derivative?.variantKey ?? null,
     hasCompleteMetadata:
       hasCompleteIosDerivativeMetadata(derivative) ||
       Boolean(
@@ -1523,9 +1872,13 @@ function getDiagnosticsForRecord(
         iosDerivativeStoragePath: record.selectedDerivativeStoragePath,
         iosDerivativeUrl: record.selectedDerivativeUrl,
         iosDerivativeContentType: null,
+        iosDerivativeCompressedBytes: null,
+        iosDerivativeDecodedBytesEstimate: null,
         iosDerivativeWidth: null,
         iosDerivativeHeight: null,
         iosDerivativeHash: null,
+        iosDerivativeRenderVersion: null,
+        iosDerivativeVariantKey: null,
         hasCompleteMetadata: record.derivativeAssetSelected
       };
   return {
@@ -1545,9 +1898,16 @@ function getDiagnosticsForRecord(
     iosDerivativeStoragePath: derivativeDiagnostics.iosDerivativeStoragePath,
     iosDerivativeUrl: derivativeDiagnostics.iosDerivativeUrl,
     iosDerivativeContentType: derivativeDiagnostics.iosDerivativeContentType,
+    iosDerivativeCompressedBytes:
+      derivativeDiagnostics.iosDerivativeCompressedBytes,
+    iosDerivativeDecodedBytesEstimate:
+      derivativeDiagnostics.iosDerivativeDecodedBytesEstimate,
     iosDerivativeWidth: derivativeDiagnostics.iosDerivativeWidth,
     iosDerivativeHeight: derivativeDiagnostics.iosDerivativeHeight,
     iosDerivativeHash: derivativeDiagnostics.iosDerivativeHash,
+    iosDerivativeRenderVersion:
+      derivativeDiagnostics.iosDerivativeRenderVersion,
+    iosDerivativeVariantKey: derivativeDiagnostics.iosDerivativeVariantKey,
     selectedIosRenderMode: record.renderMode,
     fallbackReason: record.fallbackReason,
     localCachedUri: record.localUri,
@@ -1560,8 +1920,14 @@ function getDiagnosticsForRecord(
     derivativeLocalFileSize: record.derivativeAssetSelected
       ? getLocalFileSizeForUri(record.localUri)
       : null,
+    fileReady: record.fileReady,
+    failureReason: record.failureReason,
+    imageRefHeight: record.imageRefHeight,
     imagePrefetchResult: record.imagePrefetchResult,
     imageRefReady: nativeImageRefCache.has(record.sourceUrl),
+    imageRefWidth: record.imageRefWidth,
+    prefetchReady: record.prefetchReady,
+    renderReady: record.renderReady,
     PORTRAIT_RENDER_MODE: record.renderMode,
     derivativeAssetExists: record.derivativeAssetExists,
     derivativeAssetSelected: record.derivativeAssetSelected,
@@ -1662,17 +2028,30 @@ function getUncachedAssetDiagnostics(
     iosDerivativeStoragePath: derivativeDiagnostics.iosDerivativeStoragePath,
     iosDerivativeUrl: derivativeDiagnostics.iosDerivativeUrl,
     iosDerivativeContentType: derivativeDiagnostics.iosDerivativeContentType,
+    iosDerivativeCompressedBytes:
+      derivativeDiagnostics.iosDerivativeCompressedBytes,
+    iosDerivativeDecodedBytesEstimate:
+      derivativeDiagnostics.iosDerivativeDecodedBytesEstimate,
     iosDerivativeWidth: derivativeDiagnostics.iosDerivativeWidth,
     iosDerivativeHeight: derivativeDiagnostics.iosDerivativeHeight,
     iosDerivativeHash: derivativeDiagnostics.iosDerivativeHash,
+    iosDerivativeRenderVersion:
+      derivativeDiagnostics.iosDerivativeRenderVersion,
+    iosDerivativeVariantKey: derivativeDiagnostics.iosDerivativeVariantKey,
     selectedIosRenderMode: renderMode,
     fallbackReason,
     localCachedUri: null,
     localCachedDerivativeUri: null,
     derivativeFileExists: false,
     derivativeLocalFileSize: null,
+    fileReady: false,
+    failureReason: null,
+    imageRefHeight: null,
     imagePrefetchResult: null,
     imageRefReady: false,
+    imageRefWidth: null,
+    prefetchReady: null,
+    renderReady: false,
     PORTRAIT_RENDER_MODE: renderMode,
     derivativeAssetExists: hasReaderAssetBitmapDerivative(assetRef),
     derivativeAssetSelected: Boolean(selectedDerivative),
@@ -1767,6 +2146,9 @@ function summarizePortraitDiagnostics(
     ).length,
     coldVisibleRenderCount: diagnostics.filter(
       (diagnostic) => diagnostic.COLD_RENDER_ON_VISIBLE_PATH
+    ).length,
+    imageRefReadyCount: diagnostics.filter(
+      (diagnostic) => diagnostic.imageRefReady
     ).length,
     renderModeCounts
   };
@@ -2236,7 +2618,36 @@ export function classifySvgAssetPayload(
   };
 }
 
-async function predecodeBitmapAsset(record: ReaderCachedAsset) {
+function isBlockingPortraitRecord(record: ReaderCachedAsset) {
+  return (
+    record.role === "portrait" && record.renderMode === "bitmap-derivative"
+  );
+}
+
+function getRenderReadyForRecord(record: ReaderCachedAsset) {
+  if (
+    record.renderMode === "original-svg" ||
+    record.renderMode === "true-vector-svg"
+  ) {
+    return Boolean(
+      record.decodeWarmDurationMs != null && !record.failureReason
+    );
+  }
+
+  if (isBlockingPortraitRecord(record)) {
+    return record.fileReady && record.imageRefReady;
+  }
+
+  return record.fileReady;
+}
+
+async function predecodeBitmapAsset(
+  record: ReaderCachedAsset,
+  options?: {
+    priority?: ReaderDecodePriority;
+    requireImageRef?: boolean;
+  }
+) {
   if (
     record.renderMode === "original-svg" ||
     record.renderMode === "true-vector-svg"
@@ -2245,16 +2656,45 @@ async function predecodeBitmapAsset(record: ReaderCachedAsset) {
   }
 
   const startedAt = Date.now();
-  record.imagePrefetchResult = await ExpoImage.prefetch([record.localUri], {
-    cachePolicy: "memory-disk"
-  }).catch(() => false);
-  await loadReaderImageRef(record.sourceUrl);
+  record.fileReady = getFileExistsForUri(record.localUri);
+  record.imagePrefetchResult = await runWithDecodeLimit(
+    options?.priority ?? "medium",
+    () =>
+      ExpoImage.prefetch([record.localUri], {
+        cachePolicy: "memory-disk"
+      }).catch(() => false)
+  );
+  record.prefetchReady = record.imagePrefetchResult === true;
+  const imageRef = await loadReaderImageRef(record.sourceUrl, {
+    priority: options?.priority ?? "medium"
+  });
   record.decodeWarmDurationMs = Date.now() - startedAt;
-  record.nativeImageRefReady = nativeImageRefCache.has(record.sourceUrl);
+  record.nativeImageRefReady = Boolean(imageRef);
+  record.imageRefReady = Boolean(imageRef);
+  record.imageRefWidth =
+    typeof imageRef?.width === "number" && imageRef.width > 0
+      ? imageRef.width
+      : null;
+  record.imageRefHeight =
+    typeof imageRef?.height === "number" && imageRef.height > 0
+      ? imageRef.height
+      : null;
+  record.failureReason = imageRef ? null : "image-ref-load-failed-or-null";
+  record.renderReady = getRenderReadyForRecord(record);
+
+  if (options?.requireImageRef && !imageRef) {
+    throw new Error(
+      `Native ImageRef is required before rendering ${record.storagePath}.`
+    );
+  }
 }
 
 export async function prepareReaderCachedAssetRenderReady(
-  record: ReaderCachedAsset
+  record: ReaderCachedAsset,
+  options?: {
+    priority?: ReaderDecodePriority;
+    requireImageRef?: boolean;
+  }
 ) {
   const startedAt = Date.now();
 
@@ -2288,6 +2728,8 @@ export async function prepareReaderCachedAssetRenderReady(
     }
 
     record.decodeWarmDurationMs = Date.now() - startedAt;
+    record.failureReason = null;
+    record.renderReady = true;
     logAssetMetric("SVG prepared", {
       assetId: record.assetId ?? record.cacheKey,
       cachedUri: record.localUri,
@@ -2299,13 +2741,21 @@ export async function prepareReaderCachedAssetRenderReady(
     return;
   }
 
-  await predecodeBitmapAsset(record);
+  await predecodeBitmapAsset(record, options);
   record.decodeWarmDurationMs =
     record.decodeWarmDurationMs ?? Date.now() - startedAt;
+  record.renderReady = getRenderReadyForRecord(record);
   logAssetMetric("image render warmed", {
     assetId: record.assetId ?? record.cacheKey,
     cachedUri: record.localUri,
     decodeWarmDurationMs: record.decodeWarmDurationMs,
+    fileReady: record.fileReady,
+    failureReason: record.failureReason,
+    imageRefHeight: record.imageRefHeight,
+    imageRefReady: record.imageRefReady,
+    imageRefWidth: record.imageRefWidth,
+    prefetchReady: record.prefetchReady,
+    renderReady: record.renderReady,
     renderMode: record.renderMode,
     role: record.role,
     storagePath: record.storagePath
@@ -2629,7 +3079,6 @@ async function downloadAndCacheAsset(assetRef: ReaderAssetRef) {
   }
 
   record.downloadDurationMs = Date.now() - startedAt;
-  await predecodeBitmapAsset(record);
   logAssetMetric("downloaded", {
     bytes: record.bytes,
     decodeWarmDurationMs: record.decodeWarmDurationMs,
@@ -2725,6 +3174,7 @@ async function ensureAssetRefsReady(input: {
   scope: ReaderAssetCacheResult["scope"];
   scopeId: string;
   assetRefs: ReaderAssetRef[];
+  priority?: ReaderDecodePriority;
 }) {
   const startedAt = Date.now();
   const uniqueAssetRefs = Array.from(
@@ -2778,7 +3228,19 @@ async function ensureAssetRefsReady(input: {
     });
 
     const renderReadyResults = await Promise.allSettled(
-      assets.map((asset) => prepareReaderCachedAssetRenderReady(asset))
+      assets.map((asset) =>
+        prepareReaderCachedAssetRenderReady(asset, {
+          priority:
+            input.priority ??
+            (input.scope === "chapter"
+              ? "low"
+              : input.scope === "warm"
+                ? "medium"
+                : "high"),
+          requireImageRef:
+            input.scope === "scene" && isBlockingPortraitRecord(asset)
+        })
+      )
     );
 
     renderReadyResults.forEach((result, index) => {
@@ -2828,12 +3290,14 @@ async function ensureAssetRefsReady(input: {
 
 export function ensureSceneAssetsReady(
   sceneId: string,
-  assetRefs: ReaderAssetRef[]
+  assetRefs: ReaderAssetRef[],
+  priority: ReaderDecodePriority = "high"
 ) {
   return ensureAssetRefsReady({
     scope: "scene",
     scopeId: sceneId,
-    assetRefs
+    assetRefs,
+    priority
   });
 }
 
@@ -2844,18 +3308,21 @@ export function ensureChapterAssetsReady(
   return ensureAssetRefsReady({
     scope: "chapter",
     scopeId: chapterId,
-    assetRefs
+    assetRefs,
+    priority: "low"
   });
 }
 
 export function warmNextSceneAssets(
   sceneId: string,
-  assetRefs: ReaderAssetRef[]
+  assetRefs: ReaderAssetRef[],
+  priority: ReaderDecodePriority = "low"
 ) {
   return ensureAssetRefsReady({
     scope: "warm",
     scopeId: sceneId,
-    assetRefs
+    assetRefs,
+    priority
   });
 }
 
@@ -2869,6 +3336,8 @@ export async function clearReaderAssetCache(): Promise<ReaderAssetCacheClearResu
   inFlightAssetLoads.clear();
   queuedDownloads.splice(0, queuedDownloads.length);
   activeDownloadCount = 0;
+  queuedDecodeTasks.splice(0, queuedDecodeTasks.length);
+  activeDecodeCount = 0;
 
   deleteCacheDirectoryIfPresent();
   ensureCacheDirectory();
@@ -2890,9 +3359,7 @@ export async function clearReaderAssetCache(): Promise<ReaderAssetCacheClearResu
   return result;
 }
 
-if (isDevelopment()) {
-  globalThis.__OCNOER_READER_CLEAR_ASSET_CACHE = clearReaderAssetCache;
-}
+globalThis.__OCNOER_READER_CLEAR_ASSET_CACHE = clearReaderAssetCache;
 
 export function getAssetCacheErrorMessage(result: ReaderAssetCacheResult) {
   const firstError = result.errors[0];
@@ -2948,7 +3415,12 @@ export function getPreloadedReaderImageRef(imageUrl: string) {
   return nativeImageRefCache.get(imageUrl) ?? null;
 }
 
-export function loadReaderImageRef(imageUrl: string) {
+export function loadReaderImageRef(
+  imageUrl: string,
+  options?: {
+    priority?: ReaderDecodePriority;
+  }
+) {
   const renderMode = getAssetRenderMode(imageUrl);
 
   if (renderMode === "original-svg" || renderMode === "true-vector-svg") {
@@ -2969,6 +3441,17 @@ export function loadReaderImageRef(imageUrl: string) {
 
     if (record) {
       record.nativeImageRefReady = true;
+      record.imageRefReady = true;
+      record.imageRefWidth =
+        typeof cachedImageRef.width === "number" && cachedImageRef.width > 0
+          ? cachedImageRef.width
+          : record.imageRefWidth;
+      record.imageRefHeight =
+        typeof cachedImageRef.height === "number" && cachedImageRef.height > 0
+          ? cachedImageRef.height
+          : record.imageRefHeight;
+      record.failureReason = null;
+      record.renderReady = getRenderReadyForRecord(record);
     }
 
     return Promise.resolve(cachedImageRef);
@@ -2980,12 +3463,24 @@ export function loadReaderImageRef(imageUrl: string) {
     return existingLoad;
   }
 
-  const load = ExpoImage.loadAsync({
-    uri: renderUri,
-    cacheKey: imageUrl
-  })
+  const load = runWithDecodeLimit(options?.priority ?? "medium", () =>
+    ExpoImage.loadAsync({
+      uri: renderUri,
+      cacheKey: imageUrl
+    })
+  )
     .then((imageRef) => {
       const record = cachedAssetsByUrl.get(imageUrl) ?? null;
+
+      if (!imageRef) {
+        if (record) {
+          record.nativeImageRefReady = false;
+          record.imageRefReady = false;
+          record.failureReason = "image-ref-load-returned-null";
+          record.renderReady = getRenderReadyForRecord(record);
+        }
+        return null;
+      }
 
       if (record) {
         const naturalWidth =
@@ -3008,10 +3503,33 @@ export function loadReaderImageRef(imageUrl: string) {
       nativeImageRefCache.set(imageUrl, imageRef);
       if (record) {
         record.nativeImageRefReady = true;
+        record.imageRefReady = true;
+        record.imageRefWidth =
+          typeof imageRef.width === "number" && imageRef.width > 0
+            ? imageRef.width
+            : null;
+        record.imageRefHeight =
+          typeof imageRef.height === "number" && imageRef.height > 0
+            ? imageRef.height
+            : null;
+        record.failureReason = null;
+        record.renderReady = getRenderReadyForRecord(record);
       }
       return imageRef;
     })
-    .catch(() => null)
+    .catch((error) => {
+      const record = cachedAssetsByUrl.get(imageUrl) ?? null;
+
+      if (record) {
+        record.nativeImageRefReady = false;
+        record.imageRefReady = false;
+        record.failureReason =
+          error instanceof Error ? error.message : "image-ref-load-failed";
+        record.renderReady = getRenderReadyForRecord(record);
+      }
+
+      return null;
+    })
     .finally(() => {
       inFlightNativeImageLoads.delete(imageUrl);
     });

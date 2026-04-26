@@ -3,6 +3,10 @@ import type { NativeReaderPresentation } from "./readerPresentation";
 export const NATIVE_READER_TYPING_BASE_DELAY_MS = 22;
 export const NATIVE_READER_TYPING_COMMA_EXTRA_DELAY_MS = 42;
 export const NATIVE_READER_TYPING_SENTENCE_EXTRA_DELAY_MS = 110;
+export const NATIVE_READER_MAX_TEXT_UPDATES_PER_SECOND = 30;
+export const NATIVE_READER_CHARS_PER_SECOND = Math.round(
+  1000 / NATIVE_READER_TYPING_BASE_DELAY_MS
+);
 
 export function createNativeReaderDialogueAnimationKey(
   presentation: Pick<NativeReaderPresentation, "dialogueEntryId" | "status">
@@ -26,6 +30,23 @@ export function getNativeReaderTypingCharacterDelayMs(character: string) {
   }
 
   return NATIVE_READER_TYPING_BASE_DELAY_MS;
+}
+
+export function getNativeReaderTextUpdateCadenceMs(
+  maxTextUpdatesPerSecond = NATIVE_READER_MAX_TEXT_UPDATES_PER_SECOND
+) {
+  return Math.max(16, Math.ceil(1000 / maxTextUpdatesPerSecond));
+}
+
+export function getNativeReaderMaxTextStateUpdatesForDurationMs(input: {
+  durationMs: number;
+  maxTextUpdatesPerSecond?: number;
+}) {
+  const cadenceMs = getNativeReaderTextUpdateCadenceMs(
+    input.maxTextUpdatesPerSecond
+  );
+
+  return Math.ceil(Math.max(0, input.durationMs) / cadenceMs) + 1;
 }
 
 export function getNativeReaderTypingExpectedDurationMs(input: {

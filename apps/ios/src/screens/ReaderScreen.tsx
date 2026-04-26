@@ -32,7 +32,10 @@ import { NativeReaderBoundaryCard } from "../reader/components/NativeReaderBound
 import { BlackoutOverlay } from "../reader/components/NativeCinematic";
 import { NativeReaderDialogue } from "../reader/components/NativeReaderDialogue";
 import { NativeReaderStage } from "../reader/components/NativeReaderStage";
-import { useReaderAssetWarmup } from "../reader/imagePreload";
+import {
+  setReaderDecodeSchedulerInteractionState,
+  useReaderAssetWarmup
+} from "../reader/imagePreload";
 import { useNativeReaderController } from "../reader/useNativeReaderController";
 import type { NativeAudioPreferences } from "../storage/audioPreferenceStorage";
 import { OcnoerButton, OcnoerSurface } from "../ui/primitives";
@@ -529,6 +532,21 @@ export function ReaderScreen(props: ReaderScreenProps) {
 
   useReaderAssetWarmup(reader.preloadAssetRefs);
 
+  const showTransitionBlackout =
+    boundaryPresentation?.type === "scene-transition" || reader.isMoving;
+
+  useEffect(() => {
+    setReaderDecodeSchedulerInteractionState({
+      transitioning: showTransitionBlackout
+    });
+
+    return () => {
+      setReaderDecodeSchedulerInteractionState({
+        transitioning: false
+      });
+    };
+  }, [showTransitionBlackout]);
+
   if (reader.state.status === "loading") {
     return (
       <ReaderMessageScreen
@@ -570,9 +588,6 @@ export function ReaderScreen(props: ReaderScreenProps) {
       />
     );
   }
-
-  const showTransitionBlackout =
-    boundaryPresentation?.type === "scene-transition" || reader.isMoving;
 
   return (
     <View style={styles.safeArea}>

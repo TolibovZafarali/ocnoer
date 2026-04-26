@@ -38,6 +38,8 @@ import {
   ensureChapterAssetsReady,
   ensureSceneAssetsReady,
   getAssetCacheErrorMessage,
+  getSelectedReaderAssetDerivativeMetadata,
+  isReaderPerfDiagnosticsEnabled,
   verifyReaderPortraitDerivativeUrls,
   warmNextSceneAssets
 } from "./imagePreload";
@@ -138,12 +140,8 @@ type NativeReaderPresentationUsage = {
 const PRESENTATION_READY_CACHE_LIMIT = 6;
 const PRESENTATION_LOOKAHEAD_DEPTH = 2;
 
-function isDevelopment() {
-  return typeof __DEV__ !== "undefined" ? __DEV__ : false;
-}
-
 function logReaderTiming(message: string, details?: Record<string, unknown>) {
-  if (!isDevelopment()) {
+  if (!isReaderPerfDiagnosticsEnabled()) {
     return;
   }
 
@@ -190,6 +188,12 @@ export function createNativeReaderPresentationReadinessKey(
       renderKind:
         "renderKind" in assetRef ? (assetRef.renderKind ?? null) : null,
       role: assetRef.role,
+      selectedDerivative:
+        assetRef.role === "portrait"
+          ? getSelectedReaderAssetDerivativeMetadata(assetRef)
+          : null,
+      stagePlacement:
+        "stagePlacement" in assetRef ? (assetRef.stagePlacement ?? null) : null,
       storagePath: assetRef.storagePath,
       url: assetRef.url
     })),
@@ -462,6 +466,7 @@ async function ensureNativeReaderPresentationAssets(input: {
 
 export async function ensureNativeReaderPresentationRenderReady(input: {
   presentation: NativeReaderPresentation;
+  priority?: "high" | "medium" | "low";
   reason: "initial" | "lookahead" | "tap-wait";
 }) {
   const startedAt = Date.now();
@@ -478,7 +483,8 @@ export async function ensureNativeReaderPresentationRenderReady(input: {
 
   const result = await ensureSceneAssetsReady(
     input.presentation.dialogueEntryId,
-    input.presentation.blockingAssetRefs
+    input.presentation.blockingAssetRefs,
+    input.priority ?? "high"
   );
   const errorMessage = getAssetCacheErrorMessage(result);
 
@@ -698,6 +704,9 @@ export function useNativeReaderController(
     });
   const preparedPresentationsRef = useRef(
     new Map<string, PreparedNativeReaderPresentation>()
+  );
+  const preparedAdvanceTargetsRef = useRef(
+    new Map<string, NativeReaderAdvanceTarget>()
   );
   const inFlightPresentationWarmupsRef = useRef(
     new Map<string, Promise<PreparedNativeReaderPresentation>>()
@@ -947,7 +956,7 @@ export function useNativeReaderController(
   );
 
   useEffect(() => {
-    if (!isDevelopment()) {
+    if (!isReaderPerfDiagnosticsEnabled()) {
       return;
     }
 
@@ -982,7 +991,8 @@ export function useNativeReaderController(
               key: usage.presentationKey,
               preparedPresentations
             }),
-            isImmediateNext: advanceReadiness.targetKey === usage.presentationKey,
+            isImmediateNext:
+              advanceReadiness.targetKey === usage.presentationKey,
             message:
               advanceReadiness.status === "error" &&
               advanceReadiness.targetKey === usage.presentationKey
@@ -1002,7 +1012,9 @@ export function useNativeReaderController(
       const dump = dumpReaderAssetRenderModes(
         [
           ...auditEntries,
-          ...fallbackAssetRefs.filter((assetRef) => !auditUrls.has(assetRef.url))
+          ...fallbackAssetRefs.filter(
+            (assetRef) => !auditUrls.has(assetRef.url)
+          )
         ],
         {
           manifestPath: config.manifestPath,
@@ -1010,7 +1022,8 @@ export function useNativeReaderController(
           chapterId: runtimeState.bundle.chapter.id,
           chapterGeneratedAt: runtimeState.bundle.generatedAt,
           staleRuntimeJson:
-            runtimeState.manifest.generatedAt !== runtimeState.bundle.generatedAt
+            runtimeState.manifest.generatedAt !==
+            runtimeState.bundle.generatedAt
         }
       );
 
@@ -1052,10 +1065,41 @@ export function useNativeReaderController(
     return key ? (preparedPresentationsRef.current.get(key) ?? null) : null;
   }, []);
 
+  const rememberPreparedAdvanceTarget = useCallback(
+    (sourceKey: string, target: NativeReaderAdvanceTarget | null) => {
+      if (!target) {
+        preparedAdvanceTargetsRef.current.delete(sourceKey);
+        return;
+      }
+
+      const cache = preparedAdvanceTargetsRef.current;
+
+      cache.set(sourceKey, target);
+
+      while (cache.size > PRESENTATION_READY_CACHE_LIMIT) {
+        const oldestKey = cache.keys().next().value as string | undefined;
+
+        if (!oldestKey) {
+          break;
+        }
+
+        cache.delete(oldestKey);
+      }
+    },
+    []
+  );
+
+  const getPreparedAdvanceTarget = useCallback((sourceKey: string | null) => {
+    return sourceKey
+      ? (preparedAdvanceTargetsRef.current.get(sourceKey) ?? null)
+      : null;
+  }, []);
+
   const warmPresentation = useCallback(
     (
       targetPresentation: NativeReaderPresentation,
-      reason: "initial" | "lookahead" | "tap-wait"
+      reason: "initial" | "lookahead" | "tap-wait",
+      priority: "high" | "medium" | "low" = "high"
     ) => {
       const key =
         createNativeReaderPresentationReadinessKey(targetPresentation);
@@ -1079,6 +1123,7 @@ export function useNativeReaderController(
 
       const warmup = ensureNativeReaderPresentationRenderReady({
         presentation: targetPresentation,
+        priority,
         reason
       })
         .then(() => {
@@ -1192,6 +1237,8 @@ export function useNativeReaderController(
         const immediateTarget = targets[0] ?? null;
         const targetKey = immediateTarget?.targetKey ?? null;
 
+        rememberPreparedAdvanceTarget(presentationRenderKey, immediateTarget);
+
         setAdvanceReadiness({
           status: "pending",
           sourceKey: presentationRenderKey,
@@ -1215,7 +1262,11 @@ export function useNativeReaderController(
 
         const warmups = targets.map((target) =>
           target.targetPresentation
-            ? warmPresentation(target.targetPresentation, "lookahead")
+            ? warmPresentation(
+                target.targetPresentation,
+                "lookahead",
+                target === immediateTarget ? "high" : "medium"
+              )
             : Promise.resolve(null)
         );
 
@@ -1282,7 +1333,12 @@ export function useNativeReaderController(
     return () => {
       cancelled = true;
     };
-  }, [presentationRenderKey, runtimeState, warmAdvanceTargetsFromState]);
+  }, [
+    presentationRenderKey,
+    rememberPreparedAdvanceTarget,
+    runtimeState,
+    warmAdvanceTargetsFromState
+  ]);
 
   const canRetreat = useMemo(() => {
     if (runtimeState.status === "finished") {
@@ -1432,13 +1488,17 @@ export function useNativeReaderController(
         sceneIndex: currentRuntimeState.readerState.sceneIndex
       });
 
-      const target = await computeNativeReaderNextAdvanceTarget({
-        branchFlags: resolvedBranchFlags,
-        catName: resolvedCatName,
-        currentRuntimeState,
-        loadChapter: repository.loadChapter,
-        supabaseUrl: config.supabaseUrl
-      });
+      const target =
+        (!options?.allowUnreadyTargetWait
+          ? getPreparedAdvanceTarget(presentationRenderKey)
+          : null) ??
+        (await computeNativeReaderNextAdvanceTarget({
+          branchFlags: resolvedBranchFlags,
+          catName: resolvedCatName,
+          currentRuntimeState,
+          loadChapter: repository.loadChapter,
+          supabaseUrl: config.supabaseUrl
+        }));
       const targetRenderReady = Boolean(
         !target.targetKey || getPreparedPresentation(target.targetKey)
       );
@@ -1520,7 +1580,9 @@ export function useNativeReaderController(
       catName,
       commitAdvanceResult,
       config.supabaseUrl,
+      getPreparedAdvanceTarget,
       getPreparedPresentation,
+      presentationRenderKey,
       repository.loadChapter,
       warmPresentation
     ]

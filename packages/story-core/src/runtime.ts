@@ -72,6 +72,7 @@ export type PlayerRuntimeImageAssetRef = {
   originalSvgUrl?: string | null;
   renderKind?: "bitmap" | "svg-vector" | "svg-raster-wrapper" | "unknown";
   sourceRenderKind?: "svg" | "bitmap" | "unknown";
+  stagePlacement?: PlayerRuntimeStagePlacement | null;
 };
 
 export type PlayerRuntimeImageAssetDerivative = RuntimeImageDerivative & {
@@ -788,6 +789,7 @@ function getRuntimeSceneAssetRefs(input: {
     assetId?: string | null;
     cacheKey?: string;
     derivatives?: PlayerRuntimeImageAssetDerivative[];
+    stagePlacement?: PlayerRuntimeStagePlacement | null;
   }) => {
     const storagePath = asset.storagePath ?? null;
     const assetUrl = toPublicStorageUrl(input.supabaseUrl, storagePath);
@@ -804,6 +806,7 @@ function getRuntimeSceneAssetRefs(input: {
       cacheKey:
         asset.cacheKey ?? `${asset.role}:${asset.assetId ?? storagePath}`,
       derivatives: asset.derivatives,
+      stagePlacement: asset.stagePlacement ?? null,
       ...(asset.role === "portrait"
         ? getRuntimeImagePlatformMetadata({
             supabaseUrl: input.supabaseUrl,
@@ -839,6 +842,8 @@ function getRuntimeSceneAssetRefs(input: {
         storagePath,
         assetId: stageCharacter.characterId,
         cacheKey: `portrait:${stageCharacter.characterId}:${stageCharacter.emotionKey}:${storagePath ?? ""}`,
+        stagePlacement:
+          dialogueEntry.stage.left === stageCharacter ? "left" : "right",
         derivatives:
           imageAsset.imageDerivatives.length > 0
             ? imageAsset.imageDerivatives
@@ -863,6 +868,7 @@ function getRuntimeSceneAssetRefs(input: {
         storagePath,
         assetId: dialogueEntry.speaker.characterId,
         cacheKey: `portrait:${dialogueEntry.speaker.characterId}:default:${storagePath ?? ""}`,
+        stagePlacement: "right",
         derivatives:
           imageAsset.imageDerivatives.length > 0
             ? imageAsset.imageDerivatives

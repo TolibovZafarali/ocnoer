@@ -80,12 +80,58 @@ function isCompleteDerivativeMetadata(derivative) {
     typeof derivative.width === "number" &&
     derivative.width > 0 &&
     typeof derivative.height === "number" &&
-    derivative.height > 0
+    derivative.height > 0 &&
+    (derivative.compressedBytes == null ||
+      (typeof derivative.compressedBytes === "number" &&
+        derivative.compressedBytes > 0)) &&
+    (derivative.decodedBytesEstimate == null ||
+      (typeof derivative.decodedBytesEstimate === "number" &&
+        derivative.decodedBytesEstimate > 0))
   );
 }
 
 function getPreferredDerivative(derivatives) {
-  return derivatives?.find(isAlphaSafeBitmapDerivative) ?? null;
+  return (
+    derivatives?.find(
+      (derivative) =>
+        isAlphaSafeBitmapDerivative(derivative) &&
+        derivative.variantKey === "phone-3x"
+    ) ??
+    derivatives?.find(isAlphaSafeBitmapDerivative) ??
+    null
+  );
+}
+
+function getAlphaSafeDerivatives(derivatives) {
+  return derivatives?.filter(isAlphaSafeBitmapDerivative) ?? [];
+}
+
+function getDecodedBytesEstimate(derivative) {
+  return (
+    derivative?.decodedBytesEstimate ??
+    (typeof derivative?.width === "number" &&
+    typeof derivative?.height === "number"
+      ? derivative.width * derivative.height * 4
+      : 0)
+  );
+}
+
+function getCompressedBytes(derivative, networkStatus) {
+  return derivative?.compressedBytes ?? networkStatus?.contentLength ?? 0;
+}
+
+function isOversizedForPhone3x(derivative) {
+  if (!derivative?.width || !derivative?.height) {
+    return false;
+  }
+
+  const targetWidth = Math.ceil(228 * 3 * 1.1);
+  const targetHeight = Math.ceil(342 * 3 * 1.1);
+
+  return (
+    derivative.width > targetWidth * 1.15 ||
+    derivative.height > targetHeight * 1.15
+  );
 }
 
 function isSourceSvg(asset) {
@@ -346,6 +392,7 @@ async function main() {
 
   await Promise.all(
     sourceSvgAssets.map(async (asset) => {
+      const derivatives = getAlphaSafeDerivatives(asset.derivatives);
       const derivative = getPreferredDerivative(asset.derivatives);
       const derivativeUrl = derivative
         ? toPublicStorageUrl(supabaseUrl, derivative.storagePath)
@@ -363,12 +410,23 @@ async function main() {
         return;
       }
 
-      if (!derivativeUrlStatuses.has(derivativeUrl)) {
-        derivativeUrlStatuses.set(
-          derivativeUrl,
-          await verifyUrl(derivativeUrl)
-        );
-      }
+      await Promise.all(
+        derivatives.map(async (candidateDerivative) => {
+          const candidateUrl = toPublicStorageUrl(
+            supabaseUrl,
+            candidateDerivative.storagePath
+          );
+
+          if (!candidateUrl || derivativeUrlStatuses.has(candidateUrl)) {
+            return;
+          }
+
+          derivativeUrlStatuses.set(
+            candidateUrl,
+            await verifyUrl(candidateUrl)
+          );
+        })
+      );
     })
   );
 
@@ -390,6 +448,74 @@ async function main() {
   );
   const withDerivativeMetadata =
     sourceSvgAssets.length - missingDerivativeEntries.length;
+  const derivativeSelectionSummary = sourceSvgAssets
+    .filter(
+      (asset) =>
+        !missingDerivativeEntries.some(
+          (entry) => entry.sourceStoragePath === asset.sourceStoragePath
+        )
+    )
+    .map((asset) => {
+      const derivatives = getAlphaSafeDerivatives(asset.derivatives);
+      const selected = getPreferredDerivative(asset.derivatives);
+      const full =
+        derivatives.find((derivative) => derivative.variantKey === "full") ??
+        derivatives[derivatives.length - 1] ??
+        selected;
+      const selectedUrl = selected
+        ? toPublicStorageUrl(supabaseUrl, selected.storagePath)
+        : null;
+      const fullUrl = full
+        ? toPublicStorageUrl(supabaseUrl, full.storagePath)
+        : null;
+      const selectedStatus = selectedUrl
+        ? derivativeUrlStatuses.get(selectedUrl)
+        : null;
+      const fullStatus = fullUrl ? derivativeUrlStatuses.get(fullUrl) : null;
+
+      return {
+        characterId: asset.characterId,
+        characterName: asset.characterName,
+        emotionKey: asset.emotionKey,
+        dressKey: asset.dressKey,
+        sourceStoragePath: asset.sourceStoragePath,
+        variantCount: derivatives.length,
+        selectedVariantKey: selected?.variantKey ?? null,
+        selectedWidth: selected?.width ?? null,
+        selectedHeight: selected?.height ?? null,
+        selectedCompressedBytes: getCompressedBytes(selected, selectedStatus),
+        selectedDecodedBytesEstimate: getDecodedBytesEstimate(selected),
+        fullVariantKey: full?.variantKey ?? null,
+        fullWidth: full?.width ?? null,
+        fullHeight: full?.height ?? null,
+        fullCompressedBytes: getCompressedBytes(full, fullStatus),
+        fullDecodedBytesEstimate: getDecodedBytesEstimate(full),
+        oversizedBefore: isOversizedForPhone3x(full),
+        oversizedAfter: isOversizedForPhone3x(selected)
+      };
+    });
+  const derivativeSizeReport = derivativeSelectionSummary.reduce(
+    (total, entry) => ({
+      compressedBytesBefore:
+        total.compressedBytesBefore + entry.fullCompressedBytes,
+      compressedBytesAfter:
+        total.compressedBytesAfter + entry.selectedCompressedBytes,
+      decodedBytesBefore:
+        total.decodedBytesBefore + entry.fullDecodedBytesEstimate,
+      decodedBytesAfter:
+        total.decodedBytesAfter + entry.selectedDecodedBytesEstimate,
+      oversizedBefore: total.oversizedBefore + (entry.oversizedBefore ? 1 : 0),
+      oversizedAfter: total.oversizedAfter + (entry.oversizedAfter ? 1 : 0)
+    }),
+    {
+      compressedBytesBefore: 0,
+      compressedBytesAfter: 0,
+      decodedBytesBefore: 0,
+      decodedBytesAfter: 0,
+      oversizedBefore: 0,
+      oversizedAfter: 0
+    }
+  );
   const report = {
     manifestPath,
     runtime: {
@@ -415,6 +541,8 @@ async function main() {
     withDerivativeMetadata,
     withoutDerivativeMetadata: missingDerivativeEntries.length,
     missingDerivativeMetadata: missingDerivativeEntries.length,
+    derivativeSizeReport,
+    derivativeSelectionSummary,
     derivativeUrlsMissingOr404: derivativeUrlMissingOr404.length,
     derivativeUrl404OrMissing: derivativeUrlMissingOr404.length,
     derivativeUrlsFailedVerification: derivativeUrlFailedVerification.length,

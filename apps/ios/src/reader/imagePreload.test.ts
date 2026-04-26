@@ -132,8 +132,10 @@ function createResponse(input: {
 describe("reader asset cache", () => {
   beforeEach(() => {
     mockFiles.clear();
-    mockLoadAsync.mockClear();
-    mockPrefetch.mockClear();
+    mockLoadAsync.mockReset();
+    mockLoadAsync.mockResolvedValue({ id: "image-ref" });
+    mockPrefetch.mockReset();
+    mockPrefetch.mockResolvedValue(true);
     mockParse.mockClear();
     vi.resetModules();
     vi.unstubAllGlobals();
@@ -414,22 +416,22 @@ describe("reader asset cache", () => {
 
     expect(
       getReaderAssetCacheKeyForRenderMode(assetRef, "source-svg-image")
-    ).toContain("source-svg-image-v2");
+    ).toContain("source-svg-image-v3");
     expect(
       getReaderAssetCacheKeyForRenderMode(assetRef, "original-svg")
-    ).toContain("source-svg-v2");
+    ).toContain("source-svg-v3");
     expect(
       getReaderAssetCacheKeyForRenderMode(assetRef, "extracted-raster")
-    ).toContain("extracted-raster-v2");
+    ).toContain("extracted-raster-v3");
     expect(getReaderAssetCacheKeyForRenderMode(assetRef, "bitmap")).toContain(
-      "bitmap-v2"
+      "bitmap-v3"
     );
     expect(
       getReaderAssetCacheKeyForRenderMode(assetRef, "bitmap-derivative")
-    ).toContain("bitmap-derivative-v2");
+    ).toContain("bitmap-derivative-v3");
     expect(
       getReaderAssetCacheKeyForRenderMode(assetRef, "true-vector-svg")
-    ).toContain("true-vector-svg-v2");
+    ).toContain("true-vector-svg-v3");
     expect(
       new Set([
         getReaderAssetCacheKeyForRenderMode(assetRef, "original-svg"),
@@ -546,6 +548,189 @@ describe("reader asset cache", () => {
         svgFallbackCount: 0
       })
     });
+  });
+
+  it("selects the smallest derivative variant that satisfies phone @3x display", async () => {
+    const { selectReaderAssetDerivativeVariant, setReaderStageMetrics } =
+      await import("./imagePreload");
+    const assetRef = {
+      role: "portrait" as const,
+      url: "https://example.supabase.co/storage/v1/object/public/runtime/portrait.svg",
+      storagePath: "runtime/portrait.svg",
+      cacheKey: "portrait:variant",
+      stagePlacement: "left" as const,
+      derivatives: [
+        {
+          storagePath: "runtime/portrait.phone-2x.reader.webp",
+          url: "https://example.supabase.co/storage/v1/object/public/runtime/portrait.phone-2x.reader.webp",
+          contentType: "image/webp",
+          renderKind: "bitmap" as const,
+          variantKey: "phone-2x",
+          width: 502,
+          height: 753,
+          hash: "phone2",
+          derivativeOf: "runtime/portrait.svg"
+        },
+        {
+          storagePath: "runtime/portrait.phone-3x.reader.webp",
+          url: "https://example.supabase.co/storage/v1/object/public/runtime/portrait.phone-3x.reader.webp",
+          contentType: "image/webp",
+          renderKind: "bitmap" as const,
+          variantKey: "phone-3x",
+          width: 752,
+          height: 1129,
+          hash: "phone3",
+          derivativeOf: "runtime/portrait.svg"
+        },
+        {
+          storagePath: "runtime/portrait.full.reader.webp",
+          url: "https://example.supabase.co/storage/v1/object/public/runtime/portrait.full.reader.webp",
+          contentType: "image/webp",
+          renderKind: "bitmap" as const,
+          variantKey: "full",
+          width: 1024,
+          height: 1536,
+          hash: "full",
+          derivativeOf: "runtime/portrait.svg"
+        }
+      ]
+    };
+
+    setReaderStageMetrics({
+      deviceScale: 3,
+      stageHeight: 852,
+      stageWidth: 393
+    });
+
+    expect(
+      selectReaderAssetDerivativeVariant(assetRef).derivative
+    ).toMatchObject({
+      variantKey: "phone-3x",
+      storagePath: "runtime/portrait.phone-3x.reader.webp"
+    });
+
+    setReaderStageMetrics({
+      deviceScale: 2,
+      stageHeight: 852,
+      stageWidth: 393
+    });
+
+    expect(
+      selectReaderAssetDerivativeVariant(assetRef).derivative
+    ).toMatchObject({
+      variantKey: "phone-2x",
+      storagePath: "runtime/portrait.phone-2x.reader.webp"
+    });
+  });
+
+  it("fails blocking bitmap derivative readiness when ImageRef loading returns null", async () => {
+    mockLoadAsync.mockImplementationOnce(async () => null as any);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        createResponse({
+          contentType: "image/webp",
+          body: createPngBytes()
+        })
+      )
+    );
+    const { ensureSceneAssetsReady, getReaderAssetRenderDiagnostics } =
+      await import("./imagePreload");
+    const assetRef = {
+      role: "portrait" as const,
+      url: "https://example.supabase.co/storage/v1/object/public/runtime/null-ref.svg",
+      storagePath: "runtime/null-ref.svg",
+      cacheKey: "portrait:null-ref",
+      sourceRenderKind: "svg" as const,
+      derivatives: [
+        {
+          storagePath: "runtime/null-ref.phone-3x.reader.webp",
+          url: "https://example.supabase.co/storage/v1/object/public/runtime/null-ref.phone-3x.reader.webp",
+          contentType: "image/webp",
+          renderKind: "bitmap" as const,
+          variantKey: "phone-3x",
+          width: 752,
+          height: 1129,
+          hash: "phone3",
+          derivativeOf: "runtime/null-ref.svg"
+        }
+      ]
+    };
+
+    const result = await ensureSceneAssetsReady("scene_null_ref", [assetRef]);
+
+    expect(result.status).toBe("error");
+    expect(result.errors[0]?.message).toContain("Native ImageRef is required");
+    expect(getReaderAssetRenderDiagnostics(assetRef)).toMatchObject({
+      fileReady: true,
+      imageRefReady: false,
+      renderReady: false,
+      failureReason: "image-ref-load-failed-or-null"
+    });
+  });
+
+  it("limits native ImageRef decode concurrency", async () => {
+    const loadResolvers: Array<() => void> = [];
+    let activeLoads = 0;
+    let maxActiveLoads = 0;
+
+    mockLoadAsync.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          activeLoads += 1;
+          maxActiveLoads = Math.max(maxActiveLoads, activeLoads);
+          loadResolvers.push(() => {
+            activeLoads -= 1;
+            resolve({ id: `image-ref-${loadResolvers.length}` });
+          });
+        })
+    );
+    const { ensureSceneAssetsReady } = await import("./imagePreload");
+    const readiness = ensureSceneAssetsReady("scene_decode_limit", [
+      {
+        role: "background",
+        url: "data:image/webp;base64,AAAA",
+        storagePath: "data:a",
+        cacheKey: "a",
+        contentType: "image/webp",
+        renderKind: "bitmap"
+      },
+      {
+        role: "background",
+        url: "data:image/webp;base64,AAAB",
+        storagePath: "data:b",
+        cacheKey: "b",
+        contentType: "image/webp",
+        renderKind: "bitmap"
+      },
+      {
+        role: "background",
+        url: "data:image/webp;base64,AAAC",
+        storagePath: "data:c",
+        cacheKey: "c",
+        contentType: "image/webp",
+        renderKind: "bitmap"
+      }
+    ]);
+
+    await Promise.resolve();
+    await Promise.resolve();
+
+    for (let resolvedCount = 0; resolvedCount < 3; resolvedCount += 1) {
+      while (loadResolvers.length === 0) {
+        await Promise.resolve();
+      }
+
+      const resolveLoad = loadResolvers.shift();
+      resolveLoad?.();
+      await Promise.resolve();
+      await Promise.resolve();
+    }
+
+    const result = await readiness;
+
+    expect(result.status).toBe("success");
+    expect(maxActiveLoads).toBe(1);
   });
 
   it("logs a loud development warning when a portrait SVG has no derivative", async () => {

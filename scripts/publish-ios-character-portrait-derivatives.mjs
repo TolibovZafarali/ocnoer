@@ -7,8 +7,37 @@ import { createClient } from "@supabase/supabase-js";
 import sharp from "sharp";
 
 const ENV_FILES = [".env.local", "apps/ios/.env.local"];
-const IOS_PORTRAIT_DERIVATIVE_RENDER_VERSION = "ios-portrait-bitmap-v1";
-const IOS_PORTRAIT_DERIVATIVE_CACHE_VERSION = 2;
+const IOS_PORTRAIT_DERIVATIVE_RENDER_VERSION = "ios-portrait-bitmap-v2";
+const IOS_PORTRAIT_DERIVATIVE_CACHE_VERSION = 3;
+const IOS_PORTRAIT_DISPLAY_MARGIN = 1.1;
+const IOS_PORTRAIT_VARIANT_FORMAT =
+  process.env.IOS_PORTRAIT_DERIVATIVE_FORMAT === "png" ? "png" : "webp";
+const IOS_PORTRAIT_VARIANTS = [
+  {
+    key: "phone-2x",
+    displayWidthDp: 228,
+    displayHeightDp: 342,
+    displayScale: 2
+  },
+  {
+    key: "phone-3x",
+    displayWidthDp: 228,
+    displayHeightDp: 342,
+    displayScale: 3
+  },
+  {
+    key: "tablet-2x",
+    displayWidthDp: 360,
+    displayHeightDp: 540,
+    displayScale: 2
+  },
+  {
+    key: "full",
+    displayWidthDp: null,
+    displayHeightDp: null,
+    displayScale: null
+  }
+];
 
 async function loadEnvFile(filePath) {
   const content = await readFile(filePath, "utf8").catch(() => null);
@@ -176,9 +205,14 @@ function bytesLookLikeSvg(bytes) {
 }
 
 function getPortraitDerivativeObjectPath(input) {
+  const variantToken = input.variantKey
+    ? `.${normalizePathToken(input.variantKey)}`
+    : "";
+  const extension = input.format === "png" ? "png" : "webp";
+
   return `${input.runtimePrefix}/portrait-derivatives/${normalizePathToken(
     input.sourceAssetId
-  )}/${input.sourceHash.slice(0, 16)}.reader.webp`;
+  )}/${input.sourceHash.slice(0, 16)}${variantToken}.reader.${extension}`;
 }
 
 function addPortraitSource(sourceByStoragePath, input) {
@@ -191,6 +225,7 @@ function addPortraitSource(sourceByStoragePath, input) {
   }
 
   sourceByStoragePath.set(input.sourceStoragePath, {
+    existingDerivatives: input.existingDerivatives ?? [],
     sourceAssetId: input.sourceAssetId,
     sourceStoragePath: input.sourceStoragePath
   });
@@ -204,6 +239,7 @@ function collectChapterPortraitSources(chapterBundle) {
       character.emotions.forEach((emotion) => {
         addPortraitSource(sourceByStoragePath, {
           sourceAssetId: `${character.id}:${emotion.key}:base`,
+          existingDerivatives: emotion.imageDerivatives,
           sourceStoragePath: emotion.imagePath
         });
       });
@@ -212,6 +248,7 @@ function collectChapterPortraitSources(chapterBundle) {
         dress.emotionOverrides.forEach((override) => {
           addPortraitSource(sourceByStoragePath, {
             sourceAssetId: `${character.id}:${dress.key}:${override.emotionKey}`,
+            existingDerivatives: override.imageDerivatives,
             sourceStoragePath: override.imagePath
           });
         });
@@ -226,6 +263,7 @@ function collectChapterPortraitSources(chapterBundle) {
 
         addPortraitSource(sourceByStoragePath, {
           sourceAssetId: `${stageCharacter.characterId}:${stageCharacter.emotionKey}:stage`,
+          existingDerivatives: stageCharacter.imageDerivatives,
           sourceStoragePath: stageCharacter.imagePath
         });
       });
@@ -233,6 +271,66 @@ function collectChapterPortraitSources(chapterBundle) {
   });
 
   return Array.from(sourceByStoragePath.values());
+}
+
+function getVariantResizeBounds(variant) {
+  if (
+    !variant.displayWidthDp ||
+    !variant.displayHeightDp ||
+    !variant.displayScale
+  ) {
+    return null;
+  }
+
+  return {
+    width: Math.ceil(
+      variant.displayWidthDp *
+        variant.displayScale *
+        IOS_PORTRAIT_DISPLAY_MARGIN
+    ),
+    height: Math.ceil(
+      variant.displayHeightDp *
+        variant.displayScale *
+        IOS_PORTRAIT_DISPLAY_MARGIN
+    )
+  };
+}
+
+async function renderDerivativeVariant(sourceBytes, variant) {
+  const resizeBounds = getVariantResizeBounds(variant);
+  let pipeline = sharp(sourceBytes, {
+    density: 72
+  }).ensureAlpha();
+
+  if (resizeBounds) {
+    pipeline = pipeline.resize({
+      width: resizeBounds.width,
+      height: resizeBounds.height,
+      fit: "inside",
+      withoutEnlargement: true
+    });
+  }
+
+  if (IOS_PORTRAIT_VARIANT_FORMAT === "png") {
+    pipeline = pipeline.png({
+      compressionLevel: 9
+    });
+  } else {
+    pipeline = pipeline.webp({
+      alphaQuality: 95,
+      effort: 5,
+      quality: 86,
+      smartSubsample: true
+    });
+  }
+
+  return pipeline.toBuffer({
+    resolveWithObject: true
+  });
+}
+
+function getDecodedBytesEstimate(info) {
+  return Math.max(0, (info.width ?? 0) * (info.height ?? 0) * 4);
 }
 
 async function createDerivative(input) {
@@ -248,49 +346,56 @@ async function createDerivative(input) {
   }
 
   const sourceHash = sha256Hex(sourceBytes);
-  const rendered = await sharp(sourceBytes, {
-    density: 72
-  })
-    .ensureAlpha()
-    .webp({
-      alphaQuality: 100,
-      lossless: true
-    })
-    .toBuffer({
-      resolveWithObject: true
+  const derivatives = [];
+
+  for (const variant of IOS_PORTRAIT_VARIANTS) {
+    const rendered = await renderDerivativeVariant(sourceBytes, variant);
+    const derivativeHash = sha256Hex(rendered.data);
+    const derivativeObjectPath = getPortraitDerivativeObjectPath({
+      runtimePrefix: input.runtimePrefix,
+      sourceAssetId: input.sourceAssetId,
+      sourceHash,
+      variantKey: variant.key,
+      format: IOS_PORTRAIT_VARIANT_FORMAT
     });
-  const derivativeHash = sha256Hex(rendered.data);
-  const derivativeObjectPath = getPortraitDerivativeObjectPath({
-    runtimePrefix: input.runtimePrefix,
-    sourceAssetId: input.sourceAssetId,
-    sourceHash
-  });
+    const contentType =
+      IOS_PORTRAIT_VARIANT_FORMAT === "png" ? "image/png" : "image/webp";
 
-  await uploadStorageObject({
-    body: rendered.data,
-    cacheControl: "31536000",
-    contentType: "image/webp",
-    objectPath: derivativeObjectPath,
-    runtimeBucket: input.runtimeBucket,
-    supabase: input.supabase
-  });
+    await uploadStorageObject({
+      body: rendered.data,
+      cacheControl: "31536000",
+      contentType,
+      objectPath: derivativeObjectPath,
+      runtimeBucket: input.runtimeBucket,
+      supabase: input.supabase
+    });
 
-  return {
-    storagePath: input.storage.withBucketPath(derivativeObjectPath),
-    contentType: "image/webp",
-    renderKind: "bitmap",
-    targetPlatform: "ios",
-    cacheVersion: IOS_PORTRAIT_DERIVATIVE_CACHE_VERSION,
-    renderVersion: IOS_PORTRAIT_DERIVATIVE_RENDER_VERSION,
-    width: rendered.info.width,
-    height: rendered.info.height,
-    hash: derivativeHash,
-    sourceHash,
-    sourceAssetId: input.sourceAssetId,
-    sourceStoragePath: input.sourceStoragePath,
-    sourceRenderKind: "svg",
-    derivativeOf: input.sourceStoragePath
-  };
+    derivatives.push({
+      storagePath: input.storage.withBucketPath(derivativeObjectPath),
+      contentType,
+      renderKind: "bitmap",
+      targetPlatform: "ios",
+      cacheVersion: IOS_PORTRAIT_DERIVATIVE_CACHE_VERSION,
+      renderVersion: IOS_PORTRAIT_DERIVATIVE_RENDER_VERSION,
+      variantKey: variant.key,
+      displayWidthDp: variant.displayWidthDp,
+      displayHeightDp: variant.displayHeightDp,
+      displayScale: variant.displayScale,
+      scaleMargin: variant.key === "full" ? null : IOS_PORTRAIT_DISPLAY_MARGIN,
+      width: rendered.info.width,
+      height: rendered.info.height,
+      compressedBytes: rendered.data.byteLength,
+      decodedBytesEstimate: getDecodedBytesEstimate(rendered.info),
+      hash: derivativeHash,
+      sourceHash,
+      sourceAssetId: input.sourceAssetId,
+      sourceStoragePath: input.sourceStoragePath,
+      sourceRenderKind: "svg",
+      derivativeOf: input.sourceStoragePath
+    });
+  }
+
+  return derivatives;
 }
 
 function patchRuntimeCharacter(character, derivativesBySourcePath) {
@@ -299,7 +404,7 @@ function patchRuntimeCharacter(character, derivativesBySourcePath) {
     emotions: character.emotions.map((emotion) => ({
       ...emotion,
       imageDerivatives: derivativesBySourcePath.has(emotion.imagePath)
-        ? [derivativesBySourcePath.get(emotion.imagePath)]
+        ? derivativesBySourcePath.get(emotion.imagePath)
         : (emotion.imageDerivatives ?? [])
     })),
     dresses: character.dresses.map((dress) => ({
@@ -307,7 +412,7 @@ function patchRuntimeCharacter(character, derivativesBySourcePath) {
       emotionOverrides: dress.emotionOverrides.map((override) => ({
         ...override,
         imageDerivatives: derivativesBySourcePath.has(override.imagePath)
-          ? [derivativesBySourcePath.get(override.imagePath)]
+          ? derivativesBySourcePath.get(override.imagePath)
           : (override.imageDerivatives ?? [])
       }))
     }))
@@ -322,9 +427,71 @@ function patchStageCharacter(stageCharacter, derivativesBySourcePath) {
   return {
     ...stageCharacter,
     imageDerivatives: derivativesBySourcePath.has(stageCharacter.imagePath)
-      ? [derivativesBySourcePath.get(stageCharacter.imagePath)]
+      ? derivativesBySourcePath.get(stageCharacter.imagePath)
       : (stageCharacter.imageDerivatives ?? [])
   };
+}
+
+function getDerivativeDecodedBytes(derivative) {
+  return (
+    derivative?.decodedBytesEstimate ??
+    (typeof derivative?.width === "number" &&
+    typeof derivative?.height === "number"
+      ? derivative.width * derivative.height * 4
+      : 0)
+  );
+}
+
+function getDerivativeCompressedBytes(derivative) {
+  return derivative?.compressedBytes ?? 0;
+}
+
+function isOversizedForPhone3x(derivative) {
+  if (!derivative?.width || !derivative?.height) {
+    return false;
+  }
+
+  const targetWidth = Math.ceil(228 * 3 * IOS_PORTRAIT_DISPLAY_MARGIN);
+  const targetHeight = Math.ceil(342 * 3 * IOS_PORTRAIT_DISPLAY_MARGIN);
+
+  return (
+    derivative.width > targetWidth * 1.15 ||
+    derivative.height > targetHeight * 1.15
+  );
+}
+
+function summarizeDerivativeSet(derivatives) {
+  const selectedPhone3x =
+    derivatives.find((derivative) => derivative.variantKey === "phone-3x") ??
+    derivatives[0] ??
+    null;
+  const full =
+    derivatives.find((derivative) => derivative.variantKey === "full") ??
+    derivatives[derivatives.length - 1] ??
+    null;
+
+  return {
+    full,
+    selectedPhone3x,
+    compressedBefore: getDerivativeCompressedBytes(full),
+    compressedAfter: getDerivativeCompressedBytes(selectedPhone3x),
+    decodedBefore: getDerivativeDecodedBytes(full),
+    decodedAfter: getDerivativeDecodedBytes(selectedPhone3x),
+    oversizedBefore: isOversizedForPhone3x(full) ? 1 : 0,
+    oversizedAfter: isOversizedForPhone3x(selectedPhone3x) ? 1 : 0
+  };
+}
+
+function getLargestExistingDerivative(derivatives) {
+  return (
+    (derivatives ?? [])
+      .filter((derivative) => derivative?.renderKind === "bitmap")
+      .sort(
+        (left, right) =>
+          (getDerivativeDecodedBytes(right) || 0) -
+          (getDerivativeDecodedBytes(left) || 0)
+      )[0] ?? null
+  );
 }
 
 function patchChapterBundle(
@@ -431,7 +598,7 @@ async function main() {
   const derivativesBySourcePath = new Map();
 
   for (const source of portraitSources) {
-    const derivative = await createDerivative({
+    const derivatives = await createDerivative({
       ...source,
       runtimeBucket,
       runtimePrefix,
@@ -439,8 +606,8 @@ async function main() {
       supabase
     });
 
-    if (derivative) {
-      derivativesBySourcePath.set(source.sourceStoragePath, derivative);
+    if (derivatives?.length) {
+      derivativesBySourcePath.set(source.sourceStoragePath, derivatives);
     }
   }
 
@@ -500,6 +667,59 @@ async function main() {
       fetchPublicJsonWithHash(supabaseUrl, chapter.bundlePath)
     )
   );
+  const portraitSourceByPath = new Map(
+    portraitSources.map((source) => [source.sourceStoragePath, source])
+  );
+  const derivativeSummaries = Array.from(derivativesBySourcePath.entries()).map(
+    ([sourceStoragePath, derivatives]) => {
+      const summary = summarizeDerivativeSet(derivatives);
+      const previousPublishedDerivative = getLargestExistingDerivative(
+        portraitSourceByPath.get(sourceStoragePath)?.existingDerivatives
+      );
+
+      return {
+        sourceStoragePath,
+        ...summary,
+        previousPublishedDerivative,
+        variants: derivatives.map((derivative) => ({
+          variantKey: derivative.variantKey,
+          storagePath: derivative.storagePath,
+          width: derivative.width,
+          height: derivative.height,
+          compressedBytes: derivative.compressedBytes,
+          decodedBytesEstimate: derivative.decodedBytesEstimate,
+          contentType: derivative.contentType,
+          hash: derivative.hash
+        }))
+      };
+    }
+  );
+  const derivativeTotals = derivativeSummaries.reduce(
+    (total, entry) => ({
+      compressedBefore: total.compressedBefore + entry.compressedBefore,
+      compressedAfter: total.compressedAfter + entry.compressedAfter,
+      decodedBefore: total.decodedBefore + entry.decodedBefore,
+      decodedAfter: total.decodedAfter + entry.decodedAfter,
+      previousPublishedCompressedBytes:
+        total.previousPublishedCompressedBytes +
+        getDerivativeCompressedBytes(entry.previousPublishedDerivative),
+      previousPublishedDecodedBytes:
+        total.previousPublishedDecodedBytes +
+        getDerivativeDecodedBytes(entry.previousPublishedDerivative),
+      oversizedBefore: total.oversizedBefore + entry.oversizedBefore,
+      oversizedAfter: total.oversizedAfter + entry.oversizedAfter
+    }),
+    {
+      compressedBefore: 0,
+      compressedAfter: 0,
+      decodedBefore: 0,
+      decodedAfter: 0,
+      previousPublishedCompressedBytes: 0,
+      previousPublishedDecodedBytes: 0,
+      oversizedBefore: 0,
+      oversizedAfter: 0
+    }
+  );
   const report = {
     command: "corepack pnpm publish:runtime",
     manifestPath,
@@ -520,6 +740,58 @@ async function main() {
     })),
     totalCharacterPortraitSources: portraitSources.length,
     generatedBitmapDerivatives: derivativesBySourcePath.size,
+    derivativeVariantFormat: IOS_PORTRAIT_VARIANT_FORMAT,
+    derivativeVariantCount: derivativeSummaries.reduce(
+      (count, entry) => count + entry.variants.length,
+      0
+    ),
+    derivativeSizeReport: {
+      selectedVariant: "phone-3x",
+      compressedBytesBefore: derivativeTotals.compressedBefore,
+      compressedBytesAfter: derivativeTotals.compressedAfter,
+      decodedBytesBefore: derivativeTotals.decodedBefore,
+      decodedBytesAfter: derivativeTotals.decodedAfter,
+      previousPublishedCompressedBytes:
+        derivativeTotals.previousPublishedCompressedBytes,
+      previousPublishedDecodedBytes:
+        derivativeTotals.previousPublishedDecodedBytes,
+      oversizedBefore: derivativeTotals.oversizedBefore,
+      oversizedAfter: derivativeTotals.oversizedAfter
+    },
+    derivativeVariants: derivativeSummaries.map((entry) => ({
+      sourceStoragePath: entry.sourceStoragePath,
+      previousPublishedDerivativeSize: entry.previousPublishedDerivative
+        ? {
+            variantKey: entry.previousPublishedDerivative.variantKey ?? null,
+            width: entry.previousPublishedDerivative.width ?? null,
+            height: entry.previousPublishedDerivative.height ?? null,
+            compressedBytes:
+              entry.previousPublishedDerivative.compressedBytes ?? null,
+            decodedBytesEstimate: getDerivativeDecodedBytes(
+              entry.previousPublishedDerivative
+            )
+          }
+        : null,
+      originalDerivativeSize: entry.full
+        ? {
+            variantKey: entry.full.variantKey,
+            width: entry.full.width,
+            height: entry.full.height,
+            compressedBytes: entry.full.compressedBytes,
+            decodedBytesEstimate: entry.full.decodedBytesEstimate
+          }
+        : null,
+      selectedPhoneVariantSize: entry.selectedPhone3x
+        ? {
+            variantKey: entry.selectedPhone3x.variantKey,
+            width: entry.selectedPhone3x.width,
+            height: entry.selectedPhone3x.height,
+            compressedBytes: entry.selectedPhone3x.compressedBytes,
+            decodedBytesEstimate: entry.selectedPhone3x.decodedBytesEstimate
+          }
+        : null,
+      variants: entry.variants
+    })),
     runtimeJsonStaleBefore: beforeChapterBundles.some(
       (entry) => entry.json.generatedAt !== beforeManifest.json.generatedAt
     ),

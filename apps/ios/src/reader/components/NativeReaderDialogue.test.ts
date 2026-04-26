@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   createNativeReaderDialogueAnimationKey,
+  getNativeReaderMaxTextStateUpdatesForDurationMs,
+  getNativeReaderTextUpdateCadenceMs,
   getNativeReaderTypingExpectedDurationMs,
   getNativeReaderVisibleTextLengthAtElapsedMs
 } from "../nativeReaderDialogueMotion";
@@ -65,5 +67,20 @@ describe("NativeReaderDialogue motion", () => {
         initialDelayMs: 0
       })
     );
+  });
+
+  it("caps text reveal updates below one React state update per character", () => {
+    const characters = Array.from("A".repeat(300));
+    const expectedDurationMs = getNativeReaderTypingExpectedDurationMs({
+      characters,
+      initialDelayMs: 0
+    });
+    const maxUpdates = getNativeReaderMaxTextStateUpdatesForDurationMs({
+      durationMs: expectedDurationMs,
+      maxTextUpdatesPerSecond: 30
+    });
+
+    expect(getNativeReaderTextUpdateCadenceMs(30)).toBeGreaterThanOrEqual(33);
+    expect(maxUpdates).toBeLessThan(characters.length);
   });
 });

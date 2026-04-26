@@ -45,6 +45,8 @@ type BackgroundMusicListener = (
 
 const DEFAULT_FADE_MS = 450;
 const FADE_FRAME_MS = 32;
+const PLAYER_LOAD_TIMEOUT_MS = 15000;
+const PLAYER_LOAD_POLL_MS = 50;
 
 function clampVolume(volume: number) {
   if (!Number.isFinite(volume)) {
@@ -92,6 +94,27 @@ async function fadePlayerTo(
 
     await waitForDuration(FADE_FRAME_MS);
   }
+}
+
+async function waitForPlayerLoad(
+  player: AudioPlayer,
+  shouldContinue: () => boolean
+) {
+  const startedAt = Date.now();
+
+  while (!player.isLoaded) {
+    if (!shouldContinue()) {
+      return false;
+    }
+
+    if (Date.now() - startedAt >= PLAYER_LOAD_TIMEOUT_MS) {
+      throw new Error("Timed out loading background music.");
+    }
+
+    await waitForDuration(PLAYER_LOAD_POLL_MS);
+  }
+
+  return shouldContinue();
 }
 
 export class NativeBackgroundMusicAudioManager {
@@ -195,12 +218,15 @@ export class NativeBackgroundMusicAudioManager {
     await this.ensureAudioMode();
     await setIsAudioActiveAsync(true);
 
+    // Runtime music URLs are extensionless Supabase objects. Predownloading
+    // gives iOS AVPlayer a typed local file instead of relying on URL inference.
     const player = createAudioPlayer(
       {
         uri: targetCue.url
       },
       {
-        downloadFirst: false,
+        downloadFirst: true,
+        keepAudioSessionActive: true,
         updateInterval: 1000
       }
     );
@@ -219,6 +245,24 @@ export class NativeBackgroundMusicAudioManager {
       activeLabel: targetCue.label,
       error: null
     });
+
+    const isStillTarget = () =>
+      this.current?.player === player &&
+      this.target.shouldPlay &&
+      this.target.cue?.url === targetCue.url;
+
+    const didLoad = await waitForPlayerLoad(player, isStillTarget);
+
+    if (!didLoad) {
+      return;
+    }
+
+    const latestCue = this.target.cue;
+
+    if (latestCue?.url === targetCue.url) {
+      this.current.key = latestCue.key;
+      this.current.label = latestCue.label;
+    }
 
     await player.seekTo(0).catch(() => undefined);
     player.play();

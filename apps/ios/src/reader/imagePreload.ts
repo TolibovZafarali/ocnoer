@@ -30,6 +30,7 @@ export type ReaderAssetRenderKind =
   | "unknown";
 
 export type ReaderAssetRenderMode =
+  | "bitmap-derivative"
   | "source-svg-image"
   | "original-svg"
   | "extracted-raster"
@@ -51,11 +52,13 @@ export type ReaderAssetRef = PlayerRuntimeImageAssetRef & {
 
 export type ReaderAssetDerivative = {
   cacheKey?: string;
+  cacheVersion?: number | null;
   contentType: string;
   derivativeOf?: string | null;
   hash?: string;
   height?: number | null;
   renderKind: "bitmap";
+  renderVersion?: string | null;
   sourceAssetId?: string | null;
   sourceHash?: string;
   sourceRenderKind?: "svg" | "bitmap" | "unknown";
@@ -75,6 +78,7 @@ export type ReaderAssetDerivative = {
 type ResolvedReaderAssetRef = ReaderAssetRef & {
   derivativeAssetExists?: boolean;
   derivativeAssetSelected?: boolean;
+  fallbackReason?: string | null;
   originalStoragePath?: string;
   originalUrl?: string;
   selectedDerivativeStoragePath?: string | null;
@@ -104,8 +108,13 @@ export type ReaderCachedAsset = {
   sourceSvgFallbackUsed: boolean;
   downloadDurationMs: number | null;
   decodeWarmDurationMs: number | null;
+  imagePrefetchResult: boolean | null;
+  nativeImageRefReady: boolean;
   onLoadDurationMs: number | null;
+  onLoadTimestamp: number | null;
   onDisplayDurationMs: number | null;
+  onDisplayTimestamp: number | null;
+  fallbackReason: string | null;
   warnings: string[];
   layoutMetrics: ReaderAssetLayoutMetrics | null;
   alphaMode: ReaderAssetAlphaMode;
@@ -113,10 +122,31 @@ export type ReaderCachedAsset = {
 
 export type ReaderAssetRenderDiagnostics = {
   assetId: string | null;
+  characterId?: string | null;
+  characterName?: string | null;
+  emotionKey?: string | null;
+  dressKey?: string | null;
+  variantKey?: string | null;
   storagePath: string;
+  sourceStoragePath: string;
   originalSvgStoragePath: string | null;
   sourceUrl: string;
+  sourceContentType: string | null;
+  sourceFileSize: number | null;
+  iosDerivativeStoragePath: string | null;
+  iosDerivativeUrl: string | null;
+  iosDerivativeContentType: string | null;
+  iosDerivativeWidth: number | null;
+  iosDerivativeHeight: number | null;
+  iosDerivativeHash: string | null;
+  selectedIosRenderMode: ReaderAssetRenderMode | "unknown";
+  fallbackReason: string | null;
   localCachedUri: string | null;
+  localCachedDerivativeUri: string | null;
+  derivativeFileExists: boolean;
+  derivativeLocalFileSize: number | null;
+  imagePrefetchResult: boolean | null;
+  imageRefReady: boolean;
   PORTRAIT_RENDER_MODE: ReaderAssetRenderMode | "unknown";
   derivativeAssetExists: boolean;
   derivativeAssetSelected: boolean;
@@ -127,10 +157,81 @@ export type ReaderAssetRenderDiagnostics = {
   downloadDurationMs: number | null;
   decodeWarmDurationMs: number | null;
   onLoadDurationMs: number | null;
+  onLoadTimestamp: number | null;
   onDisplayDurationMs: number | null;
+  onDisplayTimestamp: number | null;
   COLD_RENDER_ON_VISIBLE_PATH: boolean;
   contentType: string | null;
   renderKind: ReaderAssetRenderKind | "unknown";
+  sceneReferences?: ReaderPortraitSceneReference[];
+  presentationKeys?: string[];
+  readinessByPresentationKey?: ReaderPortraitPresentationReadiness[];
+  derivativeNetworkStatus?: ReaderDerivativeNetworkStatus | null;
+};
+
+export type ReaderPortraitSceneReference = {
+  chapterId: string;
+  chapterTitle?: string | null;
+  sceneId: string;
+  sceneTitle?: string | null;
+  dialogueEntryId?: string | null;
+  dialogueIndex?: number | null;
+};
+
+export type ReaderPortraitPresentationReadiness = {
+  presentationKey: string;
+  dialogueEntryId?: string | null;
+  sceneId?: string | null;
+  status: "idle" | "pending" | "ready" | "error" | "unknown";
+  isImmediateNext?: boolean;
+  message?: string | null;
+};
+
+export type ReaderPortraitRenderAuditEntry = {
+  assetRef: ReaderAssetRef;
+  characterId?: string | null;
+  characterName?: string | null;
+  emotionKey?: string | null;
+  dressKey?: string | null;
+  variantKey?: string | null;
+  sceneReferences?: ReaderPortraitSceneReference[];
+  presentationKeys?: string[];
+  readinessByPresentationKey?: ReaderPortraitPresentationReadiness[];
+};
+
+export type ReaderAssetRenderModeDumpSummary = {
+  totalCharacterPortraitsFound: number;
+  bitmapDerivativeCount: number;
+  missingDerivativeMetadataCount: number;
+  derivativeUrlMissingOr404Count: number;
+  svgFallbackCount: number;
+  notLocallyCachedCount: number;
+  notImageRefWarmedCount: number;
+  coldVisibleRenderCount: number;
+  renderModeCounts: Partial<Record<ReaderAssetRenderMode | "unknown", number>>;
+};
+
+export type ReaderDerivativeNetworkStatus = {
+  ok: boolean;
+  status: number | null;
+  contentType: string | null;
+  contentLength: number | null;
+  cacheControl: string | null;
+  downloadDurationMs: number | null;
+  errorMessage: string | null;
+};
+
+export type ReaderAssetRenderModeDump = {
+  generatedAt: string;
+  assets: ReaderAssetRenderDiagnostics[];
+  summary: ReaderAssetRenderModeDumpSummary;
+  runtime?: {
+    manifestPath?: string | null;
+    manifestGeneratedAt?: string | null;
+    chapterId?: string | null;
+    chapterGeneratedAt?: string | null;
+    staleRuntimeJson?: boolean | null;
+  };
 };
 
 export type ReaderAssetCacheError = {
@@ -145,6 +246,13 @@ export type ReaderAssetCacheResult = {
   durationMs: number;
   assets: ReaderCachedAsset[];
   errors: ReaderAssetCacheError[];
+};
+
+export type ReaderAssetCacheClearResult = {
+  status: "cleared";
+  readerAssetCacheDirectory: string;
+  expoDiskCacheCleared: boolean;
+  expoMemoryCacheCleared: boolean;
 };
 
 type ReaderImagePreloadOptions = {
@@ -210,10 +318,22 @@ declare global {
     | undefined;
   // eslint-disable-next-line no-var
   var __OCNOER_READER_DUMP_ASSET_RENDER_MODES:
-    | (() => ReaderAssetRenderDiagnostics[])
+    | (() => ReaderAssetRenderModeDump | Promise<ReaderAssetRenderModeDump>)
+    | undefined;
+  // eslint-disable-next-line no-var
+  var __OCNOER_READER_FORCE_ALL_CHARACTER_PORTRAITS_TO_LOCAL_TEST_BITMAP:
+    | boolean
+    | undefined;
+  // eslint-disable-next-line no-var
+  var __OCNOER_READER_STRICT_BITMAP_DERIVATIVES: boolean | undefined;
+  // eslint-disable-next-line no-var
+  var __OCNOER_READER_CLEAR_ASSET_CACHE:
+    | (() => Promise<ReaderAssetCacheClearResult>)
     | undefined;
 }
 
+const FORCED_LOCAL_TEST_BITMAP_URI =
+  "data:image/webp;base64,UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==";
 const nativeImageRefCache = new Map<string, ImageRef>();
 const inFlightNativeImageLoads = new Map<string, Promise<ImageRef | null>>();
 const svgAstCache = new Map<string, JsxAST>();
@@ -312,6 +432,26 @@ function isLocalUri(value: string) {
   return /^file:\/\//i.test(value);
 }
 
+function isDataUri(value: string) {
+  return /^data:/i.test(value);
+}
+
+function shouldForceAllCharacterPortraitsToLocalTestBitmap() {
+  return (
+    isDevelopment() &&
+    Boolean(
+      globalThis.__OCNOER_READER_FORCE_ALL_CHARACTER_PORTRAITS_TO_LOCAL_TEST_BITMAP
+    )
+  );
+}
+
+function shouldUseStrictBitmapDerivatives() {
+  return (
+    isDevelopment() &&
+    Boolean(globalThis.__OCNOER_READER_STRICT_BITMAP_DERIVATIVES)
+  );
+}
+
 function withTimeout(promise: Promise<unknown>) {
   return new Promise<void>((resolve) => {
     const timer = setTimeout(resolve, PRELOAD_TIMEOUT_MS);
@@ -383,6 +523,8 @@ function getResolvedBaseCacheKey(assetRef: ReaderAssetRef) {
 
 function getRenderModeCacheToken(renderMode: ReaderAssetRenderMode) {
   switch (renderMode) {
+    case "bitmap-derivative":
+      return `bitmap-derivative-v${READER_ASSET_RENDER_CACHE_VERSION}`;
     case "source-svg-image":
       return `source-svg-image-v${READER_ASSET_RENDER_CACHE_VERSION}`;
     case "original-svg":
@@ -421,6 +563,20 @@ function ensureCacheDirectory() {
     idempotent: true,
     intermediates: true
   });
+}
+
+function deleteCacheDirectoryIfPresent() {
+  const directory = getCacheDirectory();
+
+  try {
+    if (directory.exists) {
+      directory.delete();
+    }
+  } catch {
+    logAssetWarning("unable to delete reader asset cache directory", {
+      directory: directory.uri
+    });
+  }
 }
 
 function getCacheFile(cacheKey: string, extension: string) {
@@ -507,6 +663,13 @@ function getPreferredCacheRenderMode(
 
   if (forcedPortraitRenderMode) {
     return forcedPortraitRenderMode;
+  }
+
+  if (
+    assetRef.role === "portrait" &&
+    Boolean((assetRef as ResolvedReaderAssetRef).derivativeAssetSelected)
+  ) {
+    return "bitmap-derivative";
   }
 
   if (assetRef.renderKind === "bitmap") {
@@ -658,11 +821,36 @@ function isAlphaSafeBitmapContentType(contentType: string | null | undefined) {
   );
 }
 
+function isIosBitmapDerivative(derivative: ReaderAssetDerivative) {
+  return (
+    derivative.renderKind === "bitmap" &&
+    (derivative.targetPlatform == null || derivative.targetPlatform === "ios")
+  );
+}
+
+function hasCompleteIosDerivativeMetadata(
+  derivative: ReaderAssetDerivative | null | undefined
+) {
+  return Boolean(
+    derivative &&
+    derivative.storagePath.length > 0 &&
+    typeof derivative.url === "string" &&
+    derivative.url.length > 0 &&
+    isAlphaSafeBitmapContentType(derivative.contentType) &&
+    typeof derivative.hash === "string" &&
+    derivative.hash.length > 0 &&
+    typeof derivative.width === "number" &&
+    derivative.width > 0 &&
+    typeof derivative.height === "number" &&
+    derivative.height > 0
+  );
+}
+
 function getPreferredReaderAssetDerivative(assetRef: ReaderAssetRef) {
   return (
     assetRef.derivatives?.find(
       (derivative) =>
-        derivative.renderKind === "bitmap" &&
+        isIosBitmapDerivative(derivative) &&
         typeof derivative.url === "string" &&
         derivative.url.length > 0 &&
         isAlphaSafeBitmapContentType(derivative.contentType)
@@ -674,16 +862,76 @@ function hasReaderAssetBitmapDerivative(assetRef: ReaderAssetRef) {
   return Boolean(
     assetRef.derivatives?.some(
       (derivative) =>
-        derivative.renderKind === "bitmap" &&
+        isIosBitmapDerivative(derivative) &&
         typeof derivative.url === "string" &&
         derivative.url.length > 0
     )
   );
 }
 
+function getPortraitDerivativeFallbackReason(input: {
+  assetRef: ReaderAssetRef;
+  derivativeAssetExists: boolean;
+  forcedPortraitRenderMode: ReaderAssetRenderMode | null;
+  selectedDerivative: ReaderAssetDerivative | null;
+}) {
+  if (input.assetRef.role !== "portrait" || !isLikelySvgAsset(input.assetRef)) {
+    return null;
+  }
+
+  if (input.forcedPortraitRenderMode) {
+    return `dev-render-mode-override:${input.forcedPortraitRenderMode}`;
+  }
+
+  if (!input.derivativeAssetExists) {
+    return "missing-ios-bitmap-derivative-metadata";
+  }
+
+  if (!input.selectedDerivative) {
+    return "no-alpha-safe-ios-bitmap-derivative";
+  }
+
+  if (!hasCompleteIosDerivativeMetadata(input.selectedDerivative)) {
+    return "incomplete-ios-bitmap-derivative-metadata";
+  }
+
+  return null;
+}
+
+function getForcedLocalTestBitmapAssetRef(
+  assetRef: ReaderAssetRef
+): ResolvedReaderAssetRef {
+  return {
+    ...assetRef,
+    url: FORCED_LOCAL_TEST_BITMAP_URI,
+    storagePath: "__ocnoer_reader_forced_local_test_bitmap.reader.webp",
+    cacheKey: `${assetRef.cacheKey}:forced-local-test-bitmap`,
+    contentType: "image/webp",
+    renderKind: "bitmap",
+    derivatives: [],
+    derivativeAssetExists: true,
+    derivativeAssetSelected: true,
+    fallbackReason: null,
+    originalStoragePath: assetRef.storagePath,
+    originalUrl: assetRef.url,
+    selectedDerivativeStoragePath:
+      "__ocnoer_reader_forced_local_test_bitmap.reader.webp",
+    selectedDerivativeUrl: FORCED_LOCAL_TEST_BITMAP_URI,
+    sourceRenderKind: "bitmap",
+    sourceSvgFallbackUsed: false
+  };
+}
+
 function resolveReaderAssetRefForVisibleRender(
   assetRef: ReaderAssetRef
 ): ResolvedReaderAssetRef {
+  if (
+    assetRef.role === "portrait" &&
+    shouldForceAllCharacterPortraitsToLocalTestBitmap()
+  ) {
+    return getForcedLocalTestBitmapAssetRef(assetRef);
+  }
+
   const forcedPortraitRenderMode =
     getReaderPortraitDebugRenderModeOverride(assetRef);
   const derivativeAssetExists = hasReaderAssetBitmapDerivative(assetRef);
@@ -691,24 +939,39 @@ function resolveReaderAssetRefForVisibleRender(
     forcedPortraitRenderMode == null
       ? getPreferredReaderAssetDerivative(assetRef)
       : null;
+  const fallbackReason = getPortraitDerivativeFallbackReason({
+    assetRef,
+    derivativeAssetExists,
+    forcedPortraitRenderMode,
+    selectedDerivative: derivative
+  });
 
   if (!derivative?.url) {
     const sourceSvgFallbackUsed =
       assetRef.role === "portrait" && isLikelySvgAsset(assetRef);
 
     if (sourceSvgFallbackUsed) {
+      const warningDetails = {
+        PORTRAIT_RENDER_MODE: forcedPortraitRenderMode ?? "source-svg-image",
+        assetId: assetRef.assetId ?? null,
+        derivativeAssetExists,
+        fallbackReason,
+        forcedPortraitRenderMode,
+        originalSvgStoragePath:
+          assetRef.originalSvgStoragePath ?? assetRef.storagePath,
+        storagePath: assetRef.storagePath,
+        url: assetRef.url
+      };
+
+      if (shouldUseStrictBitmapDerivatives()) {
+        throw new Error(
+          `Strict bitmap derivatives blocked portrait ${assetRef.storagePath}: ${fallbackReason ?? "unknown-fallback"}`
+        );
+      }
+
       logAssetWarning(
         "iOS character portrait is falling back to source SVG because no usable bitmap derivative was selected",
-        {
-          PORTRAIT_RENDER_MODE: forcedPortraitRenderMode ?? "source-svg-image",
-          assetId: assetRef.assetId ?? null,
-          derivativeAssetExists,
-          forcedPortraitRenderMode,
-          originalSvgStoragePath:
-            assetRef.originalSvgStoragePath ?? assetRef.storagePath,
-          storagePath: assetRef.storagePath,
-          url: assetRef.url
-        }
+        warningDetails
       );
     }
 
@@ -716,6 +979,7 @@ function resolveReaderAssetRefForVisibleRender(
       ...assetRef,
       derivativeAssetExists,
       derivativeAssetSelected: false,
+      fallbackReason,
       selectedDerivativeStoragePath: null,
       selectedDerivativeUrl: null,
       sourceSvgFallbackUsed
@@ -735,6 +999,7 @@ function resolveReaderAssetRefForVisibleRender(
     derivatives: [],
     derivativeAssetExists,
     derivativeAssetSelected: true,
+    fallbackReason,
     originalStoragePath: assetRef.storagePath,
     originalUrl: assetRef.url,
     selectedDerivativeStoragePath: derivative.storagePath,
@@ -979,6 +1244,41 @@ function getWrittenFileByteIdentity(file: File, expectedBytes: Uint8Array) {
   }
 }
 
+function getDataUriByteSize(uri: string) {
+  const base64Match = uri.match(/^data:[^,]*;base64,(.*)$/i);
+
+  if (!base64Match?.[1]) {
+    return uri.length;
+  }
+
+  const normalized = base64Match[1].replace(/\s/g, "");
+  const padding = normalized.endsWith("==")
+    ? 2
+    : normalized.endsWith("=")
+      ? 1
+      : 0;
+
+  return Math.max(0, Math.floor((normalized.length * 3) / 4) - padding);
+}
+
+function getRecordOriginalStoragePath(assetRef: ReaderAssetRef) {
+  const resolvedAssetRef = assetRef as ResolvedReaderAssetRef;
+
+  return (
+    resolvedAssetRef.originalStoragePath ??
+    (assetRef.sourceRenderKind === "svg" ? assetRef.storagePath : null)
+  );
+}
+
+function getRecordOriginalUrl(assetRef: ReaderAssetRef) {
+  const resolvedAssetRef = assetRef as ResolvedReaderAssetRef;
+
+  return (
+    resolvedAssetRef.originalUrl ??
+    (assetRef.sourceRenderKind === "svg" ? assetRef.url : null)
+  );
+}
+
 function createAssetRecord(input: {
   assetRef: ReaderAssetRef;
   cacheKey: string;
@@ -996,14 +1296,8 @@ function createAssetRecord(input: {
 }): ReaderCachedAsset {
   const sourceUrl = input.sourceUrl ?? input.assetRef.url;
   const resolvedAssetRef = input.assetRef as ResolvedReaderAssetRef;
-  const originalStoragePath =
-    resolvedAssetRef.originalStoragePath ??
-    (input.assetRef.sourceRenderKind === "svg"
-      ? input.assetRef.storagePath
-      : null);
-  const originalUrl =
-    resolvedAssetRef.originalUrl ??
-    (input.assetRef.sourceRenderKind === "svg" ? input.assetRef.url : null);
+  const originalStoragePath = getRecordOriginalStoragePath(input.assetRef);
+  const originalUrl = getRecordOriginalUrl(input.assetRef);
   const derivativeAssetSelected = Boolean(
     resolvedAssetRef.derivativeAssetSelected
   );
@@ -1038,8 +1332,13 @@ function createAssetRecord(input: {
         !derivativeAssetSelected),
     downloadDurationMs: input.downloadDurationMs ?? null,
     decodeWarmDurationMs: null,
+    imagePrefetchResult: null,
+    nativeImageRefReady: false,
     onLoadDurationMs: null,
+    onLoadTimestamp: null,
     onDisplayDurationMs: null,
+    onDisplayTimestamp: null,
+    fallbackReason: resolvedAssetRef.fallbackReason ?? null,
     warnings: input.warnings ?? [],
     layoutMetrics: input.layoutMetrics ?? null,
     alphaMode: input.alphaMode ?? "unknown"
@@ -1062,6 +1361,64 @@ function createAssetRecord(input: {
   return record;
 }
 
+function createInlineAssetRecord(input: {
+  assetRef: ReaderAssetRef;
+  cacheKey: string;
+  renderKind: ReaderAssetRenderKind;
+  renderMode: ReaderAssetRenderMode;
+  contentType: string | null;
+  detectedSourceType?: ReaderAssetDetectedSourceType;
+  sourceUrl?: string;
+}) {
+  const sourceUrl = input.sourceUrl ?? input.assetRef.url;
+  const resolvedAssetRef = input.assetRef as ResolvedReaderAssetRef;
+  const derivativeAssetSelected = Boolean(
+    resolvedAssetRef.derivativeAssetSelected
+  );
+  const record: ReaderCachedAsset = {
+    assetId: input.assetRef.assetId ?? null,
+    cacheKey: input.cacheKey,
+    localUri: input.assetRef.url,
+    renderKind: input.renderKind,
+    renderMode: input.renderMode,
+    role: input.assetRef.role,
+    sourceUrl,
+    storagePath: input.assetRef.storagePath,
+    originalStoragePath: getRecordOriginalStoragePath(input.assetRef),
+    originalUrl: getRecordOriginalUrl(input.assetRef),
+    selectedDerivativeStoragePath:
+      resolvedAssetRef.selectedDerivativeStoragePath ??
+      (derivativeAssetSelected ? input.assetRef.storagePath : null),
+    selectedDerivativeUrl:
+      resolvedAssetRef.selectedDerivativeUrl ??
+      (derivativeAssetSelected ? input.assetRef.url : null),
+    bytes: getDataUriByteSize(input.assetRef.url),
+    contentType: input.contentType,
+    detectedSourceType: input.detectedSourceType ?? "webp",
+    fromCache: true,
+    derivativeAssetExists: Boolean(resolvedAssetRef.derivativeAssetExists),
+    derivativeAssetSelected,
+    sourceSvgFallbackUsed: Boolean(resolvedAssetRef.sourceSvgFallbackUsed),
+    downloadDurationMs: 0,
+    decodeWarmDurationMs: null,
+    imagePrefetchResult: null,
+    nativeImageRefReady: false,
+    onLoadDurationMs: null,
+    onLoadTimestamp: null,
+    onDisplayDurationMs: null,
+    onDisplayTimestamp: null,
+    fallbackReason: resolvedAssetRef.fallbackReason ?? null,
+    warnings: [],
+    layoutMetrics: null,
+    alphaMode: "alpha-safe"
+  };
+
+  cachedAssetsByUrl.set(sourceUrl, record);
+  cachedAssetsByUrl.set(input.assetRef.url, record);
+  cachedAssetsByKey.set(input.cacheKey, record);
+  return record;
+}
+
 function getCachedRecord(assetRefOrUrl: ReaderAssetRef | string) {
   const url =
     typeof assetRefOrUrl === "string" ? assetRefOrUrl : assetRefOrUrl.url;
@@ -1071,7 +1428,7 @@ function getCachedRecord(assetRefOrUrl: ReaderAssetRef | string) {
     return null;
   }
 
-  if (isReadyFile(new File(record.localUri))) {
+  if (isDataUri(record.localUri) || isReadyFile(new File(record.localUri))) {
     return record;
   }
 
@@ -1083,7 +1440,7 @@ function getCachedRecord(assetRefOrUrl: ReaderAssetRef | string) {
 
 function isColdRenderOnVisiblePath(record: ReaderCachedAsset) {
   if (!isReadyFile(new File(record.localUri))) {
-    return true;
+    return !isDataUri(record.localUri);
   }
 
   if (
@@ -1099,15 +1456,112 @@ function isColdRenderOnVisiblePath(record: ReaderCachedAsset) {
   );
 }
 
+function getFileExistsForUri(uri: string | null) {
+  if (!uri) {
+    return false;
+  }
+
+  if (isDataUri(uri)) {
+    return true;
+  }
+
+  return isReadyFile(new File(uri));
+}
+
+function getLocalFileSizeForUri(uri: string | null) {
+  if (!uri) {
+    return null;
+  }
+
+  if (isDataUri(uri)) {
+    return getDataUriByteSize(uri);
+  }
+
+  const file = new File(uri);
+
+  return getFileSize(file);
+}
+
+function getPreferredDerivativeDiagnostics(assetRef: ReaderAssetRef) {
+  const derivative = getPreferredReaderAssetDerivative(assetRef);
+
+  return {
+    iosDerivativeStoragePath:
+      derivative?.storagePath ?? assetRef.iosDerivativeStoragePath ?? null,
+    iosDerivativeUrl: derivative?.url ?? assetRef.iosDerivativeUrl ?? null,
+    iosDerivativeContentType:
+      derivative?.contentType ?? assetRef.iosDerivativeContentType ?? null,
+    iosDerivativeWidth:
+      derivative?.width ?? assetRef.iosDerivativeWidth ?? null,
+    iosDerivativeHeight:
+      derivative?.height ?? assetRef.iosDerivativeHeight ?? null,
+    iosDerivativeHash: derivative?.hash ?? assetRef.iosDerivativeHash ?? null,
+    hasCompleteMetadata:
+      hasCompleteIosDerivativeMetadata(derivative) ||
+      Boolean(
+        assetRef.iosDerivativeStoragePath &&
+        assetRef.iosDerivativeUrl &&
+        assetRef.iosDerivativeContentType &&
+        isAlphaSafeBitmapContentType(assetRef.iosDerivativeContentType) &&
+        assetRef.iosDerivativeHash &&
+        typeof assetRef.iosDerivativeWidth === "number" &&
+        assetRef.iosDerivativeWidth > 0 &&
+        typeof assetRef.iosDerivativeHeight === "number" &&
+        assetRef.iosDerivativeHeight > 0
+      )
+  };
+}
+
 function getDiagnosticsForRecord(
-  record: ReaderCachedAsset
+  record: ReaderCachedAsset,
+  auditEntry?: ReaderPortraitRenderAuditEntry
 ): ReaderAssetRenderDiagnostics {
+  const assetRef = auditEntry?.assetRef;
+  const derivativeDiagnostics = assetRef
+    ? getPreferredDerivativeDiagnostics(assetRef)
+    : {
+        iosDerivativeStoragePath: record.selectedDerivativeStoragePath,
+        iosDerivativeUrl: record.selectedDerivativeUrl,
+        iosDerivativeContentType: null,
+        iosDerivativeWidth: null,
+        iosDerivativeHeight: null,
+        iosDerivativeHash: null,
+        hasCompleteMetadata: record.derivativeAssetSelected
+      };
   return {
     assetId: record.assetId,
+    characterId: auditEntry?.characterId ?? record.assetId,
+    characterName: auditEntry?.characterName ?? null,
+    emotionKey: auditEntry?.emotionKey ?? null,
+    dressKey: auditEntry?.dressKey ?? null,
+    variantKey: auditEntry?.variantKey ?? null,
     storagePath: record.storagePath,
+    sourceStoragePath:
+      record.originalStoragePath ?? assetRef?.storagePath ?? record.storagePath,
     originalSvgStoragePath: record.originalStoragePath,
     sourceUrl: record.sourceUrl,
+    sourceContentType: assetRef?.contentType ?? null,
+    sourceFileSize: null,
+    iosDerivativeStoragePath: derivativeDiagnostics.iosDerivativeStoragePath,
+    iosDerivativeUrl: derivativeDiagnostics.iosDerivativeUrl,
+    iosDerivativeContentType: derivativeDiagnostics.iosDerivativeContentType,
+    iosDerivativeWidth: derivativeDiagnostics.iosDerivativeWidth,
+    iosDerivativeHeight: derivativeDiagnostics.iosDerivativeHeight,
+    iosDerivativeHash: derivativeDiagnostics.iosDerivativeHash,
+    selectedIosRenderMode: record.renderMode,
+    fallbackReason: record.fallbackReason,
     localCachedUri: record.localUri,
+    localCachedDerivativeUri: record.derivativeAssetSelected
+      ? record.localUri
+      : null,
+    derivativeFileExists: record.derivativeAssetSelected
+      ? getFileExistsForUri(record.localUri)
+      : false,
+    derivativeLocalFileSize: record.derivativeAssetSelected
+      ? getLocalFileSizeForUri(record.localUri)
+      : null,
+    imagePrefetchResult: record.imagePrefetchResult,
+    imageRefReady: nativeImageRefCache.has(record.sourceUrl),
     PORTRAIT_RENDER_MODE: record.renderMode,
     derivativeAssetExists: record.derivativeAssetExists,
     derivativeAssetSelected: record.derivativeAssetSelected,
@@ -1118,10 +1572,16 @@ function getDiagnosticsForRecord(
     downloadDurationMs: record.downloadDurationMs,
     decodeWarmDurationMs: record.decodeWarmDurationMs,
     onLoadDurationMs: record.onLoadDurationMs,
+    onLoadTimestamp: record.onLoadTimestamp,
     onDisplayDurationMs: record.onDisplayDurationMs,
+    onDisplayTimestamp: record.onDisplayTimestamp,
     COLD_RENDER_ON_VISIBLE_PATH: isColdRenderOnVisiblePath(record),
     contentType: record.contentType,
-    renderKind: record.renderKind
+    renderKind: record.renderKind,
+    sceneReferences: auditEntry?.sceneReferences ?? [],
+    presentationKeys: auditEntry?.presentationKeys ?? [],
+    readinessByPresentationKey: auditEntry?.readinessByPresentationKey ?? [],
+    derivativeNetworkStatus: null
   };
 }
 
@@ -1147,8 +1607,10 @@ export function recordReaderAssetVisibleTiming(input: {
 
   if (input.event === "onLoad") {
     record.onLoadDurationMs = input.durationMs;
+    record.onLoadTimestamp = Date.now();
   } else {
     record.onDisplayDurationMs = input.durationMs;
+    record.onDisplayTimestamp = Date.now();
   }
 
   if (record.role !== "portrait") {
@@ -1165,20 +1627,52 @@ export function recordReaderAssetVisibleTiming(input: {
 }
 
 function getUncachedAssetDiagnostics(
-  assetRef: ReaderAssetRef
+  assetRef: ReaderAssetRef,
+  auditEntry?: ReaderPortraitRenderAuditEntry
 ): ReaderAssetRenderDiagnostics {
   const selectedDerivative = getPreferredReaderAssetDerivative(assetRef);
   const renderAssetRef = resolveReaderAssetRefForVisibleRender(assetRef);
   const renderMode = getPreferredCacheRenderMode(renderAssetRef);
+  const derivativeDiagnostics = getPreferredDerivativeDiagnostics(assetRef);
+  const fallbackReason =
+    (renderAssetRef as ResolvedReaderAssetRef).fallbackReason ??
+    getPortraitDerivativeFallbackReason({
+      assetRef,
+      derivativeAssetExists: hasReaderAssetBitmapDerivative(assetRef),
+      forcedPortraitRenderMode:
+        getReaderPortraitDebugRenderModeOverride(assetRef),
+      selectedDerivative
+    });
 
   return {
     assetId: assetRef.assetId ?? null,
+    characterId: auditEntry?.characterId ?? assetRef.assetId ?? null,
+    characterName: auditEntry?.characterName ?? null,
+    emotionKey: auditEntry?.emotionKey ?? null,
+    dressKey: auditEntry?.dressKey ?? null,
+    variantKey: auditEntry?.variantKey ?? null,
     storagePath: renderAssetRef.storagePath,
+    sourceStoragePath: assetRef.storagePath,
     originalSvgStoragePath:
       renderAssetRef.originalStoragePath ??
       (assetRef.sourceRenderKind === "svg" ? assetRef.storagePath : null),
     sourceUrl: assetRef.url,
+    sourceContentType: assetRef.contentType ?? null,
+    sourceFileSize: null,
+    iosDerivativeStoragePath: derivativeDiagnostics.iosDerivativeStoragePath,
+    iosDerivativeUrl: derivativeDiagnostics.iosDerivativeUrl,
+    iosDerivativeContentType: derivativeDiagnostics.iosDerivativeContentType,
+    iosDerivativeWidth: derivativeDiagnostics.iosDerivativeWidth,
+    iosDerivativeHeight: derivativeDiagnostics.iosDerivativeHeight,
+    iosDerivativeHash: derivativeDiagnostics.iosDerivativeHash,
+    selectedIosRenderMode: renderMode,
+    fallbackReason,
     localCachedUri: null,
+    localCachedDerivativeUri: null,
+    derivativeFileExists: false,
+    derivativeLocalFileSize: null,
+    imagePrefetchResult: null,
+    imageRefReady: false,
     PORTRAIT_RENDER_MODE: renderMode,
     derivativeAssetExists: hasReaderAssetBitmapDerivative(assetRef),
     derivativeAssetSelected: Boolean(selectedDerivative),
@@ -1189,27 +1683,220 @@ function getUncachedAssetDiagnostics(
     downloadDurationMs: null,
     decodeWarmDurationMs: null,
     onLoadDurationMs: null,
+    onLoadTimestamp: null,
     onDisplayDurationMs: null,
+    onDisplayTimestamp: null,
     COLD_RENDER_ON_VISIBLE_PATH: true,
     contentType: renderAssetRef.contentType ?? null,
-    renderKind: renderAssetRef.renderKind ?? "unknown"
+    renderKind: renderAssetRef.renderKind ?? "unknown",
+    sceneReferences: auditEntry?.sceneReferences ?? [],
+    presentationKeys: auditEntry?.presentationKeys ?? [],
+    readinessByPresentationKey: auditEntry?.readinessByPresentationKey ?? [],
+    derivativeNetworkStatus: null
   };
 }
 
-export function dumpReaderAssetRenderModes(assetRefs: ReaderAssetRef[]) {
-  const diagnostics = assetRefs
-    .filter((assetRef) => assetRef.role === "portrait")
-    .map((assetRef) => {
-      const recordDiagnostics = getReaderAssetRenderDiagnostics(assetRef);
+function normalizePortraitAuditEntry(
+  value: ReaderAssetRef | ReaderPortraitRenderAuditEntry
+): ReaderPortraitRenderAuditEntry {
+  if ("assetRef" in value) {
+    return value;
+  }
 
-      return recordDiagnostics ?? getUncachedAssetDiagnostics(assetRef);
-    });
+  return {
+    assetRef: value
+  };
+}
 
-  logAssetMetric("chapter character asset render modes", {
-    assets: diagnostics
+function incrementRenderModeCount(
+  counts: Partial<Record<ReaderAssetRenderMode | "unknown", number>>,
+  renderMode: ReaderAssetRenderMode | "unknown"
+) {
+  counts[renderMode] = (counts[renderMode] ?? 0) + 1;
+}
+
+function summarizePortraitDiagnostics(
+  diagnostics: ReaderAssetRenderDiagnostics[]
+): ReaderAssetRenderModeDumpSummary {
+  const renderModeCounts: Partial<
+    Record<ReaderAssetRenderMode | "unknown", number>
+  > = {};
+
+  diagnostics.forEach((diagnostic) => {
+    incrementRenderModeCount(renderModeCounts, diagnostic.PORTRAIT_RENDER_MODE);
   });
 
-  return diagnostics;
+  return {
+    totalCharacterPortraitsFound: diagnostics.length,
+    bitmapDerivativeCount: diagnostics.filter(
+      (diagnostic) => diagnostic.PORTRAIT_RENDER_MODE === "bitmap-derivative"
+    ).length,
+    missingDerivativeMetadataCount: diagnostics.filter(
+      (diagnostic) =>
+        diagnostic.sourceSvgFallbackUsed ||
+        !(
+          diagnostic.iosDerivativeStoragePath &&
+          diagnostic.iosDerivativeUrl &&
+          diagnostic.iosDerivativeContentType &&
+          isAlphaSafeBitmapContentType(diagnostic.iosDerivativeContentType) &&
+          diagnostic.iosDerivativeHash &&
+          typeof diagnostic.iosDerivativeWidth === "number" &&
+          diagnostic.iosDerivativeWidth > 0 &&
+          typeof diagnostic.iosDerivativeHeight === "number" &&
+          diagnostic.iosDerivativeHeight > 0
+        )
+    ).length,
+    derivativeUrlMissingOr404Count: diagnostics.filter(
+      (diagnostic) =>
+        diagnostic.derivativeNetworkStatus &&
+        (!diagnostic.derivativeNetworkStatus.ok ||
+          diagnostic.derivativeNetworkStatus.status === 404)
+    ).length,
+    svgFallbackCount: diagnostics.filter(
+      (diagnostic) =>
+        diagnostic.sourceSvgFallbackUsed ||
+        diagnostic.PORTRAIT_RENDER_MODE === "source-svg-image" ||
+        diagnostic.PORTRAIT_RENDER_MODE === "original-svg" ||
+        diagnostic.PORTRAIT_RENDER_MODE === "true-vector-svg"
+    ).length,
+    notLocallyCachedCount: diagnostics.filter(
+      (diagnostic) => !diagnostic.localCachedUri
+    ).length,
+    notImageRefWarmedCount: diagnostics.filter(
+      (diagnostic) => !diagnostic.imageRefReady
+    ).length,
+    coldVisibleRenderCount: diagnostics.filter(
+      (diagnostic) => diagnostic.COLD_RENDER_ON_VISIBLE_PATH
+    ).length,
+    renderModeCounts
+  };
+}
+
+export function dumpReaderAssetRenderModes(
+  assetRefsOrEntries: Array<ReaderAssetRef | ReaderPortraitRenderAuditEntry>,
+  runtime?: ReaderAssetRenderModeDump["runtime"]
+) {
+  const diagnostics = assetRefsOrEntries
+    .map(normalizePortraitAuditEntry)
+    .filter((entry) => entry.assetRef.role === "portrait")
+    .map((entry) => {
+      const record = getCachedRecord(entry.assetRef);
+      const recordDiagnostics = record
+        ? getDiagnosticsForRecord(record, entry)
+        : null;
+
+      return (
+        recordDiagnostics ?? getUncachedAssetDiagnostics(entry.assetRef, entry)
+      );
+    });
+  const dump: ReaderAssetRenderModeDump = {
+    generatedAt: new Date().toISOString(),
+    assets: diagnostics,
+    summary: summarizePortraitDiagnostics(diagnostics),
+    runtime
+  };
+
+  logAssetMetric("chapter character asset render modes", {
+    assets: diagnostics,
+    summary: dump.summary,
+    runtime
+  });
+
+  if (dump.summary.svgFallbackCount > 0) {
+    const message =
+      "iOS character portraits are not all using bitmap derivatives";
+
+    if (shouldUseStrictBitmapDerivatives()) {
+      throw new Error(message);
+    }
+
+    logAssetWarning(message, dump.summary);
+  }
+
+  return dump;
+}
+
+async function fetchDerivativeNetworkStatus(
+  derivativeUrl: string
+): Promise<ReaderDerivativeNetworkStatus> {
+  const startedAt = Date.now();
+
+  try {
+    let response = await fetch(derivativeUrl, {
+      method: "HEAD"
+    });
+
+    if (response.status === 405 || response.status === 501) {
+      response = await fetch(derivativeUrl);
+    }
+
+    const contentLength = response.headers.get("content-length");
+
+    return {
+      ok: response.ok,
+      status: response.status,
+      contentType: response.headers.get("content-type"),
+      contentLength: contentLength ? Number(contentLength) : null,
+      cacheControl: response.headers.get("cache-control"),
+      downloadDurationMs: Date.now() - startedAt,
+      errorMessage: null
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: null,
+      contentType: null,
+      contentLength: null,
+      cacheControl: null,
+      downloadDurationMs: Date.now() - startedAt,
+      errorMessage:
+        error instanceof Error
+          ? error.message
+          : "Unable to verify derivative URL."
+    };
+  }
+}
+
+export async function verifyReaderPortraitDerivativeUrls(
+  dump: ReaderAssetRenderModeDump
+) {
+  const statusesByUrl = new Map<string, ReaderDerivativeNetworkStatus>();
+  const derivativeUrls = Array.from(
+    new Set(
+      dump.assets
+        .map((asset) => asset.iosDerivativeUrl)
+        .filter((url): url is string => Boolean(url))
+    )
+  );
+
+  await Promise.all(
+    derivativeUrls.map(async (url) => {
+      statusesByUrl.set(url, await fetchDerivativeNetworkStatus(url));
+    })
+  );
+
+  dump.assets.forEach((asset) => {
+    asset.derivativeNetworkStatus = asset.iosDerivativeUrl
+      ? (statusesByUrl.get(asset.iosDerivativeUrl) ?? null)
+      : null;
+  });
+  dump.summary = summarizePortraitDiagnostics(dump.assets);
+
+  logAssetMetric("chapter character derivative URL verification", {
+    summary: dump.summary,
+    derivativeUrls: Object.fromEntries(statusesByUrl)
+  });
+
+  if (dump.summary.derivativeUrlMissingOr404Count > 0) {
+    logAssetWarning(
+      "iOS character portrait derivative URLs failed verification",
+      {
+        count: dump.summary.derivativeUrlMissingOr404Count
+      }
+    );
+  }
+
+  return dump;
 }
 
 function getCachedRenderKind(input: {
@@ -1237,7 +1924,11 @@ function findExistingCachedAsset(
 ) {
   const knownRecord = cachedAssetsByKey.get(cacheKey) ?? null;
 
-  if (knownRecord && isReadyFile(new File(knownRecord.localUri))) {
+  if (
+    knownRecord &&
+    (isDataUri(knownRecord.localUri) ||
+      isReadyFile(new File(knownRecord.localUri)))
+  ) {
     cachedAssetsByUrl.set(assetRef.url, knownRecord);
     return knownRecord;
   }
@@ -1554,11 +2245,12 @@ async function predecodeBitmapAsset(record: ReaderCachedAsset) {
   }
 
   const startedAt = Date.now();
-  await ExpoImage.prefetch([record.localUri], {
+  record.imagePrefetchResult = await ExpoImage.prefetch([record.localUri], {
     cachePolicy: "memory-disk"
   }).catch(() => false);
   await loadReaderImageRef(record.sourceUrl);
   record.decodeWarmDurationMs = Date.now() - startedAt;
+  record.nativeImageRefReady = nativeImageRefCache.has(record.sourceUrl);
 }
 
 export async function prepareReaderCachedAssetRenderReady(
@@ -1607,7 +2299,7 @@ export async function prepareReaderCachedAssetRenderReady(
     return;
   }
 
-  await loadReaderImageRef(record.sourceUrl);
+  await predecodeBitmapAsset(record);
   record.decodeWarmDurationMs =
     record.decodeWarmDurationMs ?? Date.now() - startedAt;
   logAssetMetric("image render warmed", {
@@ -1626,10 +2318,54 @@ async function writeSvgAsset(input: {
   detectedSourceType: ReaderAssetDetectedSourceType;
   svgXml: string;
 }) {
+  const resolvedInputAssetRef = input.assetRef as ResolvedReaderAssetRef;
+  const sourceSvgFallbackUsed =
+    input.assetRef.role === "portrait" &&
+    !Boolean(resolvedInputAssetRef.derivativeAssetSelected);
+  const fallbackReason =
+    resolvedInputAssetRef.fallbackReason ??
+    (sourceSvgFallbackUsed ? "downloaded-portrait-source-is-svg" : null);
+  const assetRef: ResolvedReaderAssetRef = {
+    ...input.assetRef,
+    fallbackReason,
+    originalSvgStoragePath:
+      input.assetRef.originalSvgStoragePath ??
+      resolvedInputAssetRef.originalStoragePath ??
+      input.assetRef.storagePath,
+    originalSvgUrl:
+      input.assetRef.originalSvgUrl ??
+      resolvedInputAssetRef.originalUrl ??
+      input.assetRef.url,
+    sourceRenderKind: "svg",
+    sourceSvgFallbackUsed
+  };
+
+  if (sourceSvgFallbackUsed) {
+    const details = {
+      PORTRAIT_RENDER_MODE:
+        getReaderPortraitDebugRenderModeOverride(input.assetRef) ??
+        "source-svg-image",
+      assetId: input.assetRef.assetId ?? null,
+      fallbackReason,
+      storagePath: input.assetRef.storagePath,
+      url: input.assetRef.url
+    };
+
+    if (shouldUseStrictBitmapDerivatives()) {
+      throw new Error(
+        `Strict bitmap derivatives blocked portrait ${input.assetRef.storagePath}: ${fallbackReason}`
+      );
+    }
+
+    logAssetWarning(
+      "iOS character portrait downloaded SVG source because no bitmap derivative was selected",
+      details
+    );
+  }
+
   const classification = classifySvgAssetPayload(input.svgXml);
-  const forcedPortraitRenderMode = getReaderPortraitDebugRenderModeOverride(
-    input.assetRef
-  );
+  const forcedPortraitRenderMode =
+    getReaderPortraitDebugRenderModeOverride(assetRef);
   const shouldExtractRaster =
     forcedPortraitRenderMode === "extracted-raster" &&
     Boolean(classification.embeddedRaster);
@@ -1669,7 +2405,7 @@ async function writeSvgAsset(input: {
       );
     }
 
-    const cacheKey = getResolvedCacheKey(input.assetRef, "extracted-raster");
+    const cacheKey = getResolvedCacheKey(assetRef, "extracted-raster");
     const file = getCacheFile(cacheKey, `embedded.${rasterFileInfo.extension}`);
 
     file.write(embeddedRasterBytes);
@@ -1683,7 +2419,7 @@ async function writeSvgAsset(input: {
     );
 
     const record = createAssetRecord({
-      assetRef: input.assetRef,
+      assetRef,
       cacheKey,
       file,
       renderKind: "bitmap",
@@ -1702,7 +2438,7 @@ async function writeSvgAsset(input: {
     });
 
     logPortraitAssetDiagnostics({
-      assetRef: input.assetRef,
+      assetRef,
       declaredContentType: input.contentType,
       detectedSourceType: input.detectedSourceType,
       extractedRasterByteIdentical,
@@ -1717,13 +2453,13 @@ async function writeSvgAsset(input: {
       ? "original-svg"
       : forcedPortraitRenderMode === "source-svg-image"
         ? "source-svg-image"
-        : input.assetRef.role === "portrait" ||
+        : assetRef.role === "portrait" ||
             classification.renderKind === "svg-raster-wrapper"
           ? "source-svg-image"
           : classification.renderKind === "svg-vector"
             ? "true-vector-svg"
             : "source-svg-image";
-  const cacheKey = getResolvedCacheKey(input.assetRef, renderMode);
+  const cacheKey = getResolvedCacheKey(assetRef, renderMode);
   const file = getCacheFile(cacheKey, "svg");
   file.write(input.svgXml);
 
@@ -1737,11 +2473,11 @@ async function writeSvgAsset(input: {
       : null;
 
   if (svgAst) {
-    svgAstCache.set(input.assetRef.url, svgAst);
+    svgAstCache.set(assetRef.url, svgAst);
   }
 
   const record = createAssetRecord({
-    assetRef: input.assetRef,
+    assetRef,
     cacheKey,
     file,
     renderKind:
@@ -1770,7 +2506,7 @@ async function writeSvgAsset(input: {
   });
 
   logPortraitAssetDiagnostics({
-    assetRef: input.assetRef,
+    assetRef,
     declaredContentType: input.contentType,
     detectedSourceType: input.detectedSourceType,
     extractedRasterByteIdentical: null,
@@ -1851,7 +2587,11 @@ async function downloadAndCacheAsset(assetRef: ReaderAssetRef) {
               bytes
             })
           : rasterFileInfo.extension;
-      const renderMode: ReaderAssetRenderMode = "bitmap";
+      const renderMode: ReaderAssetRenderMode =
+        renderAssetRef.role === "portrait" &&
+        Boolean(renderAssetRef.derivativeAssetSelected)
+          ? "bitmap-derivative"
+          : "bitmap";
       const cacheKey = getResolvedCacheKey(renderAssetRef, renderMode);
       const file = getCacheFile(cacheKey, extension);
 
@@ -1916,6 +2656,18 @@ async function downloadAndCacheAsset(assetRef: ReaderAssetRef) {
 
 export async function ensureReaderAssetReady(assetRef: ReaderAssetRef) {
   const renderAssetRef = resolveReaderAssetRefForVisibleRender(assetRef);
+
+  if (isDataUri(renderAssetRef.url)) {
+    return createInlineAssetRecord({
+      assetRef: renderAssetRef,
+      cacheKey: getResolvedCacheKey(renderAssetRef, "bitmap-derivative"),
+      renderKind: "bitmap",
+      renderMode: "bitmap-derivative",
+      contentType: renderAssetRef.contentType ?? "image/webp",
+      detectedSourceType: "webp",
+      sourceUrl: renderAssetRef.originalUrl ?? renderAssetRef.url
+    });
+  }
 
   if (!isRemoteImageUrl(renderAssetRef.url)) {
     const file = new File(renderAssetRef.url);
@@ -2107,6 +2859,41 @@ export function warmNextSceneAssets(
   });
 }
 
+export async function clearReaderAssetCache(): Promise<ReaderAssetCacheClearResult> {
+  nativeImageRefCache.clear();
+  inFlightNativeImageLoads.clear();
+  svgAstCache.clear();
+  inFlightSvgAstLoads.clear();
+  cachedAssetsByUrl.clear();
+  cachedAssetsByKey.clear();
+  inFlightAssetLoads.clear();
+  queuedDownloads.splice(0, queuedDownloads.length);
+  activeDownloadCount = 0;
+
+  deleteCacheDirectoryIfPresent();
+  ensureCacheDirectory();
+
+  const [expoMemoryCacheCleared, expoDiskCacheCleared] = await Promise.all([
+    ExpoImage.clearMemoryCache().catch(() => false),
+    ExpoImage.clearDiskCache().catch(() => false)
+  ]);
+
+  const result: ReaderAssetCacheClearResult = {
+    status: "cleared",
+    readerAssetCacheDirectory: getCacheDirectory().uri,
+    expoDiskCacheCleared,
+    expoMemoryCacheCleared
+  };
+
+  logAssetMetric("reader asset cache cleared", result);
+
+  return result;
+}
+
+if (isDevelopment()) {
+  globalThis.__OCNOER_READER_CLEAR_ASSET_CACHE = clearReaderAssetCache;
+}
+
 export function getAssetCacheErrorMessage(result: ReaderAssetCacheResult) {
   const firstError = result.errors[0];
 
@@ -2178,6 +2965,12 @@ export function loadReaderImageRef(imageUrl: string) {
   const cachedImageRef = getPreloadedReaderImageRef(imageUrl);
 
   if (cachedImageRef) {
+    const record = cachedAssetsByUrl.get(imageUrl) ?? null;
+
+    if (record) {
+      record.nativeImageRefReady = true;
+    }
+
     return Promise.resolve(cachedImageRef);
   }
 
@@ -2213,6 +3006,9 @@ export function loadReaderImageRef(imageUrl: string) {
       }
 
       nativeImageRefCache.set(imageUrl, imageRef);
+      if (record) {
+        record.nativeImageRefReady = true;
+      }
       return imageRef;
     })
     .catch(() => null)

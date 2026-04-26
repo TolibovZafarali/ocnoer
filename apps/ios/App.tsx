@@ -18,6 +18,15 @@ import {
   loadSyncedPlayerProgress
 } from "./src/sync/playerProgressSync";
 
+declare global {
+  // eslint-disable-next-line no-var
+  var __OCNOER_READER_RELOAD_RUNTIME: (() => void) | undefined;
+}
+
+function isDevelopment() {
+  return typeof __DEV__ !== "undefined" ? __DEV__ : false;
+}
+
 type AuthenticatedRuntimeShellProps = {
   storedSession: StoredPlayerSession;
   isSigningOut: boolean;
@@ -96,6 +105,23 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
   useEffect(() => {
     void refreshSavedProgress();
   }, [refreshSavedProgress]);
+
+  useEffect(() => {
+    if (!isDevelopment()) {
+      return;
+    }
+
+    globalThis.__OCNOER_READER_RELOAD_RUNTIME = () => {
+      setActiveScreen({
+        type: "home"
+      });
+      void reload();
+    };
+
+    return () => {
+      globalThis.__OCNOER_READER_RELOAD_RUNTIME = undefined;
+    };
+  }, [reload]);
 
   async function updateCatName(
     catName: string,

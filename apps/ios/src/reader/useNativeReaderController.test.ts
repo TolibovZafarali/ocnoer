@@ -2,9 +2,25 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./imagePreload", () => ({
   READER_ASSET_RENDER_CACHE_VERSION: 2,
+  dumpReaderAssetRenderModes: vi.fn(() => ({
+    generatedAt: "2026-04-25T00:00:00.000Z",
+    assets: [],
+    summary: {
+      totalCharacterPortraitsFound: 0,
+      bitmapDerivativeCount: 0,
+      missingDerivativeMetadataCount: 0,
+      derivativeUrlMissingOr404Count: 0,
+      svgFallbackCount: 0,
+      notLocallyCachedCount: 0,
+      notImageRefWarmedCount: 0,
+      coldVisibleRenderCount: 0,
+      renderModeCounts: {}
+    }
+  })),
   ensureChapterAssetsReady: vi.fn(),
   ensureSceneAssetsReady: vi.fn(),
   getAssetCacheErrorMessage: vi.fn(() => null),
+  verifyReaderPortraitDerivativeUrls: vi.fn(async (dump) => dump),
   warmNextSceneAssets: vi.fn()
 }));
 
@@ -357,6 +373,49 @@ describe("presentation render readiness", () => {
     await readinessPromise;
 
     expect(didResolve).toBe(true);
+  });
+
+  it("includes every blocking character portrait in presentation readiness", async () => {
+    const presentation = createPresentation({
+      blockingAssetRefs: [
+        {
+          role: "portrait",
+          url: `${supabaseUrl}/storage/v1/object/public/runtime/portraits/left.svg`,
+          storagePath: "runtime/portraits/left.svg",
+          cacheKey: "portrait:left",
+          sourceRenderKind: "svg"
+        },
+        {
+          role: "portrait",
+          url: `${supabaseUrl}/storage/v1/object/public/runtime/portraits/right.svg`,
+          storagePath: "runtime/portraits/right.svg",
+          cacheKey: "portrait:right",
+          sourceRenderKind: "svg"
+        }
+      ]
+    });
+    ensureSceneAssetsReadyMock.mockResolvedValueOnce({
+      status: "success",
+      scope: "scene",
+      scopeId: "line_one",
+      durationMs: 1,
+      assets: [],
+      errors: []
+    });
+
+    await ensureNativeReaderPresentationRenderReady({
+      presentation,
+      reason: "lookahead"
+    });
+
+    expect(ensureSceneAssetsReadyMock).toHaveBeenCalledWith("line_one", [
+      expect.objectContaining({
+        storagePath: "runtime/portraits/left.svg"
+      }),
+      expect.objectContaining({
+        storagePath: "runtime/portraits/right.svg"
+      })
+    ]);
   });
 
   it("does not clear the current presentation when the target is not ready", async () => {

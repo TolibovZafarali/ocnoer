@@ -254,6 +254,8 @@ export type RuntimeImageDerivative = {
   contentType: string;
   renderKind: "bitmap";
   targetPlatform?: "ios";
+  cacheVersion?: number | null;
+  renderVersion?: string | null;
   width?: number | null;
   height?: number | null;
   hash?: string;

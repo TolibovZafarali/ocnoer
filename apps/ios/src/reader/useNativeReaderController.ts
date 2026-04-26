@@ -38,10 +38,12 @@ import {
   ensureChapterAssetsReady,
   ensureSceneAssetsReady,
   getAssetCacheErrorMessage,
+  verifyReaderPortraitDerivativeUrls,
   warmNextSceneAssets
 } from "./imagePreload";
 import {
   createNativeReaderPresentation,
+  getNativeReaderChapterPortraitAuditEntries,
   type NativeReaderPresentation
 } from "./readerPresentation";
 
@@ -125,6 +127,12 @@ type UseNativeReaderControllerInput = {
   sessionToken: string;
   onProgressSaved?: () => void;
   onUpdateCatName: (catName: string) => Promise<void>;
+};
+
+type NativeReaderPresentationUsage = {
+  dialogueEntryId: string;
+  presentationKey: string;
+  sceneId: string;
 };
 
 const PRESENTATION_READY_CACHE_LIMIT = 6;
@@ -493,6 +501,69 @@ export async function ensureNativeReaderPresentationRenderReady(input: {
     key: readinessKey,
     reason: input.reason
   });
+}
+
+function getNativeReaderChapterPresentationUsage(input: {
+  supabaseUrl: string;
+  bundle: RuntimeChapterBundle;
+  branchFlags: PlayerProgress["branchFlags"];
+  catName: string | null;
+}) {
+  const usageByAssetUrl = new Map<string, NativeReaderPresentationUsage[]>();
+
+  input.bundle.chapter.scenes.forEach((scene, sceneIndex) => {
+    scene.dialogue.forEach((dialogueEntry, dialogueIndex) => {
+      const presentation = createNativeReaderPresentation({
+        supabaseUrl: input.supabaseUrl,
+        bundle: input.bundle,
+        readerState: {
+          sceneIndex,
+          dialogueIndex,
+          isChapterComplete: false
+        },
+        branchFlags: input.branchFlags,
+        catName: input.catName
+      });
+
+      if (!presentation) {
+        return;
+      }
+
+      const presentationKey =
+        createNativeReaderPresentationReadinessKey(presentation);
+
+      presentation.blockingAssetRefs
+        .filter((assetRef) => assetRef.role === "portrait")
+        .forEach((assetRef) => {
+          const existing = usageByAssetUrl.get(assetRef.url) ?? [];
+
+          existing.push({
+            dialogueEntryId: dialogueEntry.id,
+            presentationKey,
+            sceneId: scene.id
+          });
+          usageByAssetUrl.set(assetRef.url, existing);
+        });
+    });
+  });
+
+  return usageByAssetUrl;
+}
+
+function getPresentationReadinessStatus(input: {
+  advanceReadiness: NativeReaderAdvanceReadiness;
+  key: string;
+  preparedPresentations: Map<string, PreparedNativeReaderPresentation>;
+}) {
+  if (input.preparedPresentations.has(input.key)) {
+    return "ready" as const;
+  }
+
+  if (input.advanceReadiness.targetKey === input.key) {
+    return input.advanceReadiness.status;
+  }
+
+  return "unknown" as const;
 }
 
 async function ensureReadyRuntimeStateAssets(input: {
@@ -885,19 +956,78 @@ export function useNativeReaderController(
       return;
     }
 
-    globalThis.__OCNOER_READER_DUMP_ASSET_RENDER_MODES = () =>
-      dumpReaderAssetRenderModes(
-        getPlayerRuntimeChapterAssetRefs({
-          supabaseUrl: config.supabaseUrl,
-          bundle: runtimeState.bundle,
-          branchFlags
-        })
+    globalThis.__OCNOER_READER_DUMP_ASSET_RENDER_MODES = async () => {
+      const usageByAssetUrl = getNativeReaderChapterPresentationUsage({
+        supabaseUrl: config.supabaseUrl,
+        bundle: runtimeState.bundle,
+        branchFlags,
+        catName
+      });
+      const preparedPresentations = preparedPresentationsRef.current;
+      const auditEntries = getNativeReaderChapterPortraitAuditEntries({
+        supabaseUrl: config.supabaseUrl,
+        bundle: runtimeState.bundle
+      }).map((entry) => {
+        const usages = usageByAssetUrl.get(entry.assetRef.url) ?? [];
+
+        return {
+          ...entry,
+          presentationKeys: usages.map((usage) => usage.presentationKey),
+          readinessByPresentationKey: usages.map((usage) => ({
+            presentationKey: usage.presentationKey,
+            dialogueEntryId: usage.dialogueEntryId,
+            sceneId: usage.sceneId,
+            status: getPresentationReadinessStatus({
+              advanceReadiness,
+              key: usage.presentationKey,
+              preparedPresentations
+            }),
+            isImmediateNext: advanceReadiness.targetKey === usage.presentationKey,
+            message:
+              advanceReadiness.status === "error" &&
+              advanceReadiness.targetKey === usage.presentationKey
+                ? advanceReadiness.message
+                : null
+          }))
+        };
+      });
+      const fallbackAssetRefs = getPlayerRuntimeChapterAssetRefs({
+        supabaseUrl: config.supabaseUrl,
+        bundle: runtimeState.bundle,
+        branchFlags
+      });
+      const auditUrls = new Set(
+        auditEntries.map((entry) => entry.assetRef.url)
       );
+      const dump = dumpReaderAssetRenderModes(
+        [
+          ...auditEntries,
+          ...fallbackAssetRefs.filter((assetRef) => !auditUrls.has(assetRef.url))
+        ],
+        {
+          manifestPath: config.manifestPath,
+          manifestGeneratedAt: runtimeState.manifest.generatedAt,
+          chapterId: runtimeState.bundle.chapter.id,
+          chapterGeneratedAt: runtimeState.bundle.generatedAt,
+          staleRuntimeJson:
+            runtimeState.manifest.generatedAt !== runtimeState.bundle.generatedAt
+        }
+      );
+
+      return verifyReaderPortraitDerivativeUrls(dump);
+    };
 
     return () => {
       globalThis.__OCNOER_READER_DUMP_ASSET_RENDER_MODES = undefined;
     };
-  }, [branchFlags, config.supabaseUrl, runtimeState]);
+  }, [
+    advanceReadiness,
+    branchFlags,
+    catName,
+    config.manifestPath,
+    config.supabaseUrl,
+    runtimeState
+  ]);
 
   const rememberPreparedPresentation = useCallback(
     (preparedPresentation: PreparedNativeReaderPresentation) => {

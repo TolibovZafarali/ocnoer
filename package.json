@@ -20,6 +20,8 @@
     "backup:storage": "node scripts/backup-storage.mjs",
     "backup:db": "node scripts/backup-postgres.mjs",
     "backup:all": "node scripts/backup-storage.mjs && node scripts/backup-postgres.mjs",
+    "audit:ios-portraits": "node scripts/audit-ios-character-portrait-derivatives.mjs",
+    "publish:runtime": "node scripts/publish-ios-character-portrait-derivatives.mjs",
     "prisma:generate": "prisma generate",
     "prisma:validate": "prisma validate",
     "prisma:migrate:dev": "prisma migrate dev",

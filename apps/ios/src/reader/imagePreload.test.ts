@@ -139,6 +139,9 @@ describe("reader asset cache", () => {
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     delete globalThis.__OCNOER_READER_PORTRAIT_RENDER_MODE_OVERRIDES;
+    delete globalThis.__OCNOER_READER_FORCE_ALL_CHARACTER_PORTRAITS_TO_LOCAL_TEST_BITMAP;
+    delete globalThis.__OCNOER_READER_STRICT_BITMAP_DERIVATIVES;
+    delete globalThis.__OCNOER_READER_CLEAR_ASSET_CACHE;
   });
 
   it("dedupes extensionless remote bitmap downloads and stores a local uri", async () => {
@@ -422,6 +425,9 @@ describe("reader asset cache", () => {
       "bitmap-v2"
     );
     expect(
+      getReaderAssetCacheKeyForRenderMode(assetRef, "bitmap-derivative")
+    ).toContain("bitmap-derivative-v2");
+    expect(
       getReaderAssetCacheKeyForRenderMode(assetRef, "true-vector-svg")
     ).toContain("true-vector-svg-v2");
     expect(
@@ -430,9 +436,10 @@ describe("reader asset cache", () => {
         getReaderAssetCacheKeyForRenderMode(assetRef, "source-svg-image"),
         getReaderAssetCacheKeyForRenderMode(assetRef, "extracted-raster"),
         getReaderAssetCacheKeyForRenderMode(assetRef, "bitmap"),
+        getReaderAssetCacheKeyForRenderMode(assetRef, "bitmap-derivative"),
         getReaderAssetCacheKeyForRenderMode(assetRef, "true-vector-svg")
       ]).size
-    ).toBe(5);
+    ).toBe(6);
   });
 
   it("does not reuse stale extracted files for source SVG render mode", async () => {
@@ -512,24 +519,32 @@ describe("reader asset cache", () => {
       "https://example.supabase.co/storage/v1/object/public/runtime/portrait.reader.png"
     );
     expect(result.assets[0]).toMatchObject({
-      renderMode: "bitmap",
+      renderMode: "bitmap-derivative",
       renderKind: "bitmap",
       contentType: "image/png"
     });
-    expect(getAssetRenderMode(assetRef)).toBe("bitmap");
+    expect(getAssetRenderMode(assetRef)).toBe("bitmap-derivative");
     expect(getAssetRenderMode(assetRef)).not.toBe("source-svg-image");
     expect(getCachedAssetUri(assetRef)?.endsWith(".png")).toBe(true);
     expect(getReaderAssetRenderDiagnostics(assetRef)).toMatchObject({
-      PORTRAIT_RENDER_MODE: "bitmap",
+      PORTRAIT_RENDER_MODE: "bitmap-derivative",
       derivativeAssetExists: true,
       derivativeAssetSelected: true,
       sourceSvgFallbackUsed: false,
       storagePath: "runtime/portrait.reader.png"
     });
-    expect(dumpReaderAssetRenderModes([assetRef])[0]).toMatchObject({
-      PORTRAIT_RENDER_MODE: "bitmap",
-      derivativeAssetSelected: true,
-      localCachedUri: expect.stringContaining(".png")
+    expect(dumpReaderAssetRenderModes([assetRef])).toMatchObject({
+      assets: [
+        expect.objectContaining({
+          PORTRAIT_RENDER_MODE: "bitmap-derivative",
+          derivativeAssetSelected: true,
+          localCachedUri: expect.stringContaining(".png")
+        })
+      ],
+      summary: expect.objectContaining({
+        bitmapDerivativeCount: 1,
+        svgFallbackCount: 0
+      })
     });
   });
 
@@ -694,6 +709,76 @@ describe("reader asset cache", () => {
     expect(getAssetRenderMode(assetRef)).toBe("source-svg-image");
     expect(fetchMock).toHaveBeenCalledWith(
       "https://example.supabase.co/storage/v1/object/public/runtime/force-source.svg"
+    );
+  });
+
+  it("strict mode fails loudly instead of silently falling back to source SVG", async () => {
+    vi.stubGlobal("__DEV__", true);
+    globalThis.__OCNOER_READER_STRICT_BITMAP_DERIVATIVES = true;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        createResponse({
+          contentType: "image/svg+xml",
+          body: '<svg width="100" height="200"><path d="M0 0h100v200H0z" /></svg>'
+        })
+      )
+    );
+    const { ensureSceneAssetsReady } = await import("./imagePreload");
+    const result = await ensureSceneAssetsReady("scene_strict", [
+      {
+        role: "portrait",
+        url: "https://example.supabase.co/storage/v1/object/public/runtime/strict.svg",
+        storagePath: "runtime/strict.svg",
+        cacheKey: "portrait:strict",
+        sourceRenderKind: "svg"
+      }
+    ]);
+
+    expect(result.status).toBe("error");
+    expect(result.errors[0]?.message).toContain(
+      "Strict bitmap derivatives blocked portrait"
+    );
+  });
+
+  it("can force every character portrait to the local bitmap test path", async () => {
+    vi.stubGlobal("__DEV__", true);
+    globalThis.__OCNOER_READER_FORCE_ALL_CHARACTER_PORTRAITS_TO_LOCAL_TEST_BITMAP = true;
+    const fetchMock = vi.fn();
+    vi.stubGlobal("fetch", fetchMock);
+    const {
+      ensureSceneAssetsReady,
+      getAssetRenderMode,
+      getCachedAssetUri,
+      getReaderAssetRenderDiagnostics
+    } = await import("./imagePreload");
+    const assetRef = {
+      role: "portrait" as const,
+      url: "https://example.supabase.co/storage/v1/object/public/runtime/forced.svg",
+      storagePath: "runtime/forced.svg",
+      cacheKey: "portrait:forced",
+      sourceRenderKind: "svg" as const
+    };
+
+    const result = await ensureSceneAssetsReady("scene_forced_bitmap", [
+      assetRef
+    ]);
+
+    expect(result.status).toBe("success");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(getAssetRenderMode(assetRef)).toBe("bitmap-derivative");
+    expect(getCachedAssetUri(assetRef)?.startsWith("data:image/webp")).toBe(
+      true
+    );
+    expect(getReaderAssetRenderDiagnostics(assetRef)).toMatchObject({
+      PORTRAIT_RENDER_MODE: "bitmap-derivative",
+      derivativeAssetSelected: true,
+      sourceSvgFallbackUsed: false
+    });
+    expect(mockLoadAsync).toHaveBeenCalledWith(
+      expect.objectContaining({
+        uri: expect.stringContaining("data:image/webp")
+      })
     );
   });
 });

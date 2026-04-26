@@ -45,6 +45,35 @@ function isSvgPath(value) {
   return value.split(/[?#]/)[0]?.toLowerCase().endsWith(".svg");
 }
 
+function hasNoExtension(value) {
+  const cleanPath = value.split(/[?#]/)[0] ?? "";
+  const fileName = cleanPath.split("/").pop() ?? "";
+
+  return !fileName.includes(".");
+}
+
+function bytesLookLikeSvg(bytes) {
+  const prefix = bytes
+    .subarray(0, 2048)
+    .toString("utf8")
+    .replace(/^\uFEFF/, "")
+    .trimStart()
+    .toLowerCase();
+
+  return (
+    prefix.startsWith("<svg") ||
+    (prefix.startsWith("<?xml") && prefix.includes("<svg"))
+  );
+}
+
+async function isExtensionlessSvgFile(inputPath) {
+  if (!hasNoExtension(inputPath)) {
+    return false;
+  }
+
+  return bytesLookLikeSvg(await readFile(inputPath).catch(() => Buffer.alloc(0)));
+}
+
 async function collectSvgFiles(inputPath) {
   if (isRemoteUrl(inputPath)) {
     return [inputPath];
@@ -55,7 +84,9 @@ async function collectSvgFiles(inputPath) {
   }).catch(() => null);
 
   if (!entries) {
-    return isSvgPath(inputPath) ? [inputPath] : [];
+    return isSvgPath(inputPath) || (await isExtensionlessSvgFile(inputPath))
+      ? [inputPath]
+      : [];
   }
 
   const nested = await Promise.all(
@@ -66,7 +97,9 @@ async function collectSvgFiles(inputPath) {
         return collectSvgFiles(entryPath);
       }
 
-      return Promise.resolve(isSvgPath(entryPath) ? [entryPath] : []);
+      return isSvgPath(entryPath) || (await isExtensionlessSvgFile(entryPath))
+        ? [entryPath]
+        : [];
     })
   );
 

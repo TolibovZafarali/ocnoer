@@ -118,6 +118,8 @@ declare global {
   // Development probe for isolating portrait rendering from dialogue card/text.
   // eslint-disable-next-line no-var
   var __OCNOER_READER_DISABLE_PORTRAITS: boolean | undefined;
+  // eslint-disable-next-line no-var
+  var __OCNOER_READER_STRICT_BITMAP_DERIVATIVES: boolean | undefined;
 }
 
 function shouldDisablePortraitsForProbe() {
@@ -128,6 +130,16 @@ function shouldDisablePortraitsForProbe() {
 
 function isSvgRenderMode(renderMode: ReturnType<typeof getAssetRenderMode>) {
   return renderMode === "original-svg" || renderMode === "true-vector-svg";
+}
+
+function isUnexpectedPortraitRenderMode(
+  renderMode: ReturnType<typeof getAssetRenderMode>
+) {
+  return (
+    renderMode === "source-svg-image" ||
+    renderMode === "original-svg" ||
+    renderMode === "true-vector-svg"
+  );
 }
 
 function CachedPortraitAsset(props: {
@@ -169,6 +181,28 @@ function CachedPortraitAsset(props: {
       side: props.side,
       wrapperBackgroundColor: NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND
     });
+
+    if (isUnexpectedPortraitRenderMode(renderMode)) {
+      const details = {
+        ...diagnostics,
+        imageUrl: props.imageUrl,
+        renderMode,
+        side: props.side
+      };
+
+      if (globalThis.__OCNOER_READER_STRICT_BITMAP_DERIVATIVES) {
+        console.error(
+          "[reader-assets] strict bitmap derivative violation",
+          details
+        );
+        return;
+      }
+
+      console.warn(
+        "[reader-assets] character portrait is rendering outside bitmap-derivative mode",
+        details
+      );
+    }
   }, [props.imageUrl, props.side, renderKind, renderMode]);
 
   if (!isSvgRenderMode(renderMode)) {

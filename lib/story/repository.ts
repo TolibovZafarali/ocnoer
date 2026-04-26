@@ -48,6 +48,8 @@ const AUTHORING_ASSETS_PATH = "authoring/assets.json";
 const AUTHORING_CHAPTERS_PATH = "authoring/chapters.json";
 const AUTHORING_HISTORY_PREFIX = "history/authoring";
 const RUNTIME_PREFIX = "runtime";
+const IOS_PORTRAIT_DERIVATIVE_RENDER_VERSION = "ios-portrait-bitmap-v1";
+const IOS_PORTRAIT_DERIVATIVE_CACHE_VERSION = 2;
 const PRE_BLACK_CARDS_BACKUP_FILE_PREFIX = "pre-black-cards-";
 const STORAGE_FETCH_FAILURE_MESSAGE =
   "Unable to reach Supabase storage while loading authoring data. Check your Supabase URL, network connection, and Supabase project availability.";
@@ -783,7 +785,17 @@ function findReusableIosPortraitDerivative(input: {
         derivative.targetPlatform === "ios" &&
         derivative.renderKind === "bitmap" &&
         derivative.contentType === "image/webp" &&
-        derivative.sourceHash === input.sourceHash
+        derivative.sourceHash === input.sourceHash &&
+        derivative.storagePath.length > 0 &&
+        typeof derivative.hash === "string" &&
+        derivative.hash.length > 0 &&
+        typeof derivative.width === "number" &&
+        derivative.width > 0 &&
+        typeof derivative.height === "number" &&
+        derivative.height > 0 &&
+        derivative.sourceStoragePath === derivative.derivativeOf &&
+        derivative.renderVersion === IOS_PORTRAIT_DERIVATIVE_RENDER_VERSION &&
+        derivative.cacheVersion === IOS_PORTRAIT_DERIVATIVE_CACHE_VERSION
     ) ?? null
   );
 }
@@ -800,6 +812,15 @@ async function createIosPortraitDerivative(input: {
   const sourceBytes = await downloadStorageObjectBytes(input.sourceStoragePath);
 
   if (!sourceBytes || !bytesLookLikeSvg(sourceBytes)) {
+    if (
+      !sourceBytes &&
+      getStoragePathExtension(input.sourceStoragePath) === "svg"
+    ) {
+      throw new StoryRepositoryError(
+        `Unable to generate iOS portrait derivative because the source SVG is missing: ${input.sourceStoragePath}`
+      );
+    }
+
     return input.existingDerivatives ?? [];
   }
 
@@ -841,6 +862,8 @@ async function createIosPortraitDerivative(input: {
     contentType: "image/webp",
     renderKind: "bitmap",
     targetPlatform: "ios",
+    cacheVersion: IOS_PORTRAIT_DERIVATIVE_CACHE_VERSION,
+    renderVersion: IOS_PORTRAIT_DERIVATIVE_RENDER_VERSION,
     width: rendered.info.width,
     height: rendered.info.height,
     hash: derivativeHash,
@@ -852,6 +875,70 @@ async function createIosPortraitDerivative(input: {
   };
 
   return [derivative];
+}
+
+function isValidIosPortraitBitmapDerivative(
+  derivative: RuntimeImageDerivative | undefined
+) {
+  const contentType = derivative?.contentType.toLowerCase() ?? "";
+
+  return Boolean(
+    derivative &&
+    derivative.targetPlatform === "ios" &&
+    derivative.renderKind === "bitmap" &&
+    (contentType.includes("image/webp") || contentType.includes("image/png")) &&
+    derivative.storagePath &&
+    derivative.hash &&
+    derivative.sourceHash &&
+    derivative.sourceStoragePath &&
+    derivative.derivativeOf === derivative.sourceStoragePath &&
+    derivative.renderVersion === IOS_PORTRAIT_DERIVATIVE_RENDER_VERSION &&
+    derivative.cacheVersion === IOS_PORTRAIT_DERIVATIVE_CACHE_VERSION &&
+    typeof derivative.width === "number" &&
+    derivative.width > 0 &&
+    typeof derivative.height === "number" &&
+    derivative.height > 0
+  );
+}
+
+function assertSvgPortraitHasIosDerivative(input: {
+  sourceStoragePath: string;
+  derivatives: RuntimeImageDerivative[] | undefined;
+  label: string;
+}) {
+  if (getStoragePathExtension(input.sourceStoragePath) !== "svg") {
+    return;
+  }
+
+  if (input.derivatives?.some(isValidIosPortraitBitmapDerivative)) {
+    return;
+  }
+
+  throw new StoryRepositoryError(
+    `Missing iOS bitmap derivative metadata for SVG character portrait ${input.label}: ${input.sourceStoragePath}`
+  );
+}
+
+function validateRuntimePortraitDerivatives(snapshot: StoryAuthoringSnapshot) {
+  snapshot.characters.forEach((character) => {
+    character.emotions.forEach((emotion) => {
+      assertSvgPortraitHasIosDerivative({
+        sourceStoragePath: emotion.imagePath,
+        derivatives: emotion.imageDerivatives,
+        label: `${character.name}/${emotion.key}`
+      });
+    });
+
+    character.dresses.forEach((dress) => {
+      dress.emotionOverrides.forEach((override) => {
+        assertSvgPortraitHasIosDerivative({
+          sourceStoragePath: override.imagePath,
+          derivatives: override.imageDerivatives,
+          label: `${character.name}/${dress.key}/${override.emotionKey}`
+        });
+      });
+    });
+  });
 }
 
 async function addRuntimePortraitDerivativesToSnapshot(
@@ -888,10 +975,14 @@ async function addRuntimePortraitDerivativesToSnapshot(
     }))
   );
 
-  return {
+  const runtimeSnapshot = {
     ...snapshot,
     characters
   };
+
+  validateRuntimePortraitDerivatives(runtimeSnapshot);
+
+  return runtimeSnapshot;
 }
 
 async function removeStorageObjects(storagePaths: string[]) {
@@ -1424,16 +1515,26 @@ async function persistRuntimeArtifacts(snapshot: StoryAuthoringSnapshot) {
   });
 
   await Promise.all([
-    writeJsonFile(`${RUNTIME_PREFIX}/manifest.json`, artifacts.manifest),
+    writeJsonFile(`${RUNTIME_PREFIX}/manifest.json`, artifacts.manifest, {
+      cacheControl: "0"
+    }),
     writeJsonFile(
       `${RUNTIME_PREFIX}/characters.json`,
-      artifacts.charactersManifest
+      artifacts.charactersManifest,
+      {
+        cacheControl: "0"
+      }
     ),
-    writeJsonFile(`${RUNTIME_PREFIX}/assets.json`, artifacts.assetsManifest),
+    writeJsonFile(`${RUNTIME_PREFIX}/assets.json`, artifacts.assetsManifest, {
+      cacheControl: "0"
+    }),
     ...artifacts.chapterBundles.map((chapterBundle) =>
       writeJsonFile(
         `${RUNTIME_PREFIX}/chapters/${chapterBundle.chapterId}.json`,
-        chapterBundle.bundle
+        chapterBundle.bundle,
+        {
+          cacheControl: "0"
+        }
       )
     )
   ]);
@@ -1479,11 +1580,11 @@ async function commitSnapshot(snapshot: StoryAuthoringSnapshot) {
 
 async function commitChapterScopedSnapshot(
   snapshot: StoryAuthoringSnapshot,
-  chapterId: string
+  _chapterId: string
 ) {
   const normalizedSnapshot = await persistChaptersSnapshot(snapshot);
 
-  await persistRuntimeChapterArtifact(normalizedSnapshot, chapterId);
+  await persistRuntimeArtifacts(normalizedSnapshot);
 
   return normalizedSnapshot;
 }

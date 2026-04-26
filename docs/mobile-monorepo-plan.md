@@ -76,6 +76,27 @@ The root web app still derives its manifest path from
 `SUPABASE_RUNTIME_BUCKET` on the server in `lib/story/runtime.ts`. That
 server-only boundary is not imported by the iOS app.
 
+## Reader Runtime And Asset Cache Reset
+
+After publishing a new runtime, clear the native reader caches from the
+simulator debugger before auditing:
+
+```js
+await globalThis.__OCNOER_READER_CLEAR_ASSET_CACHE?.();
+globalThis.__OCNOER_READER_RELOAD_RUNTIME?.();
+```
+
+Then reopen the reader and run:
+
+```js
+await globalThis.__OCNOER_READER_DUMP_ASSET_RENDER_MODES?.();
+```
+
+The clear hook removes the reader asset directory, in-memory reader image refs,
+SVG ASTs, old source-SVG fallback files, old derivative files, and Expo image
+memory/disk cache. The reload hook returns to the runtime home screen and
+fetches the published manifest again.
+
 ## Current iOS Runtime Bootstrap
 
 `apps/ios` now has a real bootstrap flow:

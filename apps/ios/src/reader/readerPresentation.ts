@@ -15,7 +15,10 @@ import {
   type PlayerRuntimeStageCharacter,
   type ReaderState,
   type RuntimeChapterBundle,
-  type RuntimeDialogueEntry
+  type RuntimeCharacter,
+  type RuntimeDialogueEntry,
+  type RuntimeImageDerivative,
+  type RuntimeScene
 } from "@ocnoer/story-core";
 
 export const SUPPORTED_NATIVE_READER_ENTRY_TYPES = [
@@ -43,6 +46,25 @@ export type NativeReaderDressOption = {
 };
 
 export type NativeReaderAssetRef = PlayerRuntimeImageAssetRef;
+
+export type NativeReaderPortraitSceneReference = {
+  chapterId: string;
+  chapterTitle: string;
+  sceneId: string;
+  sceneTitle: string;
+  dialogueEntryId?: string | null;
+  dialogueIndex?: number | null;
+};
+
+export type NativeReaderPortraitAuditEntry = {
+  assetRef: NativeReaderAssetRef;
+  characterId: string;
+  characterName: string;
+  emotionKey: string | null;
+  dressKey: string | null;
+  variantKey: string | null;
+  sceneReferences: NativeReaderPortraitSceneReference[];
+};
 
 export type NativeDialogueCardPlacement =
   | "speaker-left"
@@ -341,6 +363,308 @@ function findAssetRefsByUrls(input: {
         assetId: null
       }
   );
+}
+
+function getPathExtension(value: string | null | undefined) {
+  const path = value?.split(/[?#]/)[0] ?? "";
+  const fileName = path.split("/").pop() ?? "";
+  const match = fileName.match(/\.([a-zA-Z0-9]+)$/);
+
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+function isAlphaSafeDerivative(derivative: RuntimeImageDerivative) {
+  const contentType = derivative.contentType.toLowerCase();
+
+  return (
+    derivative.renderKind === "bitmap" &&
+    (derivative.targetPlatform == null || derivative.targetPlatform === "ios") &&
+    (contentType.includes("image/png") || contentType.includes("image/webp"))
+  );
+}
+
+function toPublicStorageDerivative(input: {
+  supabaseUrl: string;
+  derivative: RuntimeImageDerivative;
+}) {
+  const url = toPublicStorageUrl(
+    input.supabaseUrl,
+    input.derivative.storagePath
+  );
+
+  if (!url) {
+    return null;
+  }
+
+  return {
+    ...input.derivative,
+    url,
+    cacheKey: input.derivative.hash
+      ? `derivative:${input.derivative.hash}:${input.derivative.storagePath}`
+      : `derivative:${input.derivative.storagePath}`
+  };
+}
+
+function toPublicStorageDerivatives(input: {
+  supabaseUrl: string;
+  derivatives?: RuntimeImageDerivative[];
+}) {
+  return (
+    input.derivatives
+      ?.map((derivative) =>
+        toPublicStorageDerivative({
+          supabaseUrl: input.supabaseUrl,
+          derivative
+        })
+      )
+      .filter((derivative): derivative is NonNullable<typeof derivative> =>
+        Boolean(derivative)
+      ) ?? []
+  );
+}
+
+function getSourceRenderKind(input: {
+  storagePath: string;
+  derivatives?: RuntimeImageDerivative[];
+}) {
+  const derivativeSourceKind = input.derivatives?.find(
+    (derivative) => derivative.sourceRenderKind
+  )?.sourceRenderKind;
+
+  if (derivativeSourceKind) {
+    return derivativeSourceKind;
+  }
+
+  const extension = getPathExtension(input.storagePath);
+
+  if (extension === "svg") {
+    return "svg";
+  }
+
+  if (
+    extension === "png" ||
+    extension === "webp" ||
+    extension === "jpg" ||
+    extension === "jpeg"
+  ) {
+    return "bitmap";
+  }
+
+  return "unknown";
+}
+
+function createPortraitAuditAssetRef(input: {
+  supabaseUrl: string;
+  characterId: string;
+  emotionKey: string | null;
+  dressKey: string | null;
+  storagePath: string;
+  derivatives?: RuntimeImageDerivative[];
+}) {
+  const url = toPublicStorageUrl(input.supabaseUrl, input.storagePath);
+
+  if (!url) {
+    return null;
+  }
+
+  const publicDerivatives = toPublicStorageDerivatives({
+    supabaseUrl: input.supabaseUrl,
+    derivatives: input.derivatives
+  });
+  const iosDerivative =
+    publicDerivatives.find((derivative) => isAlphaSafeDerivative(derivative)) ??
+    null;
+  const sourceRenderKind = getSourceRenderKind({
+    storagePath: input.storagePath,
+    derivatives: input.derivatives
+  });
+  const assetRef: NativeReaderAssetRef = {
+    role: "portrait",
+    url,
+    storagePath: input.storagePath,
+    assetId: input.characterId,
+    cacheKey: `portrait:${input.characterId}:${input.emotionKey ?? "unknown"}:${input.dressKey ?? "__base__"}:${input.storagePath}`,
+    derivatives:
+      publicDerivatives.length > 0 ? publicDerivatives : undefined,
+    ...(sourceRenderKind !== "bitmap"
+      ? {
+          sourceRenderKind
+        }
+      : {}),
+    ...(sourceRenderKind === "svg"
+      ? {
+          originalSvgStoragePath: input.storagePath,
+          originalSvgUrl: url
+        }
+      : {}),
+    ...(iosDerivative
+      ? {
+          iosDerivativeStoragePath: iosDerivative.storagePath,
+          iosDerivativeUrl: iosDerivative.url,
+          iosDerivativeContentType: iosDerivative.contentType,
+          iosDerivativeWidth: iosDerivative.width ?? null,
+          iosDerivativeHeight: iosDerivative.height ?? null,
+          iosDerivativeHash: iosDerivative.hash ?? null,
+          iosRenderKind: "bitmap" as const
+        }
+      : {})
+  };
+
+  return assetRef;
+}
+
+function addPortraitAuditEntry(input: {
+  entriesByKey: Map<string, NativeReaderPortraitAuditEntry>;
+  supabaseUrl: string;
+  chapterId: string;
+  chapterTitle: string;
+  scene: RuntimeScene;
+  character: Pick<RuntimeCharacter, "id" | "name">;
+  emotionKey: string | null;
+  dressKey: string | null;
+  variantKey: string | null;
+  storagePath: string | null | undefined;
+  derivatives?: RuntimeImageDerivative[];
+  dialogueEntryId?: string | null;
+  dialogueIndex?: number | null;
+}) {
+  if (!input.storagePath) {
+    return;
+  }
+
+  const assetRef = createPortraitAuditAssetRef({
+    supabaseUrl: input.supabaseUrl,
+    characterId: input.character.id,
+    emotionKey: input.emotionKey,
+    dressKey: input.dressKey,
+    storagePath: input.storagePath,
+    derivatives: input.derivatives
+  });
+
+  if (!assetRef) {
+    return;
+  }
+
+  const key = `${input.character.id}:${input.emotionKey ?? ""}:${input.dressKey ?? ""}:${input.storagePath}`;
+  const sceneReference: NativeReaderPortraitSceneReference = {
+    chapterId: input.chapterId,
+    chapterTitle: input.chapterTitle,
+    sceneId: input.scene.id,
+    sceneTitle: input.scene.title,
+    dialogueEntryId: input.dialogueEntryId ?? null,
+    dialogueIndex: input.dialogueIndex ?? null
+  };
+  const existing = input.entriesByKey.get(key);
+
+  if (existing) {
+    const sceneReferenceKey = `${sceneReference.sceneId}:${sceneReference.dialogueEntryId ?? ""}:${sceneReference.dialogueIndex ?? ""}`;
+
+    if (
+      !existing.sceneReferences.some(
+        (reference) =>
+          `${reference.sceneId}:${reference.dialogueEntryId ?? ""}:${reference.dialogueIndex ?? ""}` ===
+          sceneReferenceKey
+      )
+    ) {
+      existing.sceneReferences.push(sceneReference);
+    }
+
+    return;
+  }
+
+  input.entriesByKey.set(key, {
+    assetRef,
+    characterId: input.character.id,
+    characterName: input.character.name,
+    emotionKey: input.emotionKey,
+    dressKey: input.dressKey,
+    variantKey: input.variantKey,
+    sceneReferences: [sceneReference]
+  });
+}
+
+export function getNativeReaderChapterPortraitAuditEntries(input: {
+  supabaseUrl: string;
+  bundle: RuntimeChapterBundle | null;
+}) {
+  if (!input.bundle) {
+    return [];
+  }
+
+  const entriesByKey = new Map<string, NativeReaderPortraitAuditEntry>();
+  const chapter = input.bundle.chapter;
+
+  chapter.scenes.forEach((scene) => {
+    scene.characterPool.forEach((character) => {
+      character.emotions.forEach((emotion) => {
+        addPortraitAuditEntry({
+          entriesByKey,
+          supabaseUrl: input.supabaseUrl,
+          chapterId: chapter.id,
+          chapterTitle: chapter.title,
+          scene,
+          character,
+          emotionKey: emotion.key,
+          dressKey: null,
+          variantKey: "base",
+          storagePath: emotion.imagePath,
+          derivatives: emotion.imageDerivatives
+        });
+      });
+
+      character.dresses.forEach((dress) => {
+        dress.emotionOverrides.forEach((override) => {
+          addPortraitAuditEntry({
+            entriesByKey,
+            supabaseUrl: input.supabaseUrl,
+            chapterId: chapter.id,
+            chapterTitle: chapter.title,
+            scene,
+            character,
+            emotionKey: override.emotionKey,
+            dressKey: dress.key,
+            variantKey: `${dress.key}:${override.emotionKey}`,
+            storagePath: override.imagePath,
+            derivatives: override.imageDerivatives
+          });
+        });
+      });
+    });
+
+    scene.dialogue.forEach((dialogueEntry, dialogueIndex) => {
+      const addStageCharacter = (
+        stageCharacter: RuntimeDialogueEntry["stage"]["left"]
+      ) => {
+        if (!stageCharacter) {
+          return;
+        }
+
+        addPortraitAuditEntry({
+          entriesByKey,
+          supabaseUrl: input.supabaseUrl,
+          chapterId: chapter.id,
+          chapterTitle: chapter.title,
+          scene,
+          character: {
+            id: stageCharacter.characterId,
+            name: stageCharacter.characterName
+          },
+          emotionKey: stageCharacter.emotionKey,
+          dressKey: null,
+          variantKey: "stage",
+          storagePath: stageCharacter.imagePath,
+          derivatives: stageCharacter.imageDerivatives,
+          dialogueEntryId: dialogueEntry.id,
+          dialogueIndex
+        });
+      };
+
+      addStageCharacter(dialogueEntry.stage.left);
+      addStageCharacter(dialogueEntry.stage.right);
+    });
+  });
+
+  return Array.from(entriesByKey.values());
 }
 
 function getNextSceneAssetRefs(input: {

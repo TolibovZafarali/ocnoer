@@ -538,6 +538,9 @@ function expectChapterScopedWrites() {
   const uploadPaths = getUploadPaths();
 
   expect(uploadPaths).toContain("authoring/chapters.json");
+  expect(uploadPaths).toContain("runtime/manifest.json");
+  expect(uploadPaths).toContain("runtime/characters.json");
+  expect(uploadPaths).toContain("runtime/assets.json");
   expect(uploadPaths).toContain("runtime/chapters/chapter_1.json");
   expect(
     uploadPaths.some(
@@ -554,19 +557,22 @@ function expectChapterScopedWrites() {
         path.endsWith(".json")
     )
   ).toBe(true);
-  expect(uploadPaths).toHaveLength(4);
-  expect(compileRuntimeStoryMock).not.toHaveBeenCalled();
-  expect(compileRuntimeChapterBundleMock).toHaveBeenCalledWith({
+  expect(uploadPaths).toHaveLength(7);
+  expect(compileRuntimeStoryMock).toHaveBeenCalledWith({
     snapshot: expect.objectContaining({
       chapters: expect.arrayContaining([
         expect.objectContaining({ id: "chapter_1" })
       ])
     }),
-    chapterId: "chapter_1",
     bucket: "runtime",
     runtimePrefix: "runtime"
   });
+  expect(compileRuntimeChapterBundleMock).not.toHaveBeenCalled();
   expect(listMock).toHaveBeenCalledWith("history/authoring/chapters", {
+    limit: 500,
+    offset: 0
+  });
+  expect(listMock).toHaveBeenCalledWith("runtime/chapters", {
     limit: 500,
     offset: 0
   });
@@ -938,7 +944,7 @@ describe("dialogue mutations", () => {
     expectChapterScopedWrites();
   });
 
-  it("updates a dialogue entry without rewriting unrelated runtime artifacts", async () => {
+  it("updates a dialogue entry and republishes coherent runtime artifacts", async () => {
     await updateDialogueEntry({
       chapterId: "chapter_1",
       sceneId: "scene_1",
@@ -1097,7 +1103,7 @@ describe("saveSceneDraft", () => {
     seedAuthoringStorage();
   });
 
-  it("saves a whole-scene draft by only writing chapters and the affected chapter bundle", async () => {
+  it("saves a whole-scene draft and republishes coherent runtime artifacts", async () => {
     setStoredSceneDraft({
       sceneId: "scene_1",
       payload: createDraftPayload()
@@ -1496,7 +1502,7 @@ describe("non-dialogue commits", () => {
       upsert: true
     });
     expect(runtimeManifestUpload?.[2]).toMatchObject({
-      cacheControl: "60",
+      cacheControl: "0",
       upsert: true
     });
     expect(compileRuntimeStoryMock).toHaveBeenCalled();

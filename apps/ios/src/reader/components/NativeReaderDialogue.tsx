@@ -88,6 +88,17 @@ function logDialogueTiming(message: string, details?: Record<string, unknown>) {
   console.info(`[reader-dialogue] ${message}`);
 }
 
+function getPortraitRenderModeSummary(presentation: NativeReaderPresentation) {
+  const renderModes = presentation.stageCharacters.map((portrait) =>
+    getAssetRenderMode(portrait.imageUrl)
+  );
+
+  return renderModes.reduce<Record<string, number>>((counts, renderMode) => {
+    counts[renderMode] = (counts[renderMode] ?? 0) + 1;
+    return counts;
+  }, {});
+}
+
 function getDialogueCardPositionStyle(
   presentation: NativeReaderPresentation
 ): ViewStyle {
@@ -341,6 +352,16 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
   );
   const [dressIndex, setDressIndex] = useState(0);
   const textCompletionLoggedKeyRef = useRef<string | null>(null);
+  const textFrameStallCountRef = useRef(0);
+  const portraitRenderModeSummary = useMemo(
+    () => getPortraitRenderModeSummary(props.presentation),
+    [props.presentation.stageCharacters]
+  );
+  const portraitRenderModeSummaryKey = useMemo(
+    () => JSON.stringify(portraitRenderModeSummary),
+    [portraitRenderModeSummary]
+  );
+  const characterPortraitCount = props.presentation.stageCharacters.length;
   const selectedDressOption = useMemo(() => {
     if (props.presentation.status !== "supported") {
       return null;
@@ -364,16 +385,24 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
       visibleTextLength: 0
     });
     textCompletionLoggedKeyRef.current = null;
+    textFrameStallCountRef.current = 0;
 
     logDialogueTiming("text animation started", {
       dialogueEntryId: props.presentation.dialogueEntryId,
       entryType: props.presentation.entryType,
+      lineId: props.presentation.dialogueEntryId,
+      speakerId: props.presentation.speakerId,
+      characterPortraitCount,
+      renderModeCount: portraitRenderModeSummary,
       TEXT_EXPECTED_MS: textExpectedDurationMs,
       typingKey
     });
   }, [
+    characterPortraitCount,
+    portraitRenderModeSummary,
     props.presentation.dialogueEntryId,
     props.presentation.entryType,
+    props.presentation.speakerId,
     textExpectedDurationMs,
     typingKey
   ]);
@@ -437,6 +466,11 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
       logDialogueTiming("text animation completed", {
         dialogueEntryId: props.presentation.dialogueEntryId,
         instantTextProbe: true,
+        lineId: props.presentation.dialogueEntryId,
+        speakerId: props.presentation.speakerId,
+        characterPortraitCount,
+        renderModeCount: portraitRenderModeSummary,
+        JS_FRAME_STALLS: 0,
         TEXT_ACTUAL_MS: 0,
         TEXT_EXPECTED_MS: textExpectedDurationMs,
         typingKey
@@ -477,12 +511,14 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
       const frameDeltaMs = now - lastFrameAt;
 
       if (frameDeltaMs > TEXT_FRAME_STALL_WARNING_MS) {
+        textFrameStallCountRef.current += 1;
         logDialogueTiming("JS frame stall during text animation", {
           dialogueEntryId: props.presentation.dialogueEntryId,
+          lineId: props.presentation.dialogueEntryId,
+          speakerId: props.presentation.speakerId,
           frameDeltaMs,
-          hasPortrait: Boolean(
-            props.presentation.leftPortrait || props.presentation.rightPortrait
-          )
+          characterPortraitCount,
+          renderModeCount: portraitRenderModeSummary
         });
       }
 
@@ -518,6 +554,11 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
           textCompletionLoggedKeyRef.current = typingKey;
           logDialogueTiming("text animation completed", {
             dialogueEntryId: props.presentation.dialogueEntryId,
+            lineId: props.presentation.dialogueEntryId,
+            speakerId: props.presentation.speakerId,
+            characterPortraitCount,
+            renderModeCount: portraitRenderModeSummary,
+            JS_FRAME_STALLS: textFrameStallCountRef.current,
             TEXT_ACTUAL_MS: now - typingStartedAt,
             TEXT_EXPECTED_MS: textExpectedDurationMs,
             typingKey
@@ -537,10 +578,12 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
     };
   }, [
     hasTypeableDialogueText,
+    characterPortraitCount,
+    portraitRenderModeSummary,
+    portraitRenderModeSummaryKey,
     props.isExiting,
     props.presentation.dialogueEntryId,
-    props.presentation.leftPortrait,
-    props.presentation.rightPortrait,
+    props.presentation.speakerId,
     textCharacters,
     textExpectedDurationMs,
     typingKey,

@@ -16,7 +16,10 @@ import {
   getPlayerRuntimeChapterAssetRefs
 } from "@ocnoer/story-core";
 
-import { createNativeReaderPresentation } from "./readerPresentation";
+import {
+  createNativeReaderPresentation,
+  getNativeReaderChapterPortraitAuditEntries
+} from "./readerPresentation";
 
 const supabaseUrl = "https://example.supabase.co";
 const readerState: ReaderState = {
@@ -512,5 +515,85 @@ describe("createNativeReaderPresentation", () => {
       isActiveSpeaker: true
     });
     expect(presentation?.stageCharacters).toHaveLength(1);
+  });
+
+  it("audits all character portrait variants in the loaded chapter", () => {
+    const derivative = {
+      storagePath: "runtime/media/left.reader.webp",
+      contentType: "image/webp",
+      renderKind: "bitmap" as const,
+      targetPlatform: "ios" as const,
+      width: 900,
+      height: 1400,
+      hash: "derivative-hash",
+      sourceHash: "source-hash",
+      sourceAssetId: "emotion_default",
+      sourceStoragePath: "runtime/media/left.svg",
+      sourceRenderKind: "svg" as const,
+      derivativeOf: "runtime/media/left.svg"
+    };
+    const bundle = createBundle({
+      characterPool: [
+        createRuntimeCharacter({
+          id: "character_left",
+          name: "Left",
+          slug: "left",
+          imagePath: "runtime/media/left.svg",
+          dresses: [
+            {
+              key: "gala",
+              label: "Gala",
+              emotionOverrides: [
+                {
+                  emotionKey: "default",
+                  imagePath: "runtime/media/left-gala.svg",
+                  imageDerivatives: [derivative]
+                }
+              ]
+            }
+          ]
+        })
+      ],
+      entry: createDialogueEntry({
+        speaker: {
+          type: "narrator"
+        },
+        stage: {
+          left: null,
+          right: null
+        }
+      })
+    });
+
+    const auditEntries = getNativeReaderChapterPortraitAuditEntries({
+      supabaseUrl,
+      bundle
+    });
+
+    expect(auditEntries).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          characterId: "character_left",
+          emotionKey: "default",
+          dressKey: null,
+          assetRef: expect.objectContaining({
+            url: publicUrl("runtime/media/left.svg")
+          })
+        }),
+        expect.objectContaining({
+          characterId: "character_left",
+          emotionKey: "default",
+          dressKey: "gala",
+          assetRef: expect.objectContaining({
+            derivatives: [
+              expect.objectContaining({
+                url: publicUrl("runtime/media/left.reader.webp")
+              })
+            ],
+            iosDerivativeStoragePath: "runtime/media/left.reader.webp"
+          })
+        })
+      ])
+    );
   });
 });

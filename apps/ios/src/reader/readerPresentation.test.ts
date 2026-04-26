@@ -34,6 +34,7 @@ function createStageCharacter(input: {
   characterName: string;
   characterSlug: string;
   imagePath: string;
+  imageDerivatives?: RuntimeStageCharacter["imageDerivatives"];
 }): RuntimeStageCharacter {
   return {
     characterId: input.characterId,
@@ -41,7 +42,8 @@ function createStageCharacter(input: {
     characterSlug: input.characterSlug,
     emotionKey: "default",
     emotionLabel: "Default",
-    imagePath: input.imagePath
+    imagePath: input.imagePath,
+    imageDerivatives: input.imageDerivatives
   };
 }
 
@@ -228,6 +230,76 @@ describe("createNativeReaderPresentation", () => {
     );
     expect(presentation?.blockingPreloadImageUrls).not.toContain(
       publicUrl("runtime/media/future-left.svg")
+    );
+  });
+
+  it("carries iOS bitmap derivative metadata into blocking portrait asset refs", () => {
+    const derivative = {
+      storagePath: "runtime/media/future-left.reader.webp",
+      contentType: "image/webp",
+      renderKind: "bitmap" as const,
+      targetPlatform: "ios" as const,
+      width: 900,
+      height: 1400,
+      hash: "derivative-hash",
+      sourceHash: "source-hash",
+      sourceAssetId: "emotion_default",
+      sourceStoragePath: "runtime/media/future-left.svg",
+      sourceRenderKind: "svg" as const,
+      derivativeOf: "runtime/media/future-left.svg"
+    };
+    const presentation = createNativeReaderPresentation({
+      supabaseUrl,
+      bundle: createBundle({
+        entry: createDialogueEntry({
+          speaker: {
+            type: "character",
+            characterId: "character_left",
+            characterName: "Left",
+            characterSlug: "left",
+            emotionKey: "default",
+            emotionLabel: "Default",
+            emotionImagePath: "runtime/media/future-left.svg"
+          },
+          stage: {
+            left: createStageCharacter({
+              characterId: "character_left",
+              characterName: "Left",
+              characterSlug: "left",
+              imagePath: "runtime/media/future-left.svg",
+              imageDerivatives: [derivative]
+            }),
+            right: null
+          }
+        })
+      }),
+      readerState,
+      branchFlags: {},
+      catName: null
+    });
+
+    expect(presentation?.blockingAssetRefs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "portrait",
+          sourceRenderKind: "svg",
+          originalSvgStoragePath: "runtime/media/future-left.svg",
+          originalSvgUrl: publicUrl("runtime/media/future-left.svg"),
+          iosRenderKind: "bitmap",
+          iosDerivativeStoragePath: "runtime/media/future-left.reader.webp",
+          iosDerivativeUrl: publicUrl("runtime/media/future-left.reader.webp"),
+          iosDerivativeContentType: "image/webp",
+          iosDerivativeWidth: 900,
+          iosDerivativeHeight: 1400,
+          iosDerivativeHash: "derivative-hash",
+          derivatives: [
+            expect.objectContaining({
+              url: publicUrl("runtime/media/future-left.reader.webp"),
+              renderKind: "bitmap"
+            })
+          ]
+        })
+      ])
     );
   });
 

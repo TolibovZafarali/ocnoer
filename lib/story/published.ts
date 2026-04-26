@@ -55,14 +55,16 @@ function toRuntimeCharacter(character: CharacterDefinition): RuntimeCharacter {
     emotions: character.emotions.map((emotion) => ({
       key: emotion.key,
       label: emotion.label,
-      imagePath: emotion.imagePath
+      imagePath: emotion.imagePath,
+      imageDerivatives: emotion.imageDerivatives
     })),
     dresses: character.dresses.map((dress) => ({
       key: dress.key,
       label: dress.label,
       emotionOverrides: dress.emotionOverrides.map((override) => ({
         emotionKey: override.emotionKey,
-        imagePath: override.imagePath
+        imagePath: override.imagePath,
+        imageDerivatives: override.imageDerivatives
       }))
     }))
   };
@@ -115,7 +117,8 @@ function createStageCharacter(
     characterSlug: character.slug,
     emotionKey: emotion.key,
     emotionLabel: emotion.label,
-    imagePath: emotion.imagePath
+    imagePath: emotion.imagePath,
+    imageDerivatives: emotion.imageDerivatives
   };
 }
 

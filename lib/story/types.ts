@@ -20,6 +20,7 @@ export type CharacterEmotion = {
   key: string;
   label: string;
   imagePath: string;
+  imageDerivatives?: RuntimeImageDerivative[];
   createdAt: string;
   updatedAt: string;
 };
@@ -28,6 +29,7 @@ export type CharacterDressEmotionOverride = {
   id: string;
   emotionKey: string;
   imagePath: string;
+  imageDerivatives?: RuntimeImageDerivative[];
   createdAt: string;
   updatedAt: string;
 };
@@ -196,11 +198,13 @@ export type RuntimeCharacterEmotion = {
   key: string;
   label: string;
   imagePath: string;
+  imageDerivatives?: RuntimeImageDerivative[];
 };
 
 export type RuntimeCharacterDressEmotionOverride = {
   emotionKey: string;
   imagePath: string;
+  imageDerivatives?: RuntimeImageDerivative[];
 };
 
 export type RuntimeCharacterDress = {
@@ -242,6 +246,28 @@ export type RuntimeStageCharacter = {
   emotionKey: string;
   emotionLabel: string;
   imagePath: string;
+  imageDerivatives?: RuntimeImageDerivative[];
+};
+
+export type RuntimeImageDerivative = {
+  storagePath: string;
+  contentType: string;
+  renderKind: "bitmap";
+  targetPlatform?: "ios";
+  width?: number | null;
+  height?: number | null;
+  hash?: string;
+  sourceHash?: string;
+  sourceAssetId?: string | null;
+  sourceStoragePath?: string | null;
+  sourceRenderKind?: "svg" | "bitmap" | "unknown";
+  derivativeOf?: string | null;
+  visibleContentBox?: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  } | null;
 };
 
 export type RuntimeDressPromptOption = {

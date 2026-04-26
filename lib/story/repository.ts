@@ -1,8 +1,9 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
 import type { Prisma } from "@prisma/client";
+import sharp from "sharp";
 
 import { prisma } from "@/lib/prisma";
 import {
@@ -29,6 +30,7 @@ import type {
   RuntimeBackgroundMusic,
   RuntimeChapterBundle,
   RuntimeCharacter,
+  RuntimeImageDerivative,
   SceneBackgroundMusicCue,
   SceneDefinition,
   SceneDraftPayload,
@@ -638,6 +640,260 @@ async function uploadFileToStorage(input: {
   return withBucketPath(input.objectPath);
 }
 
+async function uploadBufferToStorage(input: {
+  buffer: Buffer;
+  objectPath: string;
+  contentType: string;
+  cacheControl: string;
+}) {
+  const { runtimeBucket } = getSupabaseServerEnv();
+  const supabase = getAdminSupabaseClient();
+  const { error } = await supabase.storage
+    .from(runtimeBucket)
+    .upload(input.objectPath, input.buffer, {
+      contentType: input.contentType,
+      upsert: true,
+      cacheControl: input.cacheControl
+    });
+
+  if (error) {
+    throw new StoryRepositoryError(error.message);
+  }
+
+  return withBucketPath(input.objectPath);
+}
+
+function toStorageObjectPath(storagePath: string) {
+  const { runtimeBucket } = getSupabaseServerEnv();
+  const bucketPrefix = `${runtimeBucket}/`;
+
+  return storagePath.startsWith(bucketPrefix)
+    ? storagePath.slice(bucketPrefix.length)
+    : storagePath;
+}
+
+function isHttpUrl(value: string) {
+  return /^https?:\/\//i.test(value);
+}
+
+function getStoragePathExtension(value: string | null | undefined) {
+  const cleanPath = value?.split(/[?#]/)[0] ?? "";
+  const fileName = cleanPath.split("/").pop() ?? "";
+  const match = fileName.match(/\.([a-zA-Z0-9]+)$/);
+
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+function shouldInspectPortraitSourceForSvg(storagePath: string) {
+  const extension = getStoragePathExtension(storagePath);
+
+  return extension === "svg" || extension == null;
+}
+
+function bytesLookLikeSvg(bytes: Buffer) {
+  const prefix = bytes
+    .subarray(0, 2048)
+    .toString("utf8")
+    .replace(/^\uFEFF/, "")
+    .trimStart()
+    .toLowerCase();
+
+  return (
+    prefix.startsWith("<svg") ||
+    (prefix.startsWith("<?xml") && prefix.includes("<svg"))
+  );
+}
+
+async function blobToBuffer(data: Blob | { text: () => Promise<string> }) {
+  if ("arrayBuffer" in data && typeof data.arrayBuffer === "function") {
+    return Buffer.from(await data.arrayBuffer());
+  }
+
+  return Buffer.from(await data.text(), "utf8");
+}
+
+async function downloadStorageObjectBytes(storagePath: string) {
+  if (isHttpUrl(storagePath)) {
+    const response = await fetch(storagePath);
+
+    if (!response.ok) {
+      return null;
+    }
+
+    return Buffer.from(await response.arrayBuffer());
+  }
+
+  const { runtimeBucket } = getSupabaseServerEnv();
+  const supabase = getAdminSupabaseClient();
+  const objectPath = toStorageObjectPath(storagePath);
+  let data: Blob | { text: () => Promise<string> } | null = null;
+  let error: Error | null = null;
+
+  for (let attempt = 0; attempt < STORAGE_FETCH_MAX_ATTEMPTS; attempt += 1) {
+    const nextResult = await supabase.storage
+      .from(runtimeBucket)
+      .download(objectPath);
+    data = nextResult.data;
+    error = nextResult.error;
+
+    if (!nextResult.error || !isStorageFetchFailureError(nextResult.error)) {
+      break;
+    }
+
+    if (attempt + 1 < STORAGE_FETCH_MAX_ATTEMPTS) {
+      await waitForStorageRetryDelay(attempt);
+    }
+  }
+
+  if (error) {
+    if (isStorageMissingError(error)) {
+      return null;
+    }
+
+    if (isStorageFetchFailureError(error)) {
+      throw new StoryRepositoryError(STORAGE_FETCH_FAILURE_MESSAGE);
+    }
+
+    throw new StoryRepositoryError(error.message);
+  }
+
+  return data ? blobToBuffer(data) : null;
+}
+
+function normalizeDerivativePathToken(value: string) {
+  return value.replace(/[^a-zA-Z0-9._-]+/g, "-").replace(/^-+|-+$/g, "");
+}
+
+function getPortraitDerivativeObjectPath(input: {
+  sourceAssetId: string;
+  sourceHash: string;
+}) {
+  return `${RUNTIME_PREFIX}/portrait-derivatives/${normalizeDerivativePathToken(
+    input.sourceAssetId
+  )}/${input.sourceHash.slice(0, 16)}.reader.webp`;
+}
+
+function findReusableIosPortraitDerivative(input: {
+  derivatives: RuntimeImageDerivative[] | undefined;
+  sourceHash: string;
+}) {
+  return (
+    input.derivatives?.find(
+      (derivative) =>
+        derivative.targetPlatform === "ios" &&
+        derivative.renderKind === "bitmap" &&
+        derivative.contentType === "image/webp" &&
+        derivative.sourceHash === input.sourceHash
+    ) ?? null
+  );
+}
+
+async function createIosPortraitDerivative(input: {
+  sourceAssetId: string;
+  sourceStoragePath: string;
+  existingDerivatives?: RuntimeImageDerivative[];
+}) {
+  if (!shouldInspectPortraitSourceForSvg(input.sourceStoragePath)) {
+    return input.existingDerivatives ?? [];
+  }
+
+  const sourceBytes = await downloadStorageObjectBytes(input.sourceStoragePath);
+
+  if (!sourceBytes || !bytesLookLikeSvg(sourceBytes)) {
+    return input.existingDerivatives ?? [];
+  }
+
+  const sourceHash = createHash("sha256").update(sourceBytes).digest("hex");
+  const existingDerivative = findReusableIosPortraitDerivative({
+    derivatives: input.existingDerivatives,
+    sourceHash
+  });
+
+  if (existingDerivative) {
+    return [existingDerivative];
+  }
+
+  const rendered = await sharp(sourceBytes, {
+    density: 72
+  })
+    .ensureAlpha()
+    .webp({
+      alphaQuality: 100,
+      lossless: true
+    })
+    .toBuffer({
+      resolveWithObject: true
+    });
+  const derivativeHash = createHash("sha256")
+    .update(rendered.data)
+    .digest("hex");
+  const derivativeStoragePath = await uploadBufferToStorage({
+    buffer: rendered.data,
+    objectPath: getPortraitDerivativeObjectPath({
+      sourceAssetId: input.sourceAssetId,
+      sourceHash
+    }),
+    contentType: "image/webp",
+    cacheControl: "31536000"
+  });
+  const derivative: RuntimeImageDerivative = {
+    storagePath: derivativeStoragePath,
+    contentType: "image/webp",
+    renderKind: "bitmap",
+    targetPlatform: "ios",
+    width: rendered.info.width,
+    height: rendered.info.height,
+    hash: derivativeHash,
+    sourceHash,
+    sourceAssetId: input.sourceAssetId,
+    sourceStoragePath: input.sourceStoragePath,
+    sourceRenderKind: "svg",
+    derivativeOf: input.sourceStoragePath
+  };
+
+  return [derivative];
+}
+
+async function addRuntimePortraitDerivativesToSnapshot(
+  snapshot: StoryAuthoringSnapshot
+): Promise<StoryAuthoringSnapshot> {
+  const characters = await Promise.all(
+    snapshot.characters.map(async (character) => ({
+      ...character,
+      emotions: await Promise.all(
+        character.emotions.map(async (emotion) => ({
+          ...emotion,
+          imageDerivatives: await createIosPortraitDerivative({
+            sourceAssetId: emotion.id,
+            sourceStoragePath: emotion.imagePath,
+            existingDerivatives: emotion.imageDerivatives
+          })
+        }))
+      ),
+      dresses: await Promise.all(
+        character.dresses.map(async (dress) => ({
+          ...dress,
+          emotionOverrides: await Promise.all(
+            dress.emotionOverrides.map(async (override) => ({
+              ...override,
+              imageDerivatives: await createIosPortraitDerivative({
+                sourceAssetId: override.id,
+                sourceStoragePath: override.imagePath,
+                existingDerivatives: override.imageDerivatives
+              })
+            }))
+          )
+        }))
+      )
+    }))
+  );
+
+  return {
+    ...snapshot,
+    characters
+  };
+}
+
 async function removeStorageObjects(storagePaths: string[]) {
   if (storagePaths.length === 0) {
     return;
@@ -797,6 +1053,7 @@ function toFallbackCharacterDefinition(character: RuntimeCharacter) {
       key: emotion.key,
       label: emotion.label,
       imagePath: emotion.imagePath,
+      imageDerivatives: emotion.imageDerivatives,
       createdAt: timestamp,
       updatedAt: timestamp
     })),
@@ -818,6 +1075,7 @@ function toFallbackCharacterDefinition(character: RuntimeCharacter) {
           ),
           emotionKey: override.emotionKey,
           imagePath: override.imagePath,
+          imageDerivatives: override.imageDerivatives,
           createdAt: timestamp,
           updatedAt: timestamp
         })
@@ -1157,8 +1415,10 @@ async function persistChaptersSnapshot(snapshot: StoryAuthoringSnapshot) {
 
 async function persistRuntimeArtifacts(snapshot: StoryAuthoringSnapshot) {
   const { runtimeBucket } = getSupabaseServerEnv();
+  const runtimeSnapshot =
+    await addRuntimePortraitDerivativesToSnapshot(snapshot);
   const artifacts = compileRuntimeStory({
-    snapshot,
+    snapshot: runtimeSnapshot,
     bucket: runtimeBucket,
     runtimePrefix: RUNTIME_PREFIX
   });
@@ -1194,8 +1454,10 @@ async function persistRuntimeChapterArtifact(
   chapterId: string
 ) {
   const { runtimeBucket } = getSupabaseServerEnv();
+  const runtimeSnapshot =
+    await addRuntimePortraitDerivativesToSnapshot(snapshot);
   const chapterBundle = compileRuntimeChapterBundle({
-    snapshot,
+    snapshot: runtimeSnapshot,
     chapterId,
     bucket: runtimeBucket,
     runtimePrefix: RUNTIME_PREFIX

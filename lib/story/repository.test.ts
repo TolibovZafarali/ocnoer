@@ -1502,6 +1502,56 @@ describe("non-dialogue commits", () => {
     expect(compileRuntimeStoryMock).toHaveBeenCalled();
   });
 
+  it("generates uploaded iOS bitmap derivatives before compiling SVG character portraits", async () => {
+    await createCharacter({
+      name: "Lucair",
+      slug: "lucair",
+      bio: null,
+      initialEmotionKey: "default",
+      initialEmotionLabel: "Default",
+      imageFile: new File(
+        [
+          '<svg xmlns="http://www.w3.org/2000/svg" width="4" height="6" viewBox="0 0 4 6"><rect x="1" y="1" width="2" height="3" fill="red"/></svg>'
+        ],
+        "lucair.svg",
+        {
+          type: "image/svg+xml"
+        }
+      )
+    });
+
+    const derivativeUpload = uploadMock.mock.calls.find(
+      ([objectPath]) =>
+        objectPath.startsWith("runtime/portrait-derivatives/") &&
+        objectPath.endsWith(".reader.webp")
+    );
+    const compileInput = compileRuntimeStoryMock.mock.calls.at(-1)?.[0] as
+      | { snapshot: { characters: Array<{ slug: string; emotions: any[] }> } }
+      | undefined;
+    const lucair = compileInput?.snapshot.characters.find(
+      (character: { slug: string }) => character.slug === "lucair"
+    );
+    const emotion = lucair?.emotions[0];
+
+    expect(derivativeUpload?.[2]).toMatchObject({
+      cacheControl: "31536000",
+      contentType: "image/webp",
+      upsert: true
+    });
+    expect(emotion?.imageDerivatives?.[0]).toMatchObject({
+      storagePath: `runtime/${derivativeUpload?.[0]}`,
+      contentType: "image/webp",
+      renderKind: "bitmap",
+      targetPlatform: "ios",
+      width: 4,
+      height: 6,
+      sourceAssetId: emotion.id,
+      sourceStoragePath: emotion.imagePath,
+      sourceRenderKind: "svg",
+      derivativeOf: emotion.imagePath
+    });
+  });
+
   it("persists chapter black-card text without altering existing scenes", async () => {
     await updateChapter({
       chapterId: "chapter_1",

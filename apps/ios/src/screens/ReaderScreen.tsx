@@ -638,6 +638,7 @@ export function ReaderScreen(props: ReaderScreenProps) {
               <View pointerEvents="box-none" style={styles.dialogueLayer}>
                 <NativeReaderDialogue
                   actionError={reader.actionError}
+                  canAdvance={reader.canAdvance}
                   catNameInputError={reader.catNameInputError}
                   catNameInputValue={reader.catNameInputValue}
                   isExiting={isLineExiting}

@@ -427,4 +427,57 @@ describe("compileRuntimeStory", () => {
     }
     expect(ocnoerEntry?.stage.left?.imagePath).toBe(expectedPath);
   });
+
+  it("publishes iOS bitmap derivative metadata for character portraits", () => {
+    const derivative = {
+      storagePath:
+        "runtime/runtime/portrait-derivatives/emotion_smile/hash.reader.webp",
+      contentType: "image/webp",
+      renderKind: "bitmap" as const,
+      targetPlatform: "ios" as const,
+      width: 900,
+      height: 1400,
+      hash: "derivative-hash",
+      sourceHash: "source-hash",
+      sourceAssetId: "emotion_smile",
+      sourceStoragePath: "runtime/media/ocnoer-smile.svg",
+      sourceRenderKind: "svg" as const,
+      derivativeOf: "runtime/media/ocnoer-smile.svg"
+    };
+    const compiled = compileRuntimeStory({
+      snapshot: {
+        ...snapshot,
+        characters: snapshot.characters.map((character) =>
+          character.id === "character_ocnoer"
+            ? {
+                ...character,
+                emotions: character.emotions.map((emotion) =>
+                  emotion.key === "smile"
+                    ? {
+                        ...emotion,
+                        imagePath: "runtime/media/ocnoer-smile.svg",
+                        imageDerivatives: [derivative]
+                      }
+                    : emotion
+                )
+              }
+            : character
+        )
+      },
+      bucket: "runtime",
+      runtimePrefix: "runtime",
+      generatedAt: "2026-03-20T01:00:00.000Z"
+    });
+    const runtimeOcnoer = compiled.charactersManifest.characters.find(
+      (character) => character.id === "character_ocnoer"
+    );
+    const smileEmotion = runtimeOcnoer?.emotions.find(
+      (emotion) => emotion.key === "smile"
+    );
+    const ocnoerEntry =
+      compiled.chapterBundles[0]?.bundle.chapter.scenes[0]?.dialogue[2];
+
+    expect(smileEmotion?.imageDerivatives).toEqual([derivative]);
+    expect(ocnoerEntry?.stage.left?.imageDerivatives).toEqual([derivative]);
+  });
 });

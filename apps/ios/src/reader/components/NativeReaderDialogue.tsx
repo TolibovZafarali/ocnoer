@@ -25,7 +25,11 @@ import {
   usePreloadedReaderImageRef,
   usePreloadedReaderSvgAst
 } from "../imagePreload";
-import { createNativeReaderDialogueAnimationKey } from "../nativeReaderDialogueMotion";
+import {
+  createNativeReaderDialogueAnimationKey,
+  getNativeReaderTypingExpectedDurationMs,
+  getNativeReaderVisibleTextLengthAtElapsedMs
+} from "../nativeReaderDialogueMotion";
 import { NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND } from "../nativeReaderStageStyle";
 import { OcnoerTextInput } from "../../ui/primitives";
 import { ocnoerTheme, ocnoerWebPlayer } from "../../ui/theme";
@@ -37,6 +41,7 @@ import {
 type ReaderDialogueProps = {
   presentation: NativeReaderPresentation;
   actionError: string | null;
+  canAdvance: boolean;
   persistenceError: string | null;
   catNameInputValue: string;
   catNameInputError: string | null;
@@ -49,11 +54,39 @@ type ReaderDialogueProps = {
   onCatNameInputChange: (value: string) => void;
 };
 
-const TYPING_BASE_DELAY_MS = 22;
-const TYPING_COMMA_EXTRA_DELAY_MS = 42;
-const TYPING_SENTENCE_EXTRA_DELAY_MS = 110;
 const DIALOGUE_BACKDROP_BLUR_INTENSITY = 100;
 const DIALOGUE_BACKDROP_BLUR_TINT = "dark";
+const TEXT_FRAME_STALL_WARNING_MS = 100;
+
+declare global {
+  // Development probe for separating presentation commit/render delay from
+  // typewriter cost.
+  // eslint-disable-next-line no-var
+  var __OCNOER_READER_INSTANT_DIALOGUE_TEXT: boolean | undefined;
+}
+
+function isDevelopment() {
+  return typeof __DEV__ !== "undefined" ? __DEV__ : false;
+}
+
+function shouldUseInstantDialogueText() {
+  return (
+    isDevelopment() && Boolean(globalThis.__OCNOER_READER_INSTANT_DIALOGUE_TEXT)
+  );
+}
+
+function logDialogueTiming(message: string, details?: Record<string, unknown>) {
+  if (!isDevelopment()) {
+    return;
+  }
+
+  if (details) {
+    console.info(`[reader-dialogue] ${message}`, details);
+    return;
+  }
+
+  console.info(`[reader-dialogue] ${message}`);
+}
 
 function getDialogueCardPositionStyle(
   presentation: NativeReaderPresentation
@@ -98,18 +131,6 @@ function getDialogueMotionDirection(
   }
 
   return "from-bottom";
-}
-
-function getTypingCharacterDelayMs(character: string) {
-  if (/[.!?]/.test(character)) {
-    return TYPING_BASE_DELAY_MS + TYPING_SENTENCE_EXTRA_DELAY_MS;
-  }
-
-  if (character === ",") {
-    return TYPING_BASE_DELAY_MS + TYPING_COMMA_EXTRA_DELAY_MS;
-  }
-
-  return TYPING_BASE_DELAY_MS;
 }
 
 function shouldShowSpeakerLabel(presentation: NativeReaderPresentation) {
@@ -303,11 +324,23 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
   );
   const [typingState, setTypingState] = useState({
     key: typingKey,
+    startedAt: Date.now(),
     visibleTextLength: 0
   });
   const visibleTextLength =
     typingState.key === typingKey ? typingState.visibleTextLength : 0;
+  const typingStartedAt =
+    typingState.key === typingKey ? typingState.startedAt : Date.now();
+  const textExpectedDurationMs = useMemo(
+    () =>
+      getNativeReaderTypingExpectedDurationMs({
+        characters: textCharacters,
+        initialDelayMs: ocnoerTheme.motion.normalMs
+      }),
+    [textCharacters]
+  );
   const [dressIndex, setDressIndex] = useState(0);
+  const textCompletionLoggedKeyRef = useRef<string | null>(null);
   const selectedDressOption = useMemo(() => {
     if (props.presentation.status !== "supported") {
       return null;
@@ -327,9 +360,38 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
   useEffect(() => {
     setTypingState({
       key: typingKey,
+      startedAt: Date.now(),
       visibleTextLength: 0
     });
-  }, [typingKey]);
+    textCompletionLoggedKeyRef.current = null;
+
+    logDialogueTiming("text animation started", {
+      dialogueEntryId: props.presentation.dialogueEntryId,
+      entryType: props.presentation.entryType,
+      TEXT_EXPECTED_MS: textExpectedDurationMs,
+      typingKey
+    });
+  }, [
+    props.presentation.dialogueEntryId,
+    props.presentation.entryType,
+    textExpectedDurationMs,
+    typingKey
+  ]);
+
+  useEffect(() => {
+    logDialogueTiming("dialogue component mounted", {
+      dialogueEntryId: props.presentation.dialogueEntryId,
+      entryType: props.presentation.entryType,
+      hasPortrait: Boolean(
+        props.presentation.leftPortrait || props.presentation.rightPortrait
+      )
+    });
+  }, [
+    props.presentation.dialogueEntryId,
+    props.presentation.entryType,
+    props.presentation.leftPortrait,
+    props.presentation.rightPortrait
+  ]);
 
   const hasTypeableDialogueText =
     props.presentation.status === "supported" && dialogueText.length > 0;
@@ -349,24 +411,18 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
 
       return {
         key: typingKey,
+        startedAt: currentState.startedAt,
         visibleTextLength: textCharacters.length
       };
     });
   }, [canCompleteTyping, textCharacters.length, typingKey]);
 
   useEffect(() => {
-    if (!canCompleteTyping) {
+    if (!hasTypeableDialogueText || props.isExiting) {
       return;
     }
 
-    const previousCharacter = textCharacters[visibleTextLength - 1] ?? null;
-    const typingDelayMs =
-      visibleTextLength === 0
-        ? ocnoerTheme.motion.normalMs + TYPING_BASE_DELAY_MS
-        : previousCharacter
-          ? getTypingCharacterDelayMs(previousCharacter)
-          : TYPING_BASE_DELAY_MS;
-    const timer = setTimeout(() => {
+    if (shouldUseInstantDialogueText()) {
       setTypingState((currentState) => {
         if (currentState.key !== typingKey) {
           return currentState;
@@ -374,18 +430,122 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
 
         return {
           key: typingKey,
+          startedAt: currentState.startedAt,
+          visibleTextLength: textCharacters.length
+        };
+      });
+      logDialogueTiming("text animation completed", {
+        dialogueEntryId: props.presentation.dialogueEntryId,
+        instantTextProbe: true,
+        TEXT_ACTUAL_MS: 0,
+        TEXT_EXPECTED_MS: textExpectedDurationMs,
+        typingKey
+      });
+      return;
+    }
+
+    let cancelled = false;
+    let frameId: number | null = null;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    let lastFrameAt = Date.now();
+
+    const clearScheduledTick = () => {
+      if (frameId != null && typeof cancelAnimationFrame === "function") {
+        cancelAnimationFrame(frameId);
+      }
+
+      if (timeoutId != null) {
+        clearTimeout(timeoutId);
+      }
+    };
+
+    const scheduleTick = () => {
+      if (typeof requestAnimationFrame === "function") {
+        frameId = requestAnimationFrame(tick);
+        return;
+      }
+
+      timeoutId = setTimeout(tick, 16);
+    };
+
+    const tick = () => {
+      if (cancelled) {
+        return;
+      }
+
+      const now = Date.now();
+      const frameDeltaMs = now - lastFrameAt;
+
+      if (frameDeltaMs > TEXT_FRAME_STALL_WARNING_MS) {
+        logDialogueTiming("JS frame stall during text animation", {
+          dialogueEntryId: props.presentation.dialogueEntryId,
+          frameDeltaMs,
+          hasPortrait: Boolean(
+            props.presentation.leftPortrait || props.presentation.rightPortrait
+          )
+        });
+      }
+
+      lastFrameAt = now;
+
+      const nextVisibleTextLength = getNativeReaderVisibleTextLengthAtElapsedMs({
+        characters: textCharacters,
+        elapsedMs: now - typingStartedAt,
+        initialDelayMs: ocnoerTheme.motion.normalMs
+      });
+
+      setTypingState((currentState) => {
+        if (currentState.key !== typingKey) {
+          return currentState;
+        }
+
+        if (currentState.visibleTextLength === nextVisibleTextLength) {
+          return currentState;
+        }
+
+        return {
+          key: typingKey,
+          startedAt: currentState.startedAt,
           visibleTextLength: Math.min(
-            currentState.visibleTextLength + 1,
+            nextVisibleTextLength,
             textCharacters.length
           )
         };
       });
-    }, typingDelayMs);
+
+      if (nextVisibleTextLength >= textCharacters.length) {
+        if (textCompletionLoggedKeyRef.current !== typingKey) {
+          textCompletionLoggedKeyRef.current = typingKey;
+          logDialogueTiming("text animation completed", {
+            dialogueEntryId: props.presentation.dialogueEntryId,
+            TEXT_ACTUAL_MS: now - typingStartedAt,
+            TEXT_EXPECTED_MS: textExpectedDurationMs,
+            typingKey
+          });
+        }
+        return;
+      }
+
+      scheduleTick();
+    };
+
+    scheduleTick();
 
     return () => {
-      clearTimeout(timer);
+      cancelled = true;
+      clearScheduledTick();
     };
-  }, [canCompleteTyping, textCharacters, typingKey, visibleTextLength]);
+  }, [
+    hasTypeableDialogueText,
+    props.isExiting,
+    props.presentation.dialogueEntryId,
+    props.presentation.leftPortrait,
+    props.presentation.rightPortrait,
+    textCharacters,
+    textExpectedDurationMs,
+    typingKey,
+    typingStartedAt
+  ]);
 
   if (props.presentation.status === "unsupported") {
     const animationKey = createNativeReaderDialogueAnimationKey(
@@ -566,8 +726,18 @@ export function NativeReaderDialogue(props: ReaderDialogueProps) {
           {!isDressPrompt ? (
             <ContinueArrow
               key={typingKey}
-              canAdvance={!props.isMoving && isTextComplete}
-              isMoving={props.isMoving || props.isSavingCatName}
+              canAdvance={
+                !props.isMoving &&
+                isTextComplete &&
+                (supportedPresentation.needsCatNameInput || props.canAdvance)
+              }
+              isMoving={
+                props.isMoving ||
+                props.isSavingCatName ||
+                (isTextComplete &&
+                  !supportedPresentation.needsCatNameInput &&
+                  !props.canAdvance)
+              }
               isVisible={shouldShowContinueArrow}
               onAdvance={() => {
                 if (supportedPresentation.needsCatNameInput) {

@@ -3,6 +3,9 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mockFiles = new Map<string, string | Uint8Array>();
 const mockLoadAsync = vi.fn(async () => ({ id: "image-ref" }));
 const mockPrefetch = vi.fn(async () => true);
+const mockParse = vi.fn(() => ({
+  type: "svg"
+}));
 
 function joinUri(parts: Array<string | { uri: string }>) {
   return parts
@@ -93,9 +96,7 @@ vi.mock("expo-image", () => ({
 }));
 
 vi.mock("react-native-svg", () => ({
-  parse: () => ({
-    type: "svg"
-  })
+  parse: mockParse
 }));
 
 function createPngBytes() {
@@ -133,6 +134,7 @@ describe("reader asset cache", () => {
     mockFiles.clear();
     mockLoadAsync.mockClear();
     mockPrefetch.mockClear();
+    mockParse.mockClear();
     vi.resetModules();
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
@@ -189,7 +191,7 @@ describe("reader asset cache", () => {
     });
   });
 
-  it("renders source SVG wrappers through the original cached SVG by default", async () => {
+  it("renders source SVG wrappers through expo-image by default", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
@@ -220,13 +222,13 @@ describe("reader asset cache", () => {
     expect(result.status).toBe("success");
     expect(result.assets[0]).toMatchObject({
       renderKind: "svg-raster-wrapper",
-      renderMode: "original-svg",
+      renderMode: "source-svg-image",
       alphaMode: "alpha-safe",
       contentType: "image/svg+xml"
     });
     expect(getCachedAssetUri(assetRef)?.endsWith(".svg")).toBe(true);
     expect(getAssetRenderKind(assetRef)).toBe("svg-raster-wrapper");
-    expect(getAssetRenderMode(assetRef)).toBe("original-svg");
+    expect(getAssetRenderMode(assetRef)).toBe("source-svg-image");
     expect(getAssetLayoutMetrics(assetRef)).toMatchObject({
       svgWrapper: {
         width: 900,
@@ -239,7 +241,8 @@ describe("reader asset cache", () => {
         }
       }
     });
-    expect(mockPrefetch).not.toHaveBeenCalled();
+    expect(mockPrefetch).toHaveBeenCalled();
+    expect(mockParse).not.toHaveBeenCalled();
   });
 
   it("keeps mislabeled source SVG wrappers as SVG instead of extracting to jpeg", async () => {
@@ -265,16 +268,16 @@ describe("reader asset cache", () => {
 
     expect(result.status).toBe("success");
     expect(result.assets[0]).toMatchObject({
-      renderMode: "original-svg",
+      renderMode: "source-svg-image",
       alphaMode: "alpha-safe",
       contentType: "image/svg+xml"
     });
-    expect(getAssetRenderMode(assetRef)).toBe("original-svg");
+    expect(getAssetRenderMode(assetRef)).toBe("source-svg-image");
     expect(getCachedAssetUri(assetRef)?.endsWith(".svg")).toBe(true);
     expect(getCachedAssetUri(assetRef)?.endsWith(".embedded.jpg")).toBe(false);
   });
 
-  it("classifies true vector SVG source assets with their own render mode", async () => {
+  it("renders true vector portrait SVG source assets through expo-image", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
@@ -302,14 +305,14 @@ describe("reader asset cache", () => {
     expect(result.status).toBe("success");
     expect(result.assets[0]).toMatchObject({
       renderKind: "svg-vector",
-      renderMode: "true-vector-svg"
+      renderMode: "source-svg-image"
     });
     expect(getAssetRenderKind(assetRef)).toBe("svg-vector");
-    expect(getAssetRenderMode(assetRef)).toBe("true-vector-svg");
+    expect(getAssetRenderMode(assetRef)).toBe("source-svg-image");
     expect(getCachedAssetUri(assetRef)?.endsWith(".svg")).toBe(true);
   });
 
-  it("uses original SVG fallback when extraction transparency cannot be proven", async () => {
+  it("keeps opaque embedded SVG wrappers on the source SVG image path", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async () =>
@@ -335,10 +338,10 @@ describe("reader asset cache", () => {
     expect(result.status).toBe("success");
     expect(result.assets[0]).toMatchObject({
       renderKind: "svg-raster-wrapper",
-      renderMode: "original-svg",
+      renderMode: "source-svg-image",
       alphaMode: "alpha-safe"
     });
-    expect(getAssetRenderMode(assetRef)).toBe("original-svg");
+    expect(getAssetRenderMode(assetRef)).toBe("source-svg-image");
     expect(getCachedAssetUri(assetRef)?.endsWith(".svg")).toBe(true);
   });
 
@@ -407,6 +410,9 @@ describe("reader asset cache", () => {
     };
 
     expect(
+      getReaderAssetCacheKeyForRenderMode(assetRef, "source-svg-image")
+    ).toContain("source-svg-image-v2");
+    expect(
       getReaderAssetCacheKeyForRenderMode(assetRef, "original-svg")
     ).toContain("source-svg-v2");
     expect(
@@ -421,11 +427,12 @@ describe("reader asset cache", () => {
     expect(
       new Set([
         getReaderAssetCacheKeyForRenderMode(assetRef, "original-svg"),
+        getReaderAssetCacheKeyForRenderMode(assetRef, "source-svg-image"),
         getReaderAssetCacheKeyForRenderMode(assetRef, "extracted-raster"),
         getReaderAssetCacheKeyForRenderMode(assetRef, "bitmap"),
         getReaderAssetCacheKeyForRenderMode(assetRef, "true-vector-svg")
       ]).size
-    ).toBe(4);
+    ).toBe(5);
   });
 
   it("does not reuse stale extracted files for source SVG render mode", async () => {
@@ -442,7 +449,7 @@ describe("reader asset cache", () => {
     };
     const sourceSvgCacheKey = getReaderAssetCacheKeyForRenderMode(
       assetRef,
-      "original-svg"
+      "source-svg-image"
     );
     mockFiles.set(
       `file:///cache/ocnoer-reader-assets-v2/${sourceSvgCacheKey}.embedded.png`,
@@ -461,6 +468,116 @@ describe("reader asset cache", () => {
     expect(result.status).toBe("success");
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(getCachedAssetUri(assetRef)?.endsWith(".svg")).toBe(true);
+  });
+
+  it("prefers transparent bitmap derivatives when runtime metadata provides them", async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      createResponse({
+        contentType: "image/png",
+        body: createPngBytes()
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const {
+      dumpReaderAssetRenderModes,
+      ensureSceneAssetsReady,
+      getAssetRenderMode,
+      getCachedAssetUri,
+      getReaderAssetRenderDiagnostics
+    } = await import("./imagePreload");
+    const assetRef = {
+      role: "portrait" as const,
+      url: "https://example.supabase.co/storage/v1/object/public/runtime/portrait.svg",
+      storagePath: "runtime/portrait.svg",
+      cacheKey: "portrait:derivative",
+      derivatives: [
+        {
+          storagePath: "runtime/portrait.reader.png",
+          url: "https://example.supabase.co/storage/v1/object/public/runtime/portrait.reader.png",
+          cacheKey: "portrait:derivative:png",
+          contentType: "image/png",
+          renderKind: "bitmap" as const,
+          width: 900,
+          height: 1400,
+          hash: "abc123",
+          derivativeOf: "runtime/portrait.svg"
+        }
+      ]
+    };
+
+    const result = await ensureSceneAssetsReady("scene_derivative", [assetRef]);
+
+    expect(result.status).toBe("success");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://example.supabase.co/storage/v1/object/public/runtime/portrait.reader.png"
+    );
+    expect(result.assets[0]).toMatchObject({
+      renderMode: "bitmap",
+      renderKind: "bitmap",
+      contentType: "image/png"
+    });
+    expect(getAssetRenderMode(assetRef)).toBe("bitmap");
+    expect(getAssetRenderMode(assetRef)).not.toBe("source-svg-image");
+    expect(getCachedAssetUri(assetRef)?.endsWith(".png")).toBe(true);
+    expect(getReaderAssetRenderDiagnostics(assetRef)).toMatchObject({
+      PORTRAIT_RENDER_MODE: "bitmap",
+      derivativeAssetExists: true,
+      derivativeAssetSelected: true,
+      sourceSvgFallbackUsed: false,
+      storagePath: "runtime/portrait.reader.png"
+    });
+    expect(dumpReaderAssetRenderModes([assetRef])[0]).toMatchObject({
+      PORTRAIT_RENDER_MODE: "bitmap",
+      derivativeAssetSelected: true,
+      localCachedUri: expect.stringContaining(".png")
+    });
+  });
+
+  it("logs a loud development warning when a portrait SVG has no derivative", async () => {
+    vi.stubGlobal("__DEV__", true);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        createResponse({
+          contentType: "image/svg+xml",
+          body: '<svg width="100" height="200"><path d="M0 0h100v200H0z" /></svg>'
+        })
+      )
+    );
+    const {
+      ensureSceneAssetsReady,
+      getAssetRenderMode,
+      getReaderAssetRenderDiagnostics
+    } = await import("./imagePreload");
+    const assetRef = {
+      role: "portrait" as const,
+      url: "https://example.supabase.co/storage/v1/object/public/runtime/no-derivative.svg",
+      storagePath: "runtime/no-derivative.svg",
+      cacheKey: "portrait:no-derivative",
+      sourceRenderKind: "svg" as const
+    };
+
+    const result = await ensureSceneAssetsReady("scene_no_derivative", [
+      assetRef
+    ]);
+
+    expect(result.status).toBe("success");
+    expect(getAssetRenderMode(assetRef)).toBe("source-svg-image");
+    expect(getReaderAssetRenderDiagnostics(assetRef)).toMatchObject({
+      PORTRAIT_RENDER_MODE: "source-svg-image",
+      derivativeAssetExists: false,
+      derivativeAssetSelected: false,
+      sourceSvgFallbackUsed: true
+    });
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining(
+        "iOS character portrait is falling back to source SVG"
+      ),
+      expect.objectContaining({
+        storagePath: "runtime/no-derivative.svg"
+      })
+    );
   });
 
   it("reports asset failures instead of marking a scene ready", async () => {
@@ -488,5 +605,95 @@ describe("reader asset cache", () => {
 
     expect(result.status).toBe("error");
     expect(getAssetCacheErrorMessage(result)).toContain("runtime/missing");
+  });
+  it("can force original react-native-svg mode in development", async () => {
+    vi.stubGlobal("__DEV__", true);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        createResponse({
+          contentType: "image/svg+xml",
+          body: '<svg width="100" height="200"><path d="M0 0h100v200H0z" /></svg>'
+        })
+      )
+    );
+    const {
+      ensureSceneAssetsReady,
+      getAssetRenderMode,
+      setReaderPortraitDebugRenderModeOverrides
+    } = await import("./imagePreload");
+    const assetRef = {
+      role: "portrait" as const,
+      url: "https://example.supabase.co/storage/v1/object/public/runtime/force_original.svg",
+      storagePath: "runtime/force_original.svg",
+      cacheKey: "portrait:force_original"
+    };
+
+    setReaderPortraitDebugRenderModeOverrides([
+      {
+        storagePathIncludes: "force_original",
+        mode: "original-svg"
+      }
+    ]);
+
+    const result = await ensureSceneAssetsReady("scene_force_original", [
+      assetRef
+    ]);
+
+    expect(result.status).toBe("success");
+    expect(getAssetRenderMode(assetRef)).toBe("original-svg");
+    expect(mockParse).toHaveBeenCalled();
+  });
+
+  it("allows source SVG only when a development override explicitly forces it", async () => {
+    vi.stubGlobal("__DEV__", true);
+    const fetchMock = vi.fn(async (url: string) =>
+      createResponse({
+        contentType: url.endsWith(".webp") ? "image/webp" : "image/svg+xml",
+        body: url.endsWith(".webp")
+          ? createPngBytes()
+          : '<svg width="100" height="200"><path d="M0 0h100v200H0z" /></svg>'
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const {
+      ensureSceneAssetsReady,
+      getAssetRenderMode,
+      setReaderPortraitDebugRenderModeOverrides
+    } = await import("./imagePreload");
+    const assetRef = {
+      role: "portrait" as const,
+      url: "https://example.supabase.co/storage/v1/object/public/runtime/force-source.svg",
+      storagePath: "runtime/force-source.svg",
+      cacheKey: "portrait:force-source",
+      sourceRenderKind: "svg" as const,
+      derivatives: [
+        {
+          storagePath: "runtime/force-source.reader.webp",
+          url: "https://example.supabase.co/storage/v1/object/public/runtime/force-source.reader.webp",
+          cacheKey: "portrait:force-source:webp",
+          contentType: "image/webp",
+          renderKind: "bitmap" as const,
+          width: 100,
+          height: 200,
+          hash: "webp123",
+          derivativeOf: "runtime/force-source.svg"
+        }
+      ]
+    };
+
+    setReaderPortraitDebugRenderModeOverrides([
+      {
+        storagePathIncludes: "force-source",
+        mode: "source-svg-image"
+      }
+    ]);
+
+    await ensureSceneAssetsReady("scene_force_source", [assetRef]);
+
+    expect(getAssetRenderMode(assetRef)).toBe("source-svg-image");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://example.supabase.co/storage/v1/object/public/runtime/force-source.svg"
+    );
   });
 });

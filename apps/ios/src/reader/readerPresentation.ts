@@ -65,6 +65,8 @@ type NativeReaderPresentationBase = {
   rightPortrait: NativeReaderPortrait | null;
   stageCharacters: NativeReaderPortrait[];
   dialogueCardPlacement: NativeDialogueCardPlacement;
+  speakerId: string | null;
+  speakerStatus: string;
   blockingPreloadImageUrls: string[];
   preloadImageUrls: string[];
   blockingAssetRefs: NativeReaderAssetRef[];
@@ -154,6 +156,33 @@ function getDialogueCardPlacement(
   }
 
   return "center";
+}
+
+function getSpeakerReadinessIdentity(entry: RuntimeDialogueEntry) {
+  switch (entry.speaker.type) {
+    case "character":
+      return {
+        speakerId: entry.speaker.characterId,
+        speakerStatus: `${entry.speaker.type}:${entry.speaker.characterId}:${entry.speaker.emotionKey}`
+      };
+    case "dress_prompt":
+      return {
+        speakerId: entry.speaker.characterId,
+        speakerStatus: `${entry.speaker.type}:${entry.speaker.characterId}:${entry.speaker.dressOptions
+          .map((option) => `${option.key}:${option.previewImagePath ?? ""}`)
+          .join("|")}`
+      };
+    case "cat_name_prompt":
+      return {
+        speakerId: entry.speaker.characterId,
+        speakerStatus: `${entry.speaker.type}:${entry.speaker.characterId}`
+      };
+    case "narrator":
+      return {
+        speakerId: null,
+        speakerStatus: "narrator"
+      };
+  }
 }
 
 function getDressOptions(input: {
@@ -362,6 +391,7 @@ export function createNativeReaderPresentation(input: {
     branchFlags: effectiveBranchFlags
   });
   const entryType = getRuntimeSpeakerType(entry);
+  const speakerIdentity = getSpeakerReadinessIdentity(entry);
   const speakerName = isSupportedNativeReaderEntryType(entryType)
     ? getSpeakerName({
         entry,
@@ -440,6 +470,8 @@ export function createNativeReaderPresentation(input: {
     rightPortrait,
     stageCharacters,
     dialogueCardPlacement: getDialogueCardPlacement(entry),
+    speakerId: speakerIdentity.speakerId,
+    speakerStatus: speakerIdentity.speakerStatus,
     blockingPreloadImageUrls,
     preloadImageUrls,
     blockingAssetRefs,

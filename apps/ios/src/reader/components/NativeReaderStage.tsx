@@ -1,5 +1,5 @@
 import { Image as ExpoImage } from "expo-image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   type LayoutChangeEvent,
   StyleSheet,
@@ -20,6 +20,8 @@ import {
   getAssetRenderKind,
   getAssetRenderMode,
   getCachedAssetUri,
+  getReaderAssetRenderDiagnostics,
+  recordReaderAssetVisibleTiming,
   usePreloadedReaderImageRef,
   usePreloadedReaderSvgAst
 } from "../imagePreload";
@@ -36,12 +38,14 @@ function NativeCachedImage(props: {
   accessibilityLabel?: string;
   contentFit: "cover" | "contain" | "fill";
   contentPosition?: "left bottom" | "right bottom" | "center";
+  debugLabel?: string;
   imageUrl: string;
   imageRef?: ReturnType<typeof usePreloadedReaderImageRef>;
   style: StyleProp<ImageStyle>;
 }) {
   const loadedImageRef = usePreloadedReaderImageRef(props.imageUrl);
   const source = createCachedReaderImageSource(props.imageUrl);
+  const mountedAtRef = useRef(Date.now());
 
   if (!source) {
     return <View style={[props.style, styles.missingAsset]} />;
@@ -54,6 +58,30 @@ function NativeCachedImage(props: {
       cachePolicy="memory-disk"
       contentFit={props.contentFit}
       contentPosition={props.contentPosition ?? "center"}
+      onDisplay={() => {
+        if (!isDevelopment() || !props.debugLabel) {
+          return;
+        }
+
+        recordReaderAssetVisibleTiming({
+          durationMs: Date.now() - mountedAtRef.current,
+          event: "onDisplay",
+          imageUrl: props.imageUrl,
+          label: props.debugLabel
+        });
+      }}
+      onLoad={() => {
+        if (!isDevelopment() || !props.debugLabel) {
+          return;
+        }
+
+        recordReaderAssetVisibleTiming({
+          durationMs: Date.now() - mountedAtRef.current,
+          event: "onLoad",
+          imageUrl: props.imageUrl,
+          label: props.debugLabel
+        });
+      }}
       priority="high"
       recyclingKey={props.imageUrl}
       source={props.imageRef ?? loadedImageRef ?? source}
@@ -86,6 +114,18 @@ function isDevelopment() {
   return typeof __DEV__ !== "undefined" ? __DEV__ : false;
 }
 
+declare global {
+  // Development probe for isolating portrait rendering from dialogue card/text.
+  // eslint-disable-next-line no-var
+  var __OCNOER_READER_DISABLE_PORTRAITS: boolean | undefined;
+}
+
+function shouldDisablePortraitsForProbe() {
+  return (
+    isDevelopment() && Boolean(globalThis.__OCNOER_READER_DISABLE_PORTRAITS)
+  );
+}
+
 function isSvgRenderMode(renderMode: ReturnType<typeof getAssetRenderMode>) {
   return renderMode === "original-svg" || renderMode === "true-vector-svg";
 }
@@ -113,7 +153,14 @@ function CachedPortraitAsset(props: {
       return;
     }
 
+    const diagnostics = getReaderAssetRenderDiagnostics(props.imageUrl);
+
     console.info("[reader-assets] portrait render tree diagnostics", {
+      ...diagnostics,
+      COLD_RENDER_ON_VISIBLE_PATH:
+        diagnostics?.COLD_RENDER_ON_VISIBLE_PATH ??
+        (renderMode === "original-svg" || renderMode === "true-vector-svg"),
+      PORTRAIT_RENDER_MODE: renderMode,
       cachedUri: getCachedAssetUri(props.imageUrl),
       imageBackgroundColor: NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND,
       imageUrl: props.imageUrl,
@@ -125,6 +172,27 @@ function CachedPortraitAsset(props: {
   }, [props.imageUrl, props.side, renderKind, renderMode]);
 
   if (!isSvgRenderMode(renderMode)) {
+    if (renderMode === "source-svg-image") {
+      return (
+        <View
+          accessibilityLabel={props.accessibilityLabel}
+          accessible
+          pointerEvents="none"
+          style={styles.portraitAsset}
+        >
+          <NativeCachedImage
+            accessibilityLabel={props.accessibilityLabel}
+            contentFit="contain"
+            contentPosition="center"
+            debugLabel={`${props.side}:${props.accessibilityLabel}`}
+            imageRef={props.imageRef}
+            imageUrl={props.imageUrl}
+            style={styles.portraitBitmap}
+          />
+        </View>
+      );
+    }
+
     const svgWrapper = layoutMetrics?.svgWrapper ?? null;
 
     if (svgWrapper) {
@@ -138,6 +206,7 @@ function CachedPortraitAsset(props: {
           <NativeCachedImage
             accessibilityLabel={props.accessibilityLabel}
             contentFit="fill"
+            debugLabel={`${props.side}:${props.accessibilityLabel}`}
             imageRef={props.imageRef}
             imageUrl={props.imageUrl}
             style={
@@ -165,6 +234,7 @@ function CachedPortraitAsset(props: {
           accessibilityLabel={props.accessibilityLabel}
           contentFit="contain"
           contentPosition="center"
+          debugLabel={`${props.side}:${props.accessibilityLabel}`}
           imageRef={props.imageRef}
           imageUrl={props.imageUrl}
           style={styles.portraitBitmap}
@@ -224,7 +294,13 @@ function Portrait(props: {
     svgWrapper?.width
   ]);
 
-  if (!props.portrait || !layout) {
+  if (!props.portrait || !layout || shouldDisablePortraitsForProbe()) {
+    if (props.portrait && shouldDisablePortraitsForProbe()) {
+      console.info("[reader-assets] portrait disabled for probe", {
+        imageUrl: props.portrait.imageUrl,
+        side: props.side
+      });
+    }
     return null;
   }
 

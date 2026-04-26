@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("./imagePreload", () => ({
   READER_ASSET_RENDER_CACHE_VERSION: 2,
@@ -32,15 +32,18 @@ import type {
 } from "@ocnoer/story-core";
 
 import type { NativeReaderPresentation } from "./readerPresentation";
+import { ensureSceneAssetsReady } from "./imagePreload";
 import {
   commitNativeReaderAdvanceAfterPresentationGate,
   commitNativeReaderStateAfterAssetGate,
   computeNativeReaderAdvanceTargets,
   createNativeReaderPresentationReadinessKey,
+  ensureNativeReaderPresentationRenderReady,
   resolveNativeReaderAdvanceCommitPlan
 } from "./useNativeReaderController";
 
 const supabaseUrl = "https://example.supabase.co";
+const ensureSceneAssetsReadyMock = vi.mocked(ensureSceneAssetsReady);
 const manifest: RuntimeManifest = {
   schemaVersion: 1,
   generatedAt: "2026-04-25T00:00:00.000Z",
@@ -136,6 +139,8 @@ function createPresentation(
     rightPortrait: null,
     stageCharacters: [],
     dialogueCardPlacement: "speaker-left",
+    speakerId: "character_one",
+    speakerStatus: "character:character_one:default",
     blockingPreloadImageUrls: [],
     preloadImageUrls: [],
     blockingAssetRefs: [
@@ -160,6 +165,10 @@ function createPresentation(
 }
 
 describe("commitNativeReaderStateAfterAssetGate", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("waits for required target assets before committing visible state", async () => {
     let resolveAssets!: () => void;
     const ensureAssets = vi.fn(
@@ -204,6 +213,10 @@ describe("commitNativeReaderStateAfterAssetGate", () => {
 });
 
 describe("presentation render readiness", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
   it("commits a narrator next presentation instantly when it is prewarmed", async () => {
     const ensureRenderReady = vi.fn(async () => undefined);
     const commit = vi.fn();
@@ -249,35 +262,104 @@ describe("presentation render readiness", () => {
     expect(ensureRenderReady).not.toHaveBeenCalled();
   });
 
-  it("holds the previous presentation if the target character is not render-ready", async () => {
-    let resolveRenderReady!: () => void;
-    const ensureRenderReady = vi.fn(
-      () =>
-        new Promise<void>((resolve) => {
-          resolveRenderReady = resolve;
-        })
-    );
+  it("blocks the advance before tap-time cold render work when the target is not ready", async () => {
+    const ensureRenderReady = vi.fn(async () => undefined);
     const commit = vi.fn();
-    const commitPromise = commitNativeReaderAdvanceAfterPresentationGate({
+    const result = await commitNativeReaderAdvanceAfterPresentationGate({
       targetKey: "character-cold",
       targetRenderReady: false,
       ensureRenderReady,
       commit
     });
 
-    await Promise.resolve();
-
-    expect(ensureRenderReady).toHaveBeenCalledTimes(1);
+    expect(result.commitMode).toBe("blocked");
+    expect(result.reason).toBe("target-presentation-not-render-ready");
+    expect(ensureRenderReady).not.toHaveBeenCalled();
     expect(commit).not.toHaveBeenCalled();
-
-    resolveRenderReady();
-    const result = await commitPromise;
-
-    expect(result.commitMode).toBe("waited");
-    expect(commit).toHaveBeenCalledTimes(1);
   });
 
-  it("does not commit the target dialogue card before the target portrait is render-ready", async () => {
+  it("keeps the next arrow disabled until derivative portraits are warmed", () => {
+    const plan = resolveNativeReaderAdvanceCommitPlan({
+      targetKey: "character-with-derivative",
+      targetRenderReady: false
+    });
+
+    expect(plan).toEqual({
+      reason: "target-presentation-not-render-ready",
+      type: "blocked-until-render-ready"
+    });
+  });
+
+  it("waits for bitmap derivative readiness before marking a presentation ready", async () => {
+    let resolveAssets!: (
+      value: Awaited<ReturnType<typeof ensureSceneAssetsReady>>
+    ) => void;
+    const derivativePresentation = createPresentation({
+      blockingAssetRefs: [
+        {
+          role: "portrait",
+          url: `${supabaseUrl}/storage/v1/object/public/runtime/portraits/portrait-one.svg`,
+          storagePath: "runtime/portraits/portrait-one.svg",
+          assetId: "character_one",
+          cacheKey: "portrait:character_one:default",
+          sourceRenderKind: "svg",
+          derivatives: [
+            {
+              storagePath: "runtime/portraits/portrait-one.reader.webp",
+              url: `${supabaseUrl}/storage/v1/object/public/runtime/portraits/portrait-one.reader.webp`,
+              contentType: "image/webp",
+              renderKind: "bitmap",
+              width: 900,
+              height: 1400,
+              hash: "derivative-hash",
+              derivativeOf: "runtime/portraits/portrait-one.svg"
+            }
+          ]
+        }
+      ]
+    });
+    ensureSceneAssetsReadyMock.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveAssets = resolve;
+      }) as ReturnType<typeof ensureSceneAssetsReady>
+    );
+    let didResolve = false;
+    const readinessPromise = ensureNativeReaderPresentationRenderReady({
+      presentation: derivativePresentation,
+      reason: "lookahead"
+    }).then(() => {
+      didResolve = true;
+    });
+
+    await Promise.resolve();
+
+    expect(ensureSceneAssetsReadyMock).toHaveBeenCalledWith("line_one", [
+      expect.objectContaining({
+        derivatives: [
+          expect.objectContaining({
+            contentType: "image/webp",
+            renderKind: "bitmap",
+            storagePath: "runtime/portraits/portrait-one.reader.webp"
+          })
+        ]
+      })
+    ]);
+    expect(didResolve).toBe(false);
+
+    resolveAssets({
+      status: "success",
+      scope: "scene",
+      scopeId: "line_one",
+      durationMs: 24,
+      assets: [],
+      errors: []
+    });
+    await readinessPromise;
+
+    expect(didResolve).toBe(true);
+  });
+
+  it("does not clear the current presentation when the target is not ready", async () => {
     const events: string[] = [];
 
     await commitNativeReaderAdvanceAfterPresentationGate({
@@ -287,11 +369,11 @@ describe("presentation render readiness", () => {
         events.push("portrait-ready");
       },
       commit: () => {
-        events.push("card-and-portrait-committed");
+        events.push("current-presentation-cleared");
       }
     });
 
-    expect(events).toEqual(["portrait-ready", "card-and-portrait-committed"]);
+    expect(events).toEqual([]);
   });
 
   it("commits the dialogue card and portrait as one target presentation", async () => {
@@ -383,6 +465,14 @@ describe("presentation render readiness", () => {
       createNativeReaderPresentationReadinessKey(
         createPresentation({
           speakerName: "Ren"
+        })
+      )
+    ).not.toBe(baseKey);
+    expect(
+      createNativeReaderPresentationReadinessKey(
+        createPresentation({
+          speakerId: "character_two",
+          speakerStatus: "character:character_two:default"
         })
       )
     ).not.toBe(baseKey);

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   NativeBackgroundMusicAudioManager,
@@ -50,10 +50,89 @@ const audioMock = vi.hoisted(() => {
   };
 });
 
+const fileSystemMock = vi.hoisted(() => {
+  const files = new Map<string, { exists: boolean; size: number }>();
+  const cache = {
+    exists: true,
+    uri: "file:///cache"
+  };
+
+  class Directory {
+    exists: boolean;
+    uri: string;
+
+    constructor(...parts: Array<string | { uri: string }>) {
+      this.uri = parts
+        .map((part) => (typeof part === "string" ? part : part.uri))
+        .join("/");
+      this.exists = true;
+    }
+
+    create = vi.fn(() => {
+      this.exists = true;
+    });
+  }
+
+  class File {
+    uri: string;
+
+    constructor(...parts: Array<string | { uri: string }>) {
+      this.uri = parts
+        .map((part) => (typeof part === "string" ? part : part.uri))
+        .join("/");
+    }
+
+    get exists() {
+      return files.get(this.uri)?.exists ?? false;
+    }
+
+    set exists(value: boolean) {
+      files.set(this.uri, {
+        exists: value,
+        size: files.get(this.uri)?.size ?? 0
+      });
+    }
+
+    get size() {
+      return files.get(this.uri)?.size ?? 0;
+    }
+
+    set size(value: number) {
+      files.set(this.uri, {
+        exists: files.get(this.uri)?.exists ?? false,
+        size: value
+      });
+    }
+
+    static downloadFileAsync = vi.fn(
+      async (_url: string, destination: File) => {
+        destination.exists = true;
+        destination.size = 128;
+        return destination;
+      }
+    );
+  }
+
+  return {
+    cache,
+    Directory,
+    File,
+    files
+  };
+});
+
 vi.mock("expo-audio", () => ({
   createAudioPlayer: audioMock.createAudioPlayer,
   setAudioModeAsync: audioMock.setAudioModeAsync,
   setIsAudioActiveAsync: audioMock.setIsAudioActiveAsync
+}));
+
+vi.mock("expo-file-system", () => ({
+  Directory: fileSystemMock.Directory,
+  File: fileSystemMock.File,
+  Paths: {
+    cache: fileSystemMock.cache
+  }
 }));
 
 function waitForManagerState(
@@ -85,24 +164,66 @@ function waitForNextTick() {
   });
 }
 
+function waitForCreatedPlayerCount(count: number) {
+  return new Promise<void>((resolve, reject) => {
+    const startedAt = Date.now();
+
+    const check = () => {
+      if (audioMock.createAudioPlayer.mock.calls.length >= count) {
+        resolve();
+        return;
+      }
+
+      if (Date.now() - startedAt >= 1000) {
+        reject(new Error(`Timed out waiting for ${count} audio players.`));
+        return;
+      }
+
+      globalThis.setTimeout(check, 0);
+    };
+
+    check();
+  });
+}
+
 describe("NativeBackgroundMusicAudioManager", () => {
   beforeEach(() => {
     audioMock.players.length = 0;
     audioMock.createAudioPlayer.mockClear();
     audioMock.setAudioModeAsync.mockClear();
     audioMock.setIsAudioActiveAsync.mockClear();
+    fileSystemMock.files.clear();
+    fileSystemMock.File.downloadFileAsync.mockClear();
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: true,
+        status: 200,
+        headers: {
+          get: (name: string) =>
+            name.toLowerCase() === "content-type" ? "audio/mpeg" : null
+        }
+      }))
+    );
   });
 
-  it("predownloads extensionless runtime music before playing on iOS", async () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("caches extensionless runtime music before creating the iOS player", async () => {
     const manager = new NativeBackgroundMusicAudioManager();
     const playing = waitForManagerState(manager, "playing");
+    const targetUrl =
+      "https://example.supabase.co/storage/v1/object/public/runtime/media/background-music/music_theme";
 
     manager.setTarget({
       cue: {
         key: "scene:music_theme",
         label: "Theme",
-        url: "https://example.supabase.co/storage/v1/object/public/runtime/media/background-music/music_theme"
+        url: targetUrl
       },
+      sessionId: "session-a",
       shouldPlay: true,
       volume: 0.7,
       fadeMs: 0
@@ -110,12 +231,23 @@ describe("NativeBackgroundMusicAudioManager", () => {
 
     await playing;
 
+    expect(fileSystemMock.File.downloadFileAsync).toHaveBeenCalledWith(
+      targetUrl,
+      expect.objectContaining({
+        uri: expect.stringMatching(/\.mp3$/)
+      }),
+      {
+        idempotent: true
+      }
+    );
     expect(audioMock.createAudioPlayer).toHaveBeenCalledWith(
       {
-        uri: "https://example.supabase.co/storage/v1/object/public/runtime/media/background-music/music_theme"
+        uri: expect.stringMatching(
+          /^file:\/\/\/cache\/ocnoer-background-music\/.+\.mp3$/
+        )
       },
       expect.objectContaining({
-        downloadFirst: true,
+        downloadFirst: false,
         keepAudioSessionActive: true
       })
     );
@@ -137,6 +269,7 @@ describe("NativeBackgroundMusicAudioManager", () => {
         label: "Theme",
         url: targetUrl
       },
+      sessionId: "session-a",
       shouldPlay: true,
       volume: 0.85,
       fadeMs: 0
@@ -150,6 +283,7 @@ describe("NativeBackgroundMusicAudioManager", () => {
         label: "Theme",
         url: targetUrl
       },
+      sessionId: "session-a",
       shouldPlay: true,
       volume: 0.85,
       fadeMs: 0
@@ -172,6 +306,7 @@ describe("NativeBackgroundMusicAudioManager", () => {
         label: "Theme",
         url: "https://example.supabase.co/storage/v1/object/public/runtime/media/background-music/music_theme"
       },
+      sessionId: "session-a",
       shouldPlay: true,
       volume: 0.85,
       fadeMs: 0
@@ -182,6 +317,7 @@ describe("NativeBackgroundMusicAudioManager", () => {
     const idle = waitForManagerState(manager, "idle");
     manager.setTarget({
       cue: null,
+      sessionId: "session-a",
       shouldPlay: false,
       volume: 0,
       fadeMs: 0
@@ -191,5 +327,46 @@ describe("NativeBackgroundMusicAudioManager", () => {
 
     expect(audioMock.players[0]?.pause).toHaveBeenCalledTimes(1);
     expect(audioMock.players[0]?.remove).toHaveBeenCalledTimes(1);
+  });
+
+  it("restarts the same track for a new reader session", async () => {
+    const manager = new NativeBackgroundMusicAudioManager();
+    const firstPlaying = waitForManagerState(manager, "playing");
+    const targetUrl =
+      "https://example.supabase.co/storage/v1/object/public/runtime/media/background-music/music_theme";
+
+    manager.setTarget({
+      cue: {
+        key: "scene:music_theme",
+        label: "Theme",
+        url: targetUrl
+      },
+      sessionId: "session-a",
+      shouldPlay: true,
+      volume: 0.85,
+      fadeMs: 0
+    });
+
+    await firstPlaying;
+
+    manager.setTarget({
+      cue: {
+        key: "scene:music_theme",
+        label: "Theme",
+        url: targetUrl
+      },
+      sessionId: "session-b",
+      shouldPlay: true,
+      volume: 0.85,
+      fadeMs: 0
+    });
+
+    await waitForCreatedPlayerCount(2);
+
+    expect(audioMock.createAudioPlayer).toHaveBeenCalledTimes(2);
+    expect(audioMock.players[0]?.pause).toHaveBeenCalledTimes(1);
+    expect(audioMock.players[0]?.remove).toHaveBeenCalledTimes(1);
+    expect(audioMock.players[1]?.seekTo).toHaveBeenCalledWith(0);
+    expect(audioMock.players[1]?.play).toHaveBeenCalledTimes(1);
   });
 });

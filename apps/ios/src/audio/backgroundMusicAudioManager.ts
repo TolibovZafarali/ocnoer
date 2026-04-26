@@ -4,6 +4,7 @@ import {
   setIsAudioActiveAsync,
   type AudioPlayer
 } from "expo-audio";
+import { Directory, File, Paths } from "expo-file-system";
 
 export type BackgroundMusicPlayableTarget = {
   key: string;
@@ -27,6 +28,7 @@ export type BackgroundMusicManagerSnapshot = {
 
 type BackgroundMusicTarget = {
   cue: BackgroundMusicPlayableTarget | null;
+  sessionId: string | null;
   shouldPlay: boolean;
   volume: number;
   fadeMs: number;
@@ -35,8 +37,10 @@ type BackgroundMusicTarget = {
 type CurrentBackgroundMusicPlayer = {
   key: string;
   label: string;
+  sessionId: string | null;
   url: string;
   player: AudioPlayer;
+  hasStarted: boolean;
 };
 
 type BackgroundMusicListener = (
@@ -47,6 +51,8 @@ const DEFAULT_FADE_MS = 450;
 const FADE_FRAME_MS = 32;
 const PLAYER_LOAD_TIMEOUT_MS = 15000;
 const PLAYER_LOAD_POLL_MS = 50;
+const BACKGROUND_MUSIC_CACHE_DIR = "ocnoer-background-music";
+const DEFAULT_AUDIO_FILE_EXTENSION = "mp3";
 
 function clampVolume(volume: number) {
   if (!Number.isFinite(volume)) {
@@ -64,6 +70,110 @@ function waitForDuration(durationMs: number) {
   return new Promise<void>((resolve) => {
     globalThis.setTimeout(resolve, durationMs);
   });
+}
+
+function getPathExtension(value: string) {
+  const path = value.split(/[?#]/)[0] ?? "";
+  const fileName = path.split("/").pop() ?? "";
+  const match = fileName.match(/\.([a-zA-Z0-9]+)$/);
+
+  return match?.[1]?.toLowerCase() ?? null;
+}
+
+function extensionFromAudioContentType(contentType: string | null) {
+  const normalized = contentType?.split(";")[0]?.trim().toLowerCase();
+
+  switch (normalized) {
+    case "audio/aac":
+      return "aac";
+    case "audio/mp4":
+    case "audio/x-m4a":
+      return "m4a";
+    case "audio/mpeg":
+    case "audio/mp3":
+    case "audio/x-mpeg":
+      return "mp3";
+    case "audio/ogg":
+      return "ogg";
+    case "audio/wav":
+    case "audio/wave":
+    case "audio/x-wav":
+      return "wav";
+    case "audio/webm":
+      return "webm";
+    default:
+      return null;
+  }
+}
+
+function createStableFileHash(value: string) {
+  let hash = 2166136261;
+
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+async function getRemoteAudioFileExtension(url: string) {
+  const urlExtension = getPathExtension(url);
+
+  if (urlExtension) {
+    return urlExtension;
+  }
+
+  try {
+    const response = await fetch(url, {
+      method: "HEAD"
+    });
+    const contentType =
+      response.ok || response.status === 405
+        ? response.headers.get("content-type")
+        : null;
+
+    return (
+      extensionFromAudioContentType(contentType) ?? DEFAULT_AUDIO_FILE_EXTENSION
+    );
+  } catch {
+    return DEFAULT_AUDIO_FILE_EXTENSION;
+  }
+}
+
+function getBackgroundMusicCacheDirectory() {
+  const directory = new Directory(Paths.cache, BACKGROUND_MUSIC_CACHE_DIR);
+
+  if (!directory.exists) {
+    directory.create({
+      idempotent: true,
+      intermediates: true
+    });
+  }
+
+  return directory;
+}
+
+async function resolvePlayableAudioUri(url: string) {
+  if (!/^https?:\/\//i.test(url)) {
+    return url;
+  }
+
+  const extension = await getRemoteAudioFileExtension(url);
+  const cacheFile = new File(
+    getBackgroundMusicCacheDirectory(),
+    `${createStableFileHash(url)}.${extension}`
+  );
+
+  if (cacheFile.exists && cacheFile.size > 0) {
+    return cacheFile.uri;
+  }
+
+  const downloadedFile = await File.downloadFileAsync(url, cacheFile, {
+    idempotent: true
+  });
+
+  return downloadedFile.uri;
 }
 
 async function fadePlayerTo(
@@ -129,6 +239,7 @@ export class NativeBackgroundMusicAudioManager {
   };
   private target: BackgroundMusicTarget = {
     cue: null,
+    sessionId: null,
     shouldPlay: false,
     volume: 0,
     fadeMs: DEFAULT_FADE_MS
@@ -146,6 +257,7 @@ export class NativeBackgroundMusicAudioManager {
   setTarget(target: Partial<BackgroundMusicTarget>) {
     this.target = {
       cue: target.cue ?? null,
+      sessionId: target.sessionId ?? null,
       shouldPlay: target.shouldPlay ?? false,
       volume: clampVolume(target.volume ?? 0),
       fadeMs: target.fadeMs ?? DEFAULT_FADE_MS
@@ -157,6 +269,7 @@ export class NativeBackgroundMusicAudioManager {
   stopAndRelease() {
     this.target = {
       cue: null,
+      sessionId: null,
       shouldPlay: false,
       volume: 0,
       fadeMs: 0
@@ -195,6 +308,7 @@ export class NativeBackgroundMusicAudioManager {
 
     return (
       this.current?.url === targetCue.url &&
+      this.current.sessionId === this.target.sessionId &&
       Math.abs(this.current.player.volume - this.target.volume) < 0.02
     );
   }
@@ -218,14 +332,33 @@ export class NativeBackgroundMusicAudioManager {
     await this.ensureAudioMode();
     await setIsAudioActiveAsync(true);
 
-    // Runtime music URLs are extensionless Supabase objects. Predownloading
-    // gives iOS AVPlayer a typed local file instead of relying on URL inference.
+    const targetSessionId = this.target.sessionId;
+
+    this.emit({
+      state: "loading",
+      activeLabel: targetCue.label,
+      error: null
+    });
+
+    // Runtime music URLs are often extensionless Supabase objects. Resolve a
+    // typed local file before constructing AVPlayer so playback never races an
+    // async source replacement.
+    const playableUri = await resolvePlayableAudioUri(targetCue.url);
+    const isStillTarget = () =>
+      this.target.shouldPlay &&
+      this.target.sessionId === targetSessionId &&
+      this.target.cue?.url === targetCue.url;
+
+    if (!isStillTarget()) {
+      return;
+    }
+
     const player = createAudioPlayer(
       {
-        uri: targetCue.url
+        uri: playableUri
       },
       {
-        downloadFirst: true,
+        downloadFirst: false,
         keepAudioSessionActive: true,
         updateInterval: 1000
       }
@@ -237,19 +370,11 @@ export class NativeBackgroundMusicAudioManager {
     this.current = {
       key: targetCue.key,
       label: targetCue.label,
+      sessionId: targetSessionId,
       url: targetCue.url,
-      player
+      player,
+      hasStarted: false
     };
-    this.emit({
-      state: "loading",
-      activeLabel: targetCue.label,
-      error: null
-    });
-
-    const isStillTarget = () =>
-      this.current?.player === player &&
-      this.target.shouldPlay &&
-      this.target.cue?.url === targetCue.url;
 
     const didLoad = await waitForPlayerLoad(player, isStillTarget);
 
@@ -265,7 +390,13 @@ export class NativeBackgroundMusicAudioManager {
     }
 
     await player.seekTo(0).catch(() => undefined);
+
+    if (!isStillTarget()) {
+      return;
+    }
+
     player.play();
+    this.current.hasStarted = true;
 
     await fadePlayerTo(player, this.target.volume, this.target.fadeMs);
 
@@ -285,6 +416,7 @@ export class NativeBackgroundMusicAudioManager {
 
     void this.process()
       .catch((error) => {
+        this.current?.player.pause();
         this.current?.player.remove();
         this.current = null;
         this.emit({
@@ -324,6 +456,13 @@ export class NativeBackgroundMusicAudioManager {
       }
 
       if (this.current?.url === targetCue.url) {
+        if (this.current.sessionId !== this.target.sessionId) {
+          const current = this.current;
+          this.current = null;
+          await this.removePlayer(current, this.target.fadeMs);
+          continue;
+        }
+
         this.current.key = targetCue.key;
         this.current.label = targetCue.label;
         this.current.player.loop = true;
@@ -331,8 +470,9 @@ export class NativeBackgroundMusicAudioManager {
         await this.ensureAudioMode();
         await setIsAudioActiveAsync(true);
 
-        if (!this.current.player.playing) {
+        if (!this.current.hasStarted) {
           this.current.player.play();
+          this.current.hasStarted = true;
         }
 
         await fadePlayerTo(

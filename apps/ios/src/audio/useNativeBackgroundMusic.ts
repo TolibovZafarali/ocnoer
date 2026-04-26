@@ -32,6 +32,7 @@ function createDisplayStatus(input: {
   cue: NativeBackgroundMusicCue;
   preferences: NativeAudioPreferences;
   isAppActive: boolean;
+  isSessionActive: boolean;
   managerSnapshot: BackgroundMusicManagerSnapshot;
 }): NativeBackgroundMusicStatus {
   if (input.preferences.muted) {
@@ -42,11 +43,13 @@ function createDisplayStatus(input: {
     };
   }
 
-  if (!input.isAppActive) {
+  if (!input.isAppActive || !input.isSessionActive) {
     return {
       state: "paused",
       label: "Audio paused",
-      detail: "App is in background"
+      detail: input.isAppActive
+        ? "Reader session is ending"
+        : "App is in background"
     };
   }
 
@@ -96,7 +99,9 @@ function createDisplayStatus(input: {
 
 export function useNativeBackgroundMusic(input: {
   cue: NativeBackgroundMusicCue;
+  isSessionActive?: boolean;
   preferences: NativeAudioPreferences;
+  sessionId: string;
 }) {
   const manager = useMemo(() => getNativeBackgroundMusicAudioManager(), []);
   const [managerSnapshot, setManagerSnapshot] =
@@ -135,14 +140,22 @@ export function useNativeBackgroundMusic(input: {
 
     manager.setTarget({
       cue,
-      shouldPlay: Boolean(cue && isAppActive && !input.preferences.muted),
+      sessionId: input.sessionId,
+      shouldPlay: Boolean(
+        cue &&
+        isAppActive &&
+        !input.preferences.muted &&
+        (input.isSessionActive ?? true)
+      ),
       volume: input.preferences.volume,
       fadeMs: isAppActive ? ACTIVE_FADE_MS : BACKGROUND_FADE_MS
     });
   }, [
     input.cue,
+    input.isSessionActive,
     input.preferences.muted,
     input.preferences.volume,
+    input.sessionId,
     isAppActive,
     manager
   ]);
@@ -159,8 +172,15 @@ export function useNativeBackgroundMusic(input: {
         cue: input.cue,
         preferences: input.preferences,
         isAppActive,
+        isSessionActive: input.isSessionActive ?? true,
         managerSnapshot
       }),
-    [input.cue, input.preferences, isAppActive, managerSnapshot]
+    [
+      input.cue,
+      input.isSessionActive,
+      input.preferences,
+      isAppActive,
+      managerSnapshot
+    ]
   );
 }

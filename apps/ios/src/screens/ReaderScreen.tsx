@@ -535,7 +535,9 @@ export function ReaderScreen(props: ReaderScreenProps) {
   }, [props.config.supabaseUrl, reader.boundaryState, reader.state]);
   useNativeBackgroundMusic({
     cue: backgroundMusicCue,
-    preferences: props.audioPreferences
+    isSessionActive: !props.isSigningOut,
+    preferences: props.audioPreferences,
+    sessionId: `${props.player.id}:${props.sessionToken}`
   });
   const stageWidth = Math.min(
     dimensions.width,

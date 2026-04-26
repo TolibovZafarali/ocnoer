@@ -5,7 +5,8 @@ import {
   getNativeReaderMaxTextStateUpdatesForDurationMs,
   getNativeReaderTextUpdateCadenceMs,
   getNativeReaderTypingExpectedDurationMs,
-  getNativeReaderVisibleTextLengthAtElapsedMs
+  getNativeReaderVisibleTextLengthAtElapsedMs,
+  shouldApplyNativeReaderForceCompleteRequest
 } from "../nativeReaderDialogueMotion";
 
 describe("NativeReaderDialogue motion", () => {
@@ -82,5 +83,27 @@ describe("NativeReaderDialogue motion", () => {
 
     expect(getNativeReaderTextUpdateCadenceMs(30)).toBeGreaterThanOrEqual(33);
     expect(maxUpdates).toBeLessThan(characters.length);
+  });
+
+  it("does not reuse a tap-to-complete request for the next dialogue card", () => {
+    const request = {
+      requestId: 1,
+      typingKey: "supported:line_one:First line."
+    };
+
+    expect(
+      shouldApplyNativeReaderForceCompleteRequest({
+        isTextComplete: false,
+        request,
+        typingKey: "supported:line_one:First line."
+      })
+    ).toBe(true);
+    expect(
+      shouldApplyNativeReaderForceCompleteRequest({
+        isTextComplete: false,
+        request,
+        typingKey: "supported:line_two:Second line."
+      })
+    ).toBe(false);
   });
 });

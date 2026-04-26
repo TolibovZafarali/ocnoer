@@ -31,7 +31,9 @@ import {
   createNativeReaderDialogueAnimationKey,
   getNativeReaderTextUpdateCadenceMs,
   getNativeReaderTypingExpectedDurationMs,
-  getNativeReaderVisibleTextLengthAtElapsedMs
+  getNativeReaderVisibleTextLengthAtElapsedMs,
+  shouldApplyNativeReaderForceCompleteRequest,
+  type NativeReaderForceCompleteRequest
 } from "../nativeReaderDialogueMotion";
 import { NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND } from "../nativeReaderStageStyle";
 import { OcnoerTextInput } from "../../ui/primitives";
@@ -199,7 +201,7 @@ const BatchedTypedDialogueText = memo(function BatchedTypedDialogueText(props: {
   characterPortraitCount: number;
   characters: string[];
   dialogueEntryId: string;
-  forceCompleteSignal: number;
+  forceCompleteRequest: NativeReaderForceCompleteRequest | null;
   isExiting: boolean;
   onCompleteChange: (isComplete: boolean) => void;
   renderModeCount: Record<string, number>;
@@ -322,7 +324,13 @@ const BatchedTypedDialogueText = memo(function BatchedTypedDialogueText(props: {
   ]);
 
   useEffect(() => {
-    if (props.forceCompleteSignal <= 0 || isTextComplete) {
+    if (
+      !shouldApplyNativeReaderForceCompleteRequest({
+        isTextComplete,
+        request: props.forceCompleteRequest,
+        typingKey: props.typingKey
+      })
+    ) {
       return;
     }
 
@@ -343,7 +351,7 @@ const BatchedTypedDialogueText = memo(function BatchedTypedDialogueText(props: {
     isTextComplete,
     logCompletion,
     props.characters.length,
-    props.forceCompleteSignal,
+    props.forceCompleteRequest,
     props.typingKey,
     typingStartedAt
   ]);
@@ -617,10 +625,18 @@ export const NativeReaderDialogue = memo(function NativeReaderDialogue(
     [textCharacters]
   );
   const [dressIndex, setDressIndex] = useState(0);
-  const [forceCompleteSignal, setForceCompleteSignal] = useState(0);
-  const [isTextComplete, setIsTextComplete] = useState(
-    props.presentation.status !== "supported" || dialogueText.length === 0
-  );
+  const isImmediatelyComplete =
+    props.presentation.status !== "supported" || dialogueText.length === 0;
+  const [forceCompleteRequest, setForceCompleteRequest] =
+    useState<NativeReaderForceCompleteRequest | null>(null);
+  const [textCompletionState, setTextCompletionState] = useState({
+    isComplete: isImmediatelyComplete,
+    typingKey
+  });
+  const isTextComplete =
+    textCompletionState.typingKey === typingKey
+      ? textCompletionState.isComplete
+      : isImmediatelyComplete;
   const portraitRenderModeSummary = useMemo(
     () => getPortraitRenderModeSummary(props.presentation),
     [props.presentation.stageCharacters]
@@ -668,11 +684,12 @@ export const NativeReaderDialogue = memo(function NativeReaderDialogue(
   }, [props.presentation.dialogueEntryId]);
 
   useEffect(() => {
-    setIsTextComplete(
-      props.presentation.status !== "supported" || dialogueText.length === 0
-    );
-    setForceCompleteSignal(0);
-  }, [dialogueText.length, props.presentation.status, typingKey]);
+    setTextCompletionState({
+      isComplete: isImmediatelyComplete,
+      typingKey
+    });
+    setForceCompleteRequest(null);
+  }, [isImmediatelyComplete, typingKey]);
 
   useEffect(() => {
     logDialogueTiming("dialogue component mounted", {
@@ -693,14 +710,35 @@ export const NativeReaderDialogue = memo(function NativeReaderDialogue(
     props.presentation.status === "supported" && dialogueText.length > 0;
   const canCompleteTyping =
     hasTypeableDialogueText && !isTextComplete && !props.isExiting;
+  const handleTextCompleteChange = useCallback(
+    (nextIsComplete: boolean) => {
+      setTextCompletionState((currentState) => {
+        if (
+          currentState.typingKey === typingKey &&
+          currentState.isComplete === nextIsComplete
+        ) {
+          return currentState;
+        }
+
+        return {
+          isComplete: nextIsComplete,
+          typingKey
+        };
+      });
+    },
+    [typingKey]
+  );
   const handleCompleteTyping = useCallback(() => {
     if (!canCompleteTyping) {
       return;
     }
 
-    setIsTextComplete(true);
-    setForceCompleteSignal((currentValue) => currentValue + 1);
-  }, [canCompleteTyping]);
+    handleTextCompleteChange(true);
+    setForceCompleteRequest((currentRequest) => ({
+      requestId: (currentRequest?.requestId ?? 0) + 1,
+      typingKey
+    }));
+  }, [canCompleteTyping, handleTextCompleteChange, typingKey]);
 
   if (props.presentation.status === "unsupported") {
     const animationKey = createNativeReaderDialogueAnimationKey(
@@ -785,7 +823,7 @@ export const NativeReaderDialogue = memo(function NativeReaderDialogue(
               characterPortraitCount={characterPortraitCount}
               characters={textCharacters}
               dialogueEntryId={supportedPresentation.dialogueEntryId}
-              forceCompleteSignal={forceCompleteSignal}
+              forceCompleteRequest={forceCompleteRequest}
               isExiting={props.isExiting}
               renderModeCount={portraitRenderModeSummary}
               speakerId={supportedPresentation.speakerId}
@@ -794,7 +832,7 @@ export const NativeReaderDialogue = memo(function NativeReaderDialogue(
               }
               textExpectedDurationMs={textExpectedDurationMs}
               typingKey={typingKey}
-              onCompleteChange={setIsTextComplete}
+              onCompleteChange={handleTextCompleteChange}
             />
           ) : null}
 

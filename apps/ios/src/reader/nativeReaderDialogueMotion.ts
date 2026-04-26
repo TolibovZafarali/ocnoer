@@ -14,6 +14,23 @@ export function createNativeReaderDialogueAnimationKey(
   return `${presentation.status}:${presentation.dialogueEntryId}`;
 }
 
+export type NativeReaderForceCompleteRequest = {
+  requestId: number;
+  typingKey: string;
+};
+
+export function shouldApplyNativeReaderForceCompleteRequest(input: {
+  isTextComplete: boolean;
+  request: NativeReaderForceCompleteRequest | null;
+  typingKey: string;
+}) {
+  return Boolean(
+    input.request &&
+      input.request.typingKey === input.typingKey &&
+      !input.isTextComplete
+  );
+}
+
 export function getNativeReaderTypingCharacterDelayMs(character: string) {
   if (/[.!?]/.test(character)) {
     return (

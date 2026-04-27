@@ -137,6 +137,11 @@ type UseNativeReaderControllerInput = {
   player: MobilePlayer;
   sessionToken: string;
   onProgressSaved?: () => void;
+  waitForSceneTransitionAudioStart?: (input: {
+    boundaryState: PlayerBoundaryState | null;
+    bundle: RuntimeChapterBundle | null;
+    readerState: ReaderState | null;
+  }) => Promise<void>;
   onUpdateCatName: (catName: string) => Promise<MobilePlayer>;
 };
 
@@ -712,6 +717,7 @@ export async function commitNativeReaderStateAfterAssetGate(input: {
 }
 
 export async function runNativeReaderSceneTransition(input: {
+  afterCommit?: () => Promise<void>;
   commit: () => void;
   coverDurationMs?: number;
   minimumBlackoutMs?: number;
@@ -735,9 +741,12 @@ export async function runNativeReaderSceneTransition(input: {
       wait(input.minimumBlackoutMs ?? NATIVE_SCENE_TRANSITION_MIN_BLACKOUT_MS)
     ]);
     input.commit();
-    await wait(
-      input.postCommitHoldMs ?? NATIVE_SCENE_TRANSITION_POST_COMMIT_HOLD_MS
-    );
+    await Promise.all([
+      wait(
+        input.postCommitHoldMs ?? NATIVE_SCENE_TRANSITION_POST_COMMIT_HOLD_MS
+      ),
+      input.afterCommit?.() ?? Promise.resolve()
+    ]);
     input.setPhase("revealing");
     await wait(revealDurationMs);
     input.setPhase("idle");
@@ -777,7 +786,14 @@ export function canNativeReaderAdvanceWithReadiness(input: {
 export function useNativeReaderController(
   input: UseNativeReaderControllerInput
 ) {
-  const { bootstrap, config, onProgressSaved, onUpdateCatName, player } = input;
+  const {
+    bootstrap,
+    config,
+    onProgressSaved,
+    onUpdateCatName,
+    player,
+    waitForSceneTransitionAudioStart
+  } = input;
   const sessionToken = input.sessionToken;
   const repository = useMemo(
     () => createMobileRuntimeRepository(config),
@@ -1819,6 +1835,13 @@ export function useNativeReaderController(
                 showSceneTransitionBoundary: false
               });
             },
+            afterCommit: async () => {
+              await waitForSceneTransitionAudioStart?.({
+                boundaryState: null,
+                bundle: target.targetBundle,
+                readerState: target.targetState
+              });
+            },
             setPhase: setSceneTransitionPhase
           });
           logReaderTiming("scene transition blackout completed", {
@@ -1902,6 +1925,7 @@ export function useNativeReaderController(
       persistPendingCatNameForChapterBoundary,
       presentationRenderKey,
       repository.loadChapter,
+      waitForSceneTransitionAudioStart,
       warmPresentation
     ]
   );
@@ -2147,6 +2171,13 @@ export function useNativeReaderController(
               readerState: result.state
             });
           },
+          afterCommit: async () => {
+            await waitForSceneTransitionAudioStart?.({
+              boundaryState: null,
+              bundle: runtimeState.bundle,
+              readerState: result.state
+            });
+          },
           setPhase: setSceneTransitionPhase
         });
         return;
@@ -2190,7 +2221,8 @@ export function useNativeReaderController(
     config.supabaseUrl,
     isMoving,
     repository.loadChapter,
-    runtimeState
+    runtimeState,
+    waitForSceneTransitionAudioStart
   ]);
 
   return {

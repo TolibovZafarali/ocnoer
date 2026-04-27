@@ -791,6 +791,71 @@ describe("native scene transition choreography", () => {
     expect(events.at(-1)).toBe("phase:idle");
   });
 
+  it("keeps blackout after commit until post-commit audio work completes", async () => {
+    const events: string[] = [];
+    const { wait, waits } = createDeferredWait();
+    let resolveAudioStart!: () => void;
+    const prepare = vi.fn(async () => {
+      events.push("prepare");
+    });
+    const afterCommit = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          events.push("audio:start");
+          resolveAudioStart = () => {
+            events.push("audio:ready");
+            resolve();
+          };
+        })
+    );
+    const commit = vi.fn(() => {
+      events.push("commit");
+    });
+    const transitionPromise = runNativeReaderSceneTransition({
+      afterCommit,
+      commit,
+      prepare,
+      setPhase: (phase) => {
+        events.push(`phase:${phase}`);
+      },
+      wait
+    });
+
+    waits[0]?.resolve();
+    await flushPromises();
+    waits[1]?.resolve();
+    await flushPromises();
+
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(afterCommit).toHaveBeenCalledTimes(1);
+    expect(events).toEqual([
+      "phase:covering",
+      "phase:blackout",
+      "prepare",
+      "commit",
+      "audio:start"
+    ]);
+    expect(waits[2]?.durationMs).toBe(
+      NATIVE_SCENE_TRANSITION_POST_COMMIT_HOLD_MS
+    );
+
+    waits[2]?.resolve();
+    await flushPromises();
+
+    expect(events.at(-1)).toBe("audio:start");
+
+    resolveAudioStart();
+    await flushPromises();
+
+    expect(events.at(-1)).toBe("phase:revealing");
+    expect(waits[3]?.durationMs).toBe(NATIVE_SCENE_TRANSITION_REVEAL_MS);
+
+    waits[3]?.resolve();
+    await transitionPromise;
+
+    expect(events.at(-1)).toBe("phase:idle");
+  });
+
   it("does not commit the next scene when preparation fails", async () => {
     const events: string[] = [];
     const { wait, waits } = createDeferredWait();

@@ -62,7 +62,7 @@ type ReaderDialogueProps = {
   onCatNameInputChange: (value: string) => void;
 };
 
-const DIALOGUE_BACKDROP_BLUR_INTENSITY = 100;
+const DIALOGUE_BACKDROP_BLUR_INTENSITY = 30;
 const DIALOGUE_BACKDROP_BLUR_TINT = "dark";
 const TEXT_FRAME_STALL_WARNING_MS = 100;
 

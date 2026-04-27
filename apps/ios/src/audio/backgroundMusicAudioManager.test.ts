@@ -318,6 +318,46 @@ describe("NativeBackgroundMusicAudioManager", () => {
     expect(audioMock.players[0]?.volume).toBe(0.7);
   });
 
+  it("waits for a transition target cue to start playback", async () => {
+    const manager = new NativeBackgroundMusicAudioManager();
+    const targetUrl =
+      "https://example.supabase.co/storage/v1/object/public/runtime/media/background-music/music_theme";
+    const cue = {
+      key: "scene:music_theme",
+      label: "Theme",
+      url: targetUrl
+    };
+    let resolved = false;
+    const started = manager
+      .waitForTargetPlaybackStart({
+        cue,
+        sessionId: "session-a",
+        shouldPlay: true
+      })
+      .then((snapshot) => {
+        resolved = true;
+        return snapshot;
+      });
+
+    await waitForNextTick();
+
+    expect(resolved).toBe(false);
+
+    manager.setTarget({
+      cue,
+      sessionId: "session-a",
+      shouldPlay: true,
+      volume: 0.7,
+      fadeMs: 0
+    });
+
+    await expect(started).resolves.toMatchObject({
+      activeLabel: "Theme",
+      error: null,
+      state: "playing"
+    });
+  });
+
   it("uses the sniffed MP4 audio extension when storage reports mpeg", async () => {
     vi.stubGlobal(
       "fetch",

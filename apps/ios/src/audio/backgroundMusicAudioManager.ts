@@ -69,6 +69,8 @@ const DEFAULT_FADE_MS = 450;
 const FADE_FRAME_MS = 32;
 const PLAYER_LOAD_TIMEOUT_MS = 15000;
 const PLAYER_LOAD_POLL_MS = 50;
+const PLAYER_PLAYBACK_START_TIMEOUT_MS = 3500;
+const PLAYER_PLAYBACK_START_POLL_MS = 50;
 const BACKGROUND_MUSIC_CACHE_DIR = "ocnoer-background-music";
 const DEFAULT_AUDIO_FILE_EXTENSION = "mp3";
 const AUDIO_SIGNATURE_BYTE_COUNT = 64;
@@ -521,6 +523,12 @@ function isPlayerActive(player: AudioPlayer) {
   );
 }
 
+function isPlayerPlaybackStarted(player: AudioPlayer) {
+  const state = getPlayerRuntimeState(player);
+
+  return state.isLoaded && state.isPlaying && !state.isPaused;
+}
+
 function shouldStartPlayer(player: AudioPlayer) {
   const state = getPlayerRuntimeState(player);
 
@@ -536,6 +544,27 @@ function releasePlayer(player: AudioPlayer) {
   } finally {
     player.remove();
   }
+}
+
+async function waitForPlayerPlaybackStart(
+  player: AudioPlayer,
+  shouldContinue: () => boolean
+) {
+  const startedAt = Date.now();
+
+  while (!isPlayerPlaybackStarted(player)) {
+    if (!shouldContinue()) {
+      return false;
+    }
+
+    if (Date.now() - startedAt >= PLAYER_PLAYBACK_START_TIMEOUT_MS) {
+      return shouldContinue();
+    }
+
+    await waitForDuration(PLAYER_PLAYBACK_START_POLL_MS);
+  }
+
+  return shouldContinue();
 }
 
 export class NativeBackgroundMusicAudioManager {
@@ -602,6 +631,77 @@ export class NativeBackgroundMusicAudioManager {
     this.failedTarget = null;
 
     this.run();
+  }
+
+  waitForTargetPlaybackStart(input: {
+    cue: BackgroundMusicPlayableTarget | null;
+    sessionId: string | null;
+    shouldPlay: boolean;
+    timeoutMs?: number;
+  }) {
+    if (!input.shouldPlay || !input.cue) {
+      return Promise.resolve(this.snapshot);
+    }
+
+    const timeoutMs = input.timeoutMs ?? PLAYER_PLAYBACK_START_TIMEOUT_MS;
+    const startedAt = Date.now();
+    const targetCue = input.cue;
+
+    return new Promise<BackgroundMusicManagerSnapshot>((resolve) => {
+      let pollTimeout: ReturnType<typeof globalThis.setTimeout> | null = null;
+
+      const cleanup = () => {
+        this.listeners.delete(check);
+
+        if (pollTimeout) {
+          globalThis.clearTimeout(pollTimeout);
+          pollTimeout = null;
+        }
+      };
+
+      const finish = () => {
+        cleanup();
+        resolve(this.snapshot);
+      };
+
+      const isTargetPlaying = () =>
+        Boolean(
+          this.current &&
+          targetMatchesCue(this.current, targetCue, input.sessionId) &&
+          this.current.hasStarted &&
+          isPlayerPlaybackStarted(this.current.player)
+        );
+
+      const isTargetFailed = () =>
+        targetMatchesCue(this.failedTarget, targetCue, input.sessionId);
+
+      const schedulePoll = () => {
+        if (pollTimeout) {
+          return;
+        }
+
+        pollTimeout = globalThis.setTimeout(() => {
+          pollTimeout = null;
+          check();
+        }, PLAYER_PLAYBACK_START_POLL_MS);
+      };
+
+      function check() {
+        if (
+          isTargetPlaying() ||
+          isTargetFailed() ||
+          Date.now() - startedAt >= timeoutMs
+        ) {
+          finish();
+          return;
+        }
+
+        schedulePoll();
+      }
+
+      this.listeners.add(check);
+      check();
+    });
   }
 
   private emit(snapshot: BackgroundMusicManagerSnapshot) {
@@ -746,6 +846,12 @@ export class NativeBackgroundMusicAudioManager {
     this.current.hasStarted = true;
     this.failedTarget = null;
 
+    await waitForPlayerPlaybackStart(player, isStillTarget);
+
+    if (!isStillTarget()) {
+      return;
+    }
+
     await fadePlayerTo(player, this.target.volume, this.target.fadeMs);
 
     this.emit({
@@ -866,8 +972,20 @@ export class NativeBackgroundMusicAudioManager {
           this.current.hasStarted = true;
         }
 
+        const currentPlayer = this.current.player;
+        const isStillTarget = () =>
+          this.target.shouldPlay &&
+          this.target.sessionId === this.current?.sessionId &&
+          this.target.cue?.url === targetCue.url;
+
+        await waitForPlayerPlaybackStart(currentPlayer, isStillTarget);
+
+        if (!isStillTarget()) {
+          return;
+        }
+
         await fadePlayerTo(
-          this.current.player,
+          currentPlayer,
           this.target.volume,
           this.target.fadeMs
         );

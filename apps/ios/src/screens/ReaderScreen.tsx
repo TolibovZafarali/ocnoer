@@ -22,12 +22,16 @@ import Svg, { Path } from "react-native-svg";
 
 import {
   validateCatNameInput,
-  type PlayerRuntimeBootstrap
+  type PlayerBoundaryState,
+  type PlayerRuntimeBootstrap,
+  type ReaderState,
+  type RuntimeChapterBundle
 } from "@ocnoer/story-core";
 
 import type { MobilePlayer } from "../api/playerSessionTypes";
 import { resolveNativeReaderBackgroundMusicCue } from "../audio/nativeBackgroundMusicCue";
 import { useNativeBackgroundMusic } from "../audio/useNativeBackgroundMusic";
+import { getNativeBackgroundMusicAudioManager } from "../audio/backgroundMusicAudioManager";
 import type { MobileRuntimeConfig } from "../config/runtime";
 import { NativeReaderBoundaryCard } from "../reader/components/NativeReaderBoundaryCard";
 import { BlackoutOverlay } from "../reader/components/NativeCinematic";
@@ -525,12 +529,61 @@ export function ReaderScreen(props: ReaderScreenProps) {
     useState<PortraitExitState>(NO_EXITING_PORTRAITS);
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [keyboardBottomInset, setKeyboardBottomInset] = useState(0);
+  const backgroundMusicManager = useMemo(
+    () => getNativeBackgroundMusicAudioManager(),
+    []
+  );
+  const readerSessionId = `${props.player.id}:${props.sessionToken}:reader:${props.readerRunId}`;
+  const waitForSceneTransitionAudioStart = useCallback(
+    async (input: {
+      boundaryState: PlayerBoundaryState | null;
+      bundle: RuntimeChapterBundle | null;
+      readerState: ReaderState | null;
+    }) => {
+      if (
+        Platform.OS !== "ios" ||
+        props.audioPreferences.muted ||
+        props.isSigningOut
+      ) {
+        return;
+      }
+
+      const cue = resolveNativeReaderBackgroundMusicCue({
+        supabaseUrl: props.config.supabaseUrl,
+        bundle: input.bundle,
+        readerState: input.readerState,
+        boundaryState: input.boundaryState
+      });
+
+      if (cue.status !== "playable") {
+        return;
+      }
+
+      await backgroundMusicManager.waitForTargetPlaybackStart({
+        cue: {
+          key: cue.key,
+          label: cue.label,
+          url: cue.url
+        },
+        sessionId: readerSessionId,
+        shouldPlay: true
+      });
+    },
+    [
+      backgroundMusicManager,
+      props.audioPreferences.muted,
+      props.config.supabaseUrl,
+      props.isSigningOut,
+      readerSessionId
+    ]
+  );
   const reader = useNativeReaderController({
     bootstrap: props.bootstrap,
     config: props.config,
     player: props.player,
     sessionToken: props.sessionToken,
     onProgressSaved: props.onProgressSaved,
+    waitForSceneTransitionAudioStart,
     onUpdateCatName: props.onUpdateCatName
   });
   const presentation = reader.presentation;
@@ -557,7 +610,7 @@ export function ReaderScreen(props: ReaderScreenProps) {
     cue: backgroundMusicCue,
     isSessionActive: !props.isSigningOut,
     preferences: props.audioPreferences,
-    sessionId: `${props.player.id}:${props.sessionToken}:reader:${props.readerRunId}`
+    sessionId: readerSessionId
   });
   useEffect(() => {
     if (Platform.OS !== "ios") {

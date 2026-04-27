@@ -208,6 +208,45 @@ function waitForPlayerPlayCallCount(player: MockAudioPlayer, count: number) {
   });
 }
 
+function createArrayBuffer(bytes: number[]) {
+  const buffer = new Uint8Array(bytes);
+
+  return buffer.buffer.slice(
+    buffer.byteOffset,
+    buffer.byteOffset + buffer.byteLength
+  );
+}
+
+function createFetchResponse(input: {
+  bytes?: number[];
+  headers?: Record<string, string | null>;
+  status?: number;
+}) {
+  const status = input.status ?? 200;
+  const normalizedHeaders = new Map(
+    Object.entries(input.headers ?? {}).map(([key, value]) => [
+      key.toLowerCase(),
+      value
+    ])
+  );
+
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    headers: {
+      get: (name: string) => normalizedHeaders.get(name.toLowerCase()) ?? null
+    },
+    arrayBuffer: input.bytes
+      ? async () => createArrayBuffer(input.bytes ?? [])
+      : undefined
+  };
+}
+
+const MP4_AUDIO_SIGNATURE = [
+  0x00, 0x00, 0x00, 0x1c, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d
+];
+const WEBM_AUDIO_SIGNATURE = [0x1a, 0x45, 0xdf, 0xa3, 0x9f, 0x42, 0x86];
+
 describe("NativeBackgroundMusicAudioManager", () => {
   beforeEach(() => {
     audioMock.players.length = 0;
@@ -277,6 +316,215 @@ describe("NativeBackgroundMusicAudioManager", () => {
     expect(audioMock.players[0]?.seekTo).toHaveBeenCalledWith(0);
     expect(audioMock.players[0]?.play).toHaveBeenCalledTimes(1);
     expect(audioMock.players[0]?.volume).toBe(0.7);
+  });
+
+  it("uses the sniffed MP4 audio extension when storage reports mpeg", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: { method?: string }) => {
+        if (init?.method === "HEAD") {
+          return createFetchResponse({
+            headers: {
+              "content-length": "128",
+              "content-type": "audio/mpeg",
+              etag: "mp4-etag"
+            }
+          });
+        }
+
+        return createFetchResponse({
+          bytes: MP4_AUDIO_SIGNATURE,
+          headers: {
+            "content-type": "audio/mpeg"
+          }
+        });
+      })
+    );
+
+    const manager = new NativeBackgroundMusicAudioManager();
+    const playing = waitForManagerState(manager, "playing");
+    const targetUrl =
+      "https://example.supabase.co/storage/v1/object/public/runtime/media/background-music/music_mp4";
+
+    manager.setTarget({
+      cue: {
+        key: "scene:music_mp4",
+        label: "MP4",
+        url: targetUrl
+      },
+      sessionId: "session-a",
+      shouldPlay: true,
+      volume: 0.7,
+      fadeMs: 0
+    });
+
+    await playing;
+
+    expect(fileSystemMock.File.downloadFileAsync).toHaveBeenCalledWith(
+      targetUrl,
+      expect.objectContaining({
+        uri: expect.stringMatching(/\.m4a$/)
+      }),
+      {
+        idempotent: true
+      }
+    );
+    expect(audioMock.createAudioPlayer).toHaveBeenCalledWith(
+      {
+        uri: expect.stringMatching(
+          /^file:\/\/\/cache\/ocnoer-background-music\/.+\.m4a$/
+        )
+      },
+      expect.any(Object)
+    );
+  });
+
+  it("uses an iOS-compatible derivative when the scene track is WebM", async () => {
+    const manager = new NativeBackgroundMusicAudioManager();
+    const playing = waitForManagerState(manager, "playing");
+    const targetUrl =
+      "https://example.supabase.co/storage/v1/object/public/runtime/media/background-music/music_webm";
+    const derivativeUrl = `${targetUrl}.ios.m4a`;
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (url: string, init?: { method?: string }) => {
+        if (url === targetUrl && init?.method === "HEAD") {
+          return createFetchResponse({
+            headers: {
+              "content-length": "4021745",
+              "content-type": "audio/mpeg",
+              etag: "webm-etag"
+            }
+          });
+        }
+
+        if (url === targetUrl) {
+          return createFetchResponse({
+            bytes: WEBM_AUDIO_SIGNATURE,
+            headers: {
+              "content-type": "audio/mpeg"
+            }
+          });
+        }
+
+        if (url === derivativeUrl && init?.method === "HEAD") {
+          return createFetchResponse({
+            headers: {
+              "content-length": "128",
+              "content-type": "audio/mp4",
+              etag: "m4a-etag"
+            }
+          });
+        }
+
+        if (url === derivativeUrl) {
+          return createFetchResponse({
+            bytes: MP4_AUDIO_SIGNATURE,
+            headers: {
+              "content-type": "audio/mp4"
+            }
+          });
+        }
+
+        return createFetchResponse({
+          status: 404
+        });
+      })
+    );
+
+    manager.setTarget({
+      cue: {
+        key: "scene:scene_3:music_webm",
+        label: "WebM source",
+        url: targetUrl
+      },
+      sessionId: "session-a",
+      shouldPlay: true,
+      volume: 0.7,
+      fadeMs: 0
+    });
+
+    await playing;
+
+    expect(fileSystemMock.File.downloadFileAsync).toHaveBeenCalledWith(
+      derivativeUrl,
+      expect.objectContaining({
+        uri: expect.stringMatching(/\.m4a$/)
+      }),
+      {
+        idempotent: true
+      }
+    );
+    expect(audioMock.createAudioPlayer).toHaveBeenCalledTimes(1);
+    expect(audioMock.players[0]?.play).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not retry an unsupported WebM target until the cue changes", async () => {
+    const manager = new NativeBackgroundMusicAudioManager();
+    const error = waitForManagerState(manager, "error");
+    const targetUrl =
+      "https://example.supabase.co/storage/v1/object/public/runtime/media/background-music/music_webm";
+    const fetchMock = vi.fn(async (url: string, init?: { method?: string }) => {
+      if (url === targetUrl && init?.method === "HEAD") {
+        return createFetchResponse({
+          headers: {
+            "content-length": "4021745",
+            "content-type": "audio/mpeg",
+            etag: "webm-etag"
+          }
+        });
+      }
+
+      if (url === targetUrl) {
+        return createFetchResponse({
+          bytes: WEBM_AUDIO_SIGNATURE,
+          headers: {
+            "content-type": "audio/mpeg"
+          }
+        });
+      }
+
+      return createFetchResponse({
+        status: 404
+      });
+    });
+
+    vi.stubGlobal("fetch", fetchMock);
+
+    manager.setTarget({
+      cue: {
+        key: "scene:scene_3:music_webm",
+        label: "WebM source",
+        url: targetUrl
+      },
+      sessionId: "session-a",
+      shouldPlay: true,
+      volume: 0.7,
+      fadeMs: 0
+    });
+
+    await expect(error).resolves.toMatchObject({
+      error: expect.stringContaining("Unsupported iOS background music format")
+    });
+
+    const fetchCallCount = fetchMock.mock.calls.length;
+
+    manager.setTarget({
+      cue: {
+        key: "scene:scene_3:music_webm",
+        label: "WebM source",
+        url: targetUrl
+      },
+      sessionId: "session-a",
+      shouldPlay: true,
+      volume: 0.7,
+      fadeMs: 0
+    });
+    await waitForNextTick();
+
+    expect(fetchMock).toHaveBeenCalledTimes(fetchCallCount);
+    expect(audioMock.createAudioPlayer).not.toHaveBeenCalled();
   });
 
   it("keeps one player when the active dialogue still uses the same track", async () => {

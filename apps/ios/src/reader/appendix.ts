@@ -1,0 +1,232 @@
+export type AppendixInlineSegment = {
+  highlight: boolean;
+  text: string;
+};
+
+export type AppendixParagraphBlock = {
+  kind: "paragraph";
+  quiet: boolean;
+  segments: AppendixInlineSegment[];
+};
+
+export type AppendixListItemBlock = {
+  depth: number;
+  kind: "listItem";
+  segments: AppendixInlineSegment[];
+};
+
+export type AppendixBlock = AppendixParagraphBlock | AppendixListItemBlock;
+
+export type AppendixSection = {
+  blocks: AppendixBlock[];
+  title: string;
+};
+
+export type ParsedAppendix = {
+  sections: AppendixSection[];
+  title: string;
+};
+
+export const APPENDIX_MARKDOWN = `# Appendix
+
+## **HOUSE VALAMERE in VALESTRIA**
+
+{KING MAEDRIC VALAMERE}, The Late King in Valestria,
+
+- his wife, QUEEN MAELIS REGENT, of House Cassivar,
+- their daughter, PRINCESS OCNOER,
+- his brother, KING VAELAN VALAMERE, Lord of Rillford, The King in Valestria,
+    - his wife, QUEEN ZAREEN, of House Saffryn,
+    - their children:
+        - PRINCE JORREN, the heir to Valestria,
+        - PRINCE AREN,
+- his small council:
+    - LORD PASCAL VARRON, Hand of the King, Lord of Greenbarrow,
+        - his son, SER CORVIN VARRON, commander of the City Watch of Valestria
+    - GRAND MAESTER WYLDMYR,
+    - LORD ALDER VELMONT, Lord of Spanwatch,
+    - LORD WYCK LAYNE, Lord of Oakmere,
+    - LORD MAXYS REDFORT, Lord of Ashgate
+    - SER EDRIC KAELOR, Lord Commander of the Kingsguard,
+        - his son, LORD ARYS KAELOR, Lord of Hollowpine,
+
+The principal houses sworn to Valestria are Varron, Velmont, Layne, Kaelor, Redfort
+
+## **HOUSE VELYR in MIRATH**
+
+KING AEDRIC VELYR, The King in Mirath,
+
+- his wife, {QUEEN ANYA}, of House Selwynne,
+- their children:
+    - PRINCE LUCAIR VELYR, the heir to Mirath,
+    - PRINCESS NYRA VELYR,
+- his small council:
+- LORD MAREK SELWYNNE, Hand of the King, Lord of Windharbor,
+- GRAND MAESTER CALDREN,
+- LORD CORVAL MORCANT, Lord of Windharbor,
+- LORD EDRIN LYRIS,  Lord of Stonebrook,
+- LORD VORREN ORDAIN, Lord of Redfield Steads,
+- SER DAIN VERIDAN, Lord Commander of the Kingsguard,
+
+The principal houses sworn to Mirath are Selwynne, Morcant, Lyris, Ordain, Veridan
+
+## **HOUSE SAFFRYN in AZDARA**
+
+KING SAHRAN SAFFRYN, The King in Azdara,
+
+- his wife, QUEEN SAMIRA, of House Namar,
+- their children:
+    - PRINCESS ZAREEN SAFFRYN,
+    - PRINCE RAZIN SAFFRYN, the heir to Azdara,
+- his small council:
+    - LORD RAYAN MARZAI, Hand of the King, Lord of Cinderport,
+    - GRAND MAESTER SAQIR,
+    - LORD NASSIR VEZDAN, Lord of Emberrow,
+    - LORD FARESH QADIRAN, Lord of Waymeet,
+    - LORD JAHIR KHARAZ, master of war,
+        - his son, {SER TAREK KHARAZ}, lost duel to Vaelan Valamere for Princess Zareen,
+
+The principal houses sworn to Azdara are Marzai, Vezdan, Qadiran, Kharaz, Namar
+
+## **HOUSE MONTCLERE in AURELION**
+
+KING ALARIC MONTCLERE, The King in Aurelion,
+
+- his wife, QUEEN SELENE, of House Brineholt,
+- their children:
+    - PRINCE CYRAN MONTCLERE, the heir to Aurelion,
+    - PRINCESS ELIORA MONTCLERE,
+    - PRINCE ROMAN MONTCLERE,
+- his small council:
+    - LORD RORAN CASSIVAR, Hand of the King, Lord of Cassivarhold,
+        - his sister, QUEEN MAELIS VALAMERE, of Valestria,
+    - GRAND MAESTER ELYS,
+    - LORD BERRIK BRINEHOLT, Lord of Stormwind,
+    - LORD CALDRIC THORNEVALE, master of coin,
+    - LADY VESPERA TIDEWYNE, master of laws,
+
+The principal houses sworn to Aurelion are Cassivar, Brineholt, Thornevale, Tidewyne
+
+## **HOUSE VAARGARD in FROSTGARD**
+
+KING SKORREN VAARGARD, The King in Frostgard,
+
+- his wife, QUEEN FREYDA VAARGARD, of House Ravenwick,
+- their son, PRINCE HALVAR VAARGARD, the heir to Frostgard,
+- his small council:
+    - LORD RUNE RAVENWICK, Hand of the King, Lord of Hailhaven,
+    - GRAND MAESTER CALDER,
+    - LORD STEN RIMEWARD, Lord of Rimeford,
+    - LORD BRYN IRONVEIL, master of war,
+
+The principal houses sworn to Frostgard are Vaargard, Ravenwick, Stonewolf, Rimeward, Ironveil`;
+
+function stripMarkdownStrong(value: string) {
+  return value.replace(/\*\*/g, "").trim();
+}
+
+export function parseAppendixInlineText(
+  value: string
+): AppendixInlineSegment[] {
+  const normalizedValue = stripMarkdownStrong(value);
+  const segments: AppendixInlineSegment[] = [];
+  const highlightPattern = /\{([^{}]+)\}/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = highlightPattern.exec(normalizedValue))) {
+    if (match.index > lastIndex) {
+      segments.push({
+        highlight: false,
+        text: normalizedValue.slice(lastIndex, match.index)
+      });
+    }
+
+    segments.push({
+      highlight: true,
+      text: match[1] ?? ""
+    });
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < normalizedValue.length) {
+    segments.push({
+      highlight: false,
+      text: normalizedValue.slice(lastIndex)
+    });
+  }
+
+  return segments.length > 0
+    ? segments
+    : [
+        {
+          highlight: false,
+          text: normalizedValue
+        }
+      ];
+}
+
+function getPlainAppendixText(value: string) {
+  return parseAppendixInlineText(value)
+    .map((segment) => segment.text)
+    .join("");
+}
+
+function isPrincipalHousesParagraph(value: string) {
+  return value.toLowerCase().startsWith("the principal houses sworn to ");
+}
+
+export function parseAppendixMarkdown(markdown: string): ParsedAppendix {
+  const sections: AppendixSection[] = [];
+  let title = "Appendix";
+  let currentSection: AppendixSection | null = null;
+
+  for (const rawLine of markdown.split(/\r?\n/)) {
+    const line = rawLine.trim();
+
+    if (line.length === 0) {
+      continue;
+    }
+
+    const sectionMatch = line.match(/^##\s+(.+)$/);
+    if (sectionMatch) {
+      currentSection = {
+        blocks: [],
+        title: getPlainAppendixText(sectionMatch[1] ?? "")
+      };
+      sections.push(currentSection);
+      continue;
+    }
+
+    const titleMatch = line.match(/^#\s+(.+)$/);
+    if (titleMatch) {
+      title = getPlainAppendixText(titleMatch[1] ?? "");
+      continue;
+    }
+
+    if (!currentSection) {
+      continue;
+    }
+
+    const listItemMatch = rawLine.match(/^(\s*)-\s+(.+)$/);
+    if (listItemMatch) {
+      currentSection.blocks.push({
+        depth: Math.floor((listItemMatch[1] ?? "").length / 4),
+        kind: "listItem",
+        segments: parseAppendixInlineText(listItemMatch[2] ?? "")
+      });
+      continue;
+    }
+
+    currentSection.blocks.push({
+      kind: "paragraph",
+      quiet: isPrincipalHousesParagraph(line),
+      segments: parseAppendixInlineText(line)
+    });
+  }
+
+  return {
+    sections,
+    title
+  };
+}

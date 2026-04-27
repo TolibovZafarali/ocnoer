@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { BlurView } from "expo-blur";
 import {
   ActivityIndicator,
   Animated,
@@ -14,6 +15,7 @@ import {
   Text,
   type StyleProp,
   type KeyboardEvent,
+  type TextStyle,
   type ViewStyle,
   useWindowDimensions,
   View
@@ -38,6 +40,12 @@ import { BlackoutOverlay } from "../reader/components/NativeCinematic";
 import { NativeReaderDialogue } from "../reader/components/NativeReaderDialogue";
 import { NativeReaderStage } from "../reader/components/NativeReaderStage";
 import {
+  APPENDIX_MARKDOWN,
+  parseAppendixMarkdown,
+  type AppendixBlock,
+  type AppendixInlineSegment
+} from "../reader/appendix";
+import {
   setReaderDecodeSchedulerInteractionState,
   useReaderAssetWarmup
 } from "../reader/imagePreload";
@@ -56,6 +64,11 @@ const worldMapImage = require("../../../../lore/Thaloraz.webp") as number;
 const MAP_MIN_ZOOM_SCALE = 1;
 const MAP_MAX_ZOOM_SCALE = 3;
 const MAP_OVERLAY_PADDING = ocnoerTheme.spacing.md;
+const APPENDIX_DOCUMENT = parseAppendixMarkdown(APPENDIX_MARKDOWN);
+const APPENDIX_FONT_FAMILY = Platform.select({
+  ios: "Palatino",
+  default: "serif"
+});
 
 type ReaderScreenProps = {
   bootstrap: PlayerRuntimeBootstrap;
@@ -145,6 +158,41 @@ function MapIcon() {
       />
       <Path
         d="M15 6v15"
+        stroke={ocnoerWebPlayer.chrome.iconColor}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+      />
+    </Svg>
+  );
+}
+
+function AppendixIcon() {
+  return (
+    <Svg fill="none" height={26} viewBox="0 0 24 24" width={26}>
+      <Path
+        d="M5 4.75A2.75 2.75 0 0 1 7.75 2H19v18H7.75A2.75 2.75 0 0 0 5 22V4.75Z"
+        stroke={ocnoerWebPlayer.chrome.iconColor}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+      />
+      <Path
+        d="M8.75 7H15.5"
+        stroke={ocnoerWebPlayer.chrome.iconColor}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+      />
+      <Path
+        d="M8.75 11H15.5"
+        stroke={ocnoerWebPlayer.chrome.iconColor}
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth={2}
+      />
+      <Path
+        d="M8.75 15H13"
         stroke={ocnoerWebPlayer.chrome.iconColor}
         strokeLinecap="round"
         strokeLinejoin="round"
@@ -289,6 +337,7 @@ function ReaderChrome(props: {
   audioPreferences: NativeAudioPreferences;
   canRetreat: boolean;
   isSigningOut: boolean;
+  onOpenAppendix: () => void;
   onOpenMap: () => void;
   onRetreat: () => void;
   onSignOut: () => void;
@@ -303,6 +352,11 @@ function ReaderChrome(props: {
         onPress={props.onRetreat}
       />
       <View pointerEvents="box-none" style={styles.chromeRight}>
+        <ReaderIconButton
+          accessibilityLabel="Open appendix"
+          icon={<AppendixIcon />}
+          onPress={props.onOpenAppendix}
+        />
         <ReaderIconButton
           accessibilityLabel="Open world map"
           icon={<MapIcon />}
@@ -333,6 +387,7 @@ function ReaderChromeLayer(props: {
   canRetreat: boolean;
   isSigningOut: boolean;
   visible: boolean;
+  onOpenAppendix: () => void;
   onOpenMap: () => void;
   onRetreat: () => void;
   onSignOut: () => void;
@@ -377,6 +432,7 @@ function ReaderChromeLayer(props: {
           audioPreferences={props.audioPreferences}
           canRetreat={props.canRetreat}
           isSigningOut={props.isSigningOut}
+          onOpenAppendix={props.onOpenAppendix}
           onOpenMap={props.onOpenMap}
           onRetreat={props.onRetreat}
           onSignOut={props.onSignOut}
@@ -486,6 +542,121 @@ function WorldMapOverlay(props: { onClose: () => void }) {
   );
 }
 
+function AppendixInlineText(props: {
+  segments: AppendixInlineSegment[];
+  style: StyleProp<TextStyle>;
+}) {
+  return (
+    <Text style={props.style}>
+      {props.segments.map((segment, index) => (
+        <Text
+          key={`${segment.text}-${index}`}
+          style={segment.highlight ? styles.appendixHighlightText : null}
+        >
+          {segment.text}
+        </Text>
+      ))}
+    </Text>
+  );
+}
+
+function AppendixBlockView(props: { block: AppendixBlock; index: number }) {
+  if (props.block.kind === "paragraph") {
+    return (
+      <AppendixInlineText
+        segments={props.block.segments}
+        style={[
+          styles.appendixParagraph,
+          props.index === 0 ? styles.appendixFirstBlock : null,
+          props.block.quiet ? styles.appendixQuietParagraph : null
+        ]}
+      />
+    );
+  }
+
+  return (
+    <View
+      style={[
+        styles.appendixListItem,
+        props.index === 0 ? styles.appendixFirstBlock : null,
+        {
+          marginLeft: props.block.depth * ocnoerTheme.spacing.lg
+        }
+      ]}
+    >
+      <Text
+        style={[
+          styles.appendixListBullet,
+          props.block.depth > 0 ? styles.appendixNestedListBullet : null
+        ]}
+      >
+        {props.block.depth > 0 ? "-" : "\u2022"}
+      </Text>
+      <AppendixInlineText
+        segments={props.block.segments}
+        style={[
+          styles.appendixListText,
+          props.block.depth > 0 ? styles.appendixNestedListText : null
+        ]}
+      />
+    </View>
+  );
+}
+
+function AppendixOverlay(props: { onClose: () => void }) {
+  return (
+    <View accessibilityViewIsModal style={styles.appendixOverlay}>
+      <BlurView
+        experimentalBlurMethod="dimezisBlurView"
+        intensity={54}
+        style={styles.appendixBackdropBlur}
+        tint="dark"
+      />
+      <View pointerEvents="none" style={styles.appendixBackdropScrim} />
+      <SafeAreaView style={styles.appendixContentSafeArea}>
+        <ScrollView
+          bounces
+          contentContainerStyle={styles.appendixScrollContent}
+          indicatorStyle="white"
+          scrollEventThrottle={16}
+          showsVerticalScrollIndicator
+          style={styles.appendixScroll}
+        >
+          <View style={styles.appendixHeader}>
+            <Text style={styles.appendixTitle}>{APPENDIX_DOCUMENT.title}</Text>
+            <Text style={styles.appendixSubtitle}>Houses of Thaloraz</Text>
+          </View>
+          {APPENDIX_DOCUMENT.sections.map((section) => (
+            <View key={section.title} style={styles.appendixSection}>
+              <Text style={styles.appendixSectionTitle}>{section.title}</Text>
+              <View style={styles.appendixSectionBody}>
+                {section.blocks.map((block, index) => (
+                  <AppendixBlockView
+                    key={`${section.title}-${block.kind}-${index}`}
+                    block={block}
+                    index={index}
+                  />
+                ))}
+              </View>
+            </View>
+          ))}
+        </ScrollView>
+      </SafeAreaView>
+      <SafeAreaView pointerEvents="box-none" style={styles.mapCloseSafeArea}>
+        <Pressable
+          accessibilityLabel="Close appendix"
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={props.onClose}
+          style={styles.mapCloseButton}
+        >
+          <CloseIcon />
+        </Pressable>
+      </SafeAreaView>
+    </View>
+  );
+}
+
 function ReaderMessageScreen(props: {
   title: string;
   body: string;
@@ -528,6 +699,7 @@ export function ReaderScreen(props: ReaderScreenProps) {
   const [portraitExitState, setPortraitExitState] =
     useState<PortraitExitState>(NO_EXITING_PORTRAITS);
   const [isMapOpen, setIsMapOpen] = useState(false);
+  const [isAppendixOpen, setIsAppendixOpen] = useState(false);
   const [keyboardBottomInset, setKeyboardBottomInset] = useState(0);
   const backgroundMusicManager = useMemo(
     () => getNativeBackgroundMusicAudioManager(),
@@ -736,7 +908,13 @@ export function ReaderScreen(props: ReaderScreenProps) {
   }, [props.onSignOut]);
   const handleOpenMap = useCallback(() => {
     setIsChromeVisible(false);
+    setIsAppendixOpen(false);
     setIsMapOpen(true);
+  }, []);
+  const handleOpenAppendix = useCallback(() => {
+    setIsChromeVisible(false);
+    setIsMapOpen(false);
+    setIsAppendixOpen(true);
   }, []);
 
   useReaderAssetWarmup(reader.preloadAssetRefs);
@@ -840,6 +1018,7 @@ export function ReaderScreen(props: ReaderScreenProps) {
               }
               isSigningOut={props.isSigningOut}
               visible={isChromeVisible}
+              onOpenAppendix={handleOpenAppendix}
               onOpenMap={handleOpenMap}
               onRetreat={handleRetreat}
               onSignOut={handleSignOut}
@@ -888,6 +1067,13 @@ export function ReaderScreen(props: ReaderScreenProps) {
           <WorldMapOverlay
             onClose={() => {
               setIsMapOpen(false);
+            }}
+          />
+        ) : null}
+        {isAppendixOpen ? (
+          <AppendixOverlay
+            onClose={() => {
+              setIsAppendixOpen(false);
             }}
           />
         ) : null}
@@ -1001,6 +1187,118 @@ const styles = StyleSheet.create({
   mapImage: {
     height: "100%",
     width: "100%"
+  },
+  appendixOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    elevation: 80,
+    zIndex: 80
+  },
+  appendixBackdropBlur: {
+    ...StyleSheet.absoluteFillObject
+  },
+  appendixBackdropScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 0, 0, 0.76)"
+  },
+  appendixContentSafeArea: {
+    flex: 1
+  },
+  appendixScroll: {
+    flex: 1
+  },
+  appendixScrollContent: {
+    paddingBottom: ocnoerTheme.spacing.xxxl + ocnoerTheme.spacing.lg,
+    paddingHorizontal: ocnoerTheme.spacing.lg,
+    paddingTop:
+      ocnoerWebPlayer.chrome.iconSize +
+      ocnoerTheme.spacing.md +
+      ocnoerTheme.spacing.xxl
+  },
+  appendixHeader: {
+    marginBottom: ocnoerTheme.spacing.lg,
+    paddingHorizontal: ocnoerTheme.spacing.xs
+  },
+  appendixTitle: {
+    color: ocnoerTheme.colors.text,
+    fontFamily: APPENDIX_FONT_FAMILY,
+    fontSize: 34,
+    fontWeight: "800",
+    lineHeight: 40
+  },
+  appendixSubtitle: {
+    color: ocnoerTheme.colors.textMuted,
+    fontFamily: APPENDIX_FONT_FAMILY,
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: ocnoerTheme.spacing.xxs
+  },
+  appendixSection: {
+    borderTopColor: "rgba(127, 29, 29, 0.72)",
+    borderTopWidth: StyleSheet.hairlineWidth,
+    marginBottom: ocnoerTheme.spacing.lg,
+    paddingHorizontal: ocnoerTheme.spacing.xs,
+    paddingTop: ocnoerTheme.spacing.lg
+  },
+  appendixSectionTitle: {
+    color: ocnoerTheme.colors.text,
+    fontFamily: APPENDIX_FONT_FAMILY,
+    fontSize: 17,
+    fontWeight: "900",
+    lineHeight: 24,
+    marginBottom: ocnoerTheme.spacing.md
+  },
+  appendixSectionBody: {
+    paddingTop: ocnoerTheme.spacing.xxs
+  },
+  appendixFirstBlock: {
+    marginTop: 0
+  },
+  appendixParagraph: {
+    color: ocnoerTheme.colors.text,
+    fontFamily: APPENDIX_FONT_FAMILY,
+    fontSize: 16,
+    lineHeight: 24,
+    marginTop: ocnoerTheme.spacing.sm
+  },
+  appendixQuietParagraph: {
+    color: ocnoerTheme.colors.textSubtle,
+    fontFamily: APPENDIX_FONT_FAMILY,
+    fontSize: 14,
+    lineHeight: 21,
+    marginTop: ocnoerTheme.spacing.lg
+  },
+  appendixListItem: {
+    alignItems: "flex-start",
+    flexDirection: "row",
+    marginTop: ocnoerTheme.spacing.sm
+  },
+  appendixListBullet: {
+    color: "#991b1b",
+    fontSize: 16,
+    fontWeight: "900",
+    lineHeight: 22,
+    width: 16
+  },
+  appendixNestedListBullet: {
+    color: ocnoerTheme.colors.textSubtle,
+    fontSize: 14,
+    lineHeight: 21
+  },
+  appendixListText: {
+    color: ocnoerTheme.colors.textMuted,
+    flex: 1,
+    fontFamily: APPENDIX_FONT_FAMILY,
+    fontSize: 15,
+    lineHeight: 22
+  },
+  appendixNestedListText: {
+    color: ocnoerTheme.colors.textSubtle,
+    fontSize: 14,
+    lineHeight: 21
+  },
+  appendixHighlightText: {
+    color: "#991b1b",
+    fontWeight: "900"
   },
   centered: {
     alignItems: "center",

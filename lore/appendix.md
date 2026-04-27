@@ -2,13 +2,15 @@
 
 ## **HOUSE VALAMERE in VALESTRIA**
 
-KING MAEDRIC VALAMERE, The King in Valestria,
+{KING MAEDRIC VALAMERE}, The Late King in Valestria,
 
-- his wife, QUEEN MAELIS, of House Cassivar,
-- their daughter, PRINCESS OCNOER, a girl of 18,
-- his brother, PRINCE VAELAN VALAMERE, Lord of Rillford, heir to Valestria,
-    - his wife, PRINCESS ZAREEN, of House Saffryn,
-    - their son, PRINCE JORREN, a boy of 13,
+- his wife, QUEEN MAELIS REGENT, of House Cassivar,
+- their daughter, PRINCESS OCNOER,
+- his brother, KING VAELAN VALAMERE, Lord of Rillford, King in Valestria,
+    - his wife, QUEEN ZAREEN, of House Saffryn,
+    - their children:
+        - PRINCE JORREN, heir to Valestria,
+        - PRINCE AREN,
 - his small council:
     - LORD PASCAL VARRON, Hand of the King, Lord of Greenbarrow,
         - his son, SER CORVIN VARRON, commander of the City Watch of Valestria
@@ -27,8 +29,8 @@ KING AEDRIC VELYR, The King in Mirath,
 
 - his wife, {QUEEN ANYA}, of House Selwynne,
 - their children:
-    - PRINCE LUCAIR VELYR, the heir to Mirath, a boy of 18
-    - PRINCESS NYRA VELYR, a girl of 12,
+    - PRINCE LUCAIR VELYR, heir to Mirath,
+    - PRINCESS NYRA VELYR,
 - his small council:
 - LORD MAREK SELWYNNE, Hand of the King, Lord of Windharbor,
 - GRAND MAESTER CALDREN,
@@ -88,9 +90,3 @@ KING SKORREN VAARGARD, The King in Frostgard,
     - LORD BRYN IRONVEIL, master of war,
 
 The principal houses sworn to Frostgard are Vaargard, Ravenwick, Stonewolf, Rimeward, Ironveil
-
-## **MAIN CHARACTERS**
-
-PRINCESS OCNOER VALAMERE
-
-ALVYN RIVERS

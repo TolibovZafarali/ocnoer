@@ -149,6 +149,7 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
       );
 
       await props.onPlayerUpdated(result.player);
+      return result.player;
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Unable to save cat name.";
@@ -158,6 +159,8 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
       if (options.rethrow) {
         throw new Error(message);
       }
+
+      return props.storedSession.player;
     } finally {
       setIsUpdatingCatName(false);
     }

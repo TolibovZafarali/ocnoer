@@ -72,6 +72,7 @@ import type {
 
 import type { NativeReaderPresentation } from "./readerPresentation";
 import { ensureSceneAssetsReady } from "./imagePreload";
+import { NATIVE_READER_DIALOGUE_ADVANCE_COMMIT_DELAY_MS } from "./nativeReaderDialogueMotion";
 import {
   NATIVE_SCENE_TRANSITION_COVER_MS,
   NATIVE_SCENE_TRANSITION_MIN_BLACKOUT_MS,
@@ -83,6 +84,7 @@ import {
   computeNativeReaderAdvanceTargets,
   createNativeReaderPresentationReadinessKey,
   ensureNativeReaderPresentationRenderReady,
+  getNativeReaderProgressBranchFlags,
   resolveNativeReaderAdvanceCommitPlan,
   runNativeReaderSceneTransition
 } from "./useNativeReaderController";
@@ -292,6 +294,34 @@ describe("presentation render readiness", () => {
     expect(result.commitMode).toBe("instant");
     expect(ensureRenderReady).not.toHaveBeenCalled();
     expect(commit).toHaveBeenCalledTimes(1);
+  });
+
+  it("can hold a regular dialogue commit for calmer card pacing", async () => {
+    const ensureRenderReady = vi.fn(async () => undefined);
+    const events: string[] = [];
+
+    const result = await commitNativeReaderAdvanceAfterPresentationGate({
+      targetKey: "line-ready",
+      targetRenderReady: true,
+      ensureRenderReady,
+      commitDelayMs: NATIVE_READER_DIALOGUE_ADVANCE_COMMIT_DELAY_MS,
+      wait: async (durationMs) => {
+        events.push(`wait:${durationMs}`);
+      },
+      commit: () => {
+        events.push("commit");
+      }
+    });
+
+    expect(result.commitMode).toBe("instant");
+    expect(result.waitDurationMs).toBe(
+      NATIVE_READER_DIALOGUE_ADVANCE_COMMIT_DELAY_MS
+    );
+    expect(events).toEqual([
+      `wait:${NATIVE_READER_DIALOGUE_ADVANCE_COMMIT_DELAY_MS}`,
+      "commit"
+    ]);
+    expect(ensureRenderReady).not.toHaveBeenCalled();
   });
 
   it("does not perform cold render preparation on tap when prewarm succeeded", async () => {
@@ -810,6 +840,17 @@ describe("native advance readiness", () => {
     ).toBe(true);
   });
 
+  it("allows pending chapter breaks to enter blackout before preloading completes", () => {
+    expect(
+      canNativeReaderAdvanceWithReadiness({
+        advanceResultType: "chapter-break",
+        presentationRenderKey: "current",
+        readinessSourceKey: "current",
+        readinessStatus: "pending"
+      })
+    ).toBe(true);
+  });
+
   it("keeps non-transition advances blocked until the target is ready", () => {
     expect(
       canNativeReaderAdvanceWithReadiness({
@@ -830,5 +871,36 @@ describe("native advance readiness", () => {
         readinessStatus: "ready"
       })
     ).toBe(true);
+  });
+});
+
+describe("native cat-name progress persistence", () => {
+  it("strips pending cat-name flags from progress sync until boundary save", () => {
+    expect(
+      getNativeReaderProgressBranchFlags({
+        branchFlags: {
+          cat_name: "Miso",
+          cat_name_locked: true,
+          "dress:ocnoer": "gala"
+        },
+        pendingCatNameCommit: "Miso"
+      })
+    ).toEqual({
+      "dress:ocnoer": "gala"
+    });
+  });
+
+  it("keeps already persisted cat-name flags in progress sync", () => {
+    const branchFlags = {
+      cat_name: "Miso",
+      cat_name_locked: true
+    };
+
+    expect(
+      getNativeReaderProgressBranchFlags({
+        branchFlags,
+        pendingCatNameCommit: null
+      })
+    ).toBe(branchFlags);
   });
 });

@@ -5,7 +5,7 @@ import {
   Animated,
   Easing,
   Image,
-  KeyboardAvoidingView,
+  Keyboard,
   Platform,
   Pressable,
   SafeAreaView,
@@ -13,6 +13,7 @@ import {
   StyleSheet,
   Text,
   type StyleProp,
+  type KeyboardEvent,
   type ViewStyle,
   useWindowDimensions,
   View
@@ -64,7 +65,7 @@ type ReaderScreenProps = {
   onProgressSaved: () => void;
   onSignOut: () => void;
   onToggleAudioMuted: () => void;
-  onUpdateCatName: (catName: string) => Promise<void>;
+  onUpdateCatName: (catName: string) => Promise<MobilePlayer>;
 };
 
 type PortraitExitState = {
@@ -81,6 +82,23 @@ function waitForDuration(durationMs: number) {
   return new Promise<void>((resolve) => {
     setTimeout(resolve, durationMs);
   });
+}
+
+function getKeyboardFrameBottomInset(input: {
+  event: KeyboardEvent;
+  windowHeight: number;
+}) {
+  const keyboardTopY = input.event.endCoordinates.screenY;
+  const keyboardHeight = input.event.endCoordinates.height;
+  if (!Number.isFinite(keyboardTopY)) {
+    return Math.max(keyboardHeight, 0);
+  }
+
+  if (keyboardTopY >= input.windowHeight) {
+    return 0;
+  }
+
+  return Math.max(input.windowHeight - keyboardTopY, keyboardHeight, 0);
 }
 
 function PreviousDialogueIcon() {
@@ -506,6 +524,7 @@ export function ReaderScreen(props: ReaderScreenProps) {
   const [portraitExitState, setPortraitExitState] =
     useState<PortraitExitState>(NO_EXITING_PORTRAITS);
   const [isMapOpen, setIsMapOpen] = useState(false);
+  const [keyboardBottomInset, setKeyboardBottomInset] = useState(0);
   const reader = useNativeReaderController({
     bootstrap: props.bootstrap,
     config: props.config,
@@ -540,6 +559,37 @@ export function ReaderScreen(props: ReaderScreenProps) {
     preferences: props.audioPreferences,
     sessionId: `${props.player.id}:${props.sessionToken}:reader:${props.readerRunId}`
   });
+  useEffect(() => {
+    if (Platform.OS !== "ios") {
+      return;
+    }
+
+    const updateKeyboardInset = (event: KeyboardEvent) => {
+      setKeyboardBottomInset(
+        getKeyboardFrameBottomInset({
+          event,
+          windowHeight: dimensions.height
+        })
+      );
+    };
+    const keyboardWillShow = Keyboard.addListener(
+      "keyboardWillShow",
+      updateKeyboardInset
+    );
+    const keyboardWillChangeFrame = Keyboard.addListener(
+      "keyboardWillChangeFrame",
+      updateKeyboardInset
+    );
+    const keyboardWillHide = Keyboard.addListener("keyboardWillHide", () => {
+      setKeyboardBottomInset(0);
+    });
+
+    return () => {
+      keyboardWillShow.remove();
+      keyboardWillChangeFrame.remove();
+      keyboardWillHide.remove();
+    };
+  }, [dimensions.height]);
   const stageWidth = Math.min(
     dimensions.width,
     dimensions.height * ocnoerTheme.stage.preferredAspectRatio
@@ -643,6 +693,10 @@ export function ReaderScreen(props: ReaderScreenProps) {
   const showTransitionBlackout =
     !showSceneTransitionOverlay &&
     (boundaryPresentation?.type === "scene-transition" || reader.isMoving);
+  const dialogueKeyboardBottomInset =
+    presentation?.status === "supported" && presentation.needsCatNameInput
+      ? keyboardBottomInset
+      : 0;
 
   useEffect(() => {
     setReaderDecodeSchedulerInteractionState({
@@ -700,10 +754,7 @@ export function ReaderScreen(props: ReaderScreenProps) {
 
   return (
     <View style={styles.safeArea}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.readerRoot}
-      >
+      <View style={styles.readerRoot}>
         <View style={styles.stageOuter}>
           <View
             style={[
@@ -770,6 +821,7 @@ export function ReaderScreen(props: ReaderScreenProps) {
                   isSavingCatName={reader.isSavingCatName}
                   persistenceError={reader.persistenceError}
                   presentation={presentation}
+                  keyboardBottomInset={dialogueKeyboardBottomInset}
                   onAdvance={handleAdvance}
                   onCatNameInputChange={reader.setCatNameInputValue}
                   onSelectDressOption={handleSelectDressOption}
@@ -786,7 +838,7 @@ export function ReaderScreen(props: ReaderScreenProps) {
             }}
           />
         ) : null}
-      </KeyboardAvoidingView>
+      </View>
       {showSceneTransitionOverlay ? (
         <SceneTransitionBlackoutOverlay phase={reader.sceneTransitionPhase} />
       ) : null}

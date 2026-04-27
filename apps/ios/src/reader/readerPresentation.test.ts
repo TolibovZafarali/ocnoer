@@ -482,6 +482,48 @@ describe("createNativeReaderPresentation", () => {
     expect(presentation?.stageCharacters).toHaveLength(1);
   });
 
+  it("pins cat-name prompt portraits right and places the card on the left lane", () => {
+    const presentation = createNativeReaderPresentation({
+      supabaseUrl,
+      bundle: createBundle({
+        entry: createDialogueEntry({
+          speaker: {
+            type: "cat_name_prompt",
+            characterId: "character_cat",
+            characterName: "Cat",
+            characterSlug: "cat"
+          },
+          stage: {
+            left: createStageCharacter({
+              characterId: "character_cat",
+              characterName: "Cat",
+              characterSlug: "cat",
+              imagePath: "runtime/media/cat-left.png"
+            }),
+            right: createStageCharacter({
+              characterId: "character_friend",
+              characterName: "Friend",
+              characterSlug: "friend",
+              imagePath: "runtime/media/friend-right.png"
+            })
+          }
+        })
+      }),
+      readerState,
+      branchFlags: {},
+      catName: null
+    });
+
+    expect(presentation?.leftPortrait).toBeNull();
+    expect(presentation?.rightPortrait).toMatchObject({
+      side: "right",
+      imageUrl: publicUrl("runtime/media/cat-left.png"),
+      isActiveSpeaker: true
+    });
+    expect(presentation?.dialogueCardPlacement).toBe("speaker-right");
+    expect(presentation?.stageCharacters).toHaveLength(1);
+  });
+
   it("falls back to the cat-name prompt character when it is not staged", () => {
     const presentation = createNativeReaderPresentation({
       supabaseUrl,
@@ -518,6 +560,7 @@ describe("createNativeReaderPresentation", () => {
       imageUrl: publicUrl("runtime/media/cat-default.png"),
       isActiveSpeaker: true
     });
+    expect(presentation?.dialogueCardPlacement).toBe("speaker-right");
     expect(presentation?.stageCharacters).toHaveLength(1);
   });
 

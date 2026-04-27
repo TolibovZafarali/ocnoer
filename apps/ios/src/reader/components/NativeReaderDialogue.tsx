@@ -53,6 +53,7 @@ type ReaderDialogueProps = {
   isSavingCatName: boolean;
   isExiting: boolean;
   isMoving: boolean;
+  keyboardBottomInset: number;
   onAdvance: () => void;
   onSelectDressOption: (optionKey: string) => void;
   onSubmitCatName: () => void;
@@ -115,14 +116,6 @@ function getDialogueCardPositionStyle(
     return {
       left: ocnoerWebPlayer.dialogueCard.sideInset,
       right: "48%"
-    };
-  }
-
-  if (presentation.dialogueCardPlacement === "cat-name") {
-    return {
-      left: ocnoerWebPlayer.dialogueCard.sideInset,
-      maxWidth: ocnoerWebPlayer.dialogueCard.catNameMaxWidth,
-      width: "92%"
     };
   }
 
@@ -606,6 +599,8 @@ export const NativeReaderDialogue = memo(function NativeReaderDialogue(
   const dialogueRenderCountRef = useRef(0);
   const dialogueRemountCountRef = useRef(0);
   const cardPosition = getDialogueCardPositionStyle(props.presentation);
+  const cardBottom =
+    ocnoerWebPlayer.dialogueCard.bottomInset + props.keyboardBottomInset;
   const motionDirection = getDialogueMotionDirection(props.presentation);
   const dialogueText =
     props.presentation.status === "supported"
@@ -752,7 +747,7 @@ export const NativeReaderDialogue = memo(function NativeReaderDialogue(
         direction={motionDirection}
         isExiting={props.isExiting}
         pointerEvents={props.isExiting ? "none" : "auto"}
-        style={[styles.dialogueCard, cardPosition]}
+        style={[styles.dialogueCard, { bottom: cardBottom }, cardPosition]}
       >
         <Pressable
           accessible={false}
@@ -803,7 +798,7 @@ export const NativeReaderDialogue = memo(function NativeReaderDialogue(
       direction={motionDirection}
       isExiting={props.isExiting}
       pointerEvents={props.isExiting ? "none" : "auto"}
-      style={[styles.dialogueCard, cardPosition]}
+      style={[styles.dialogueCard, { bottom: cardBottom }, cardPosition]}
     >
       <Pressable
         accessible={false}
@@ -843,7 +838,6 @@ export const NativeReaderDialogue = memo(function NativeReaderDialogue(
                 editable={!props.isSavingCatName}
                 onChangeText={props.onCatNameInputChange}
                 onSubmitEditing={props.onSubmitCatName}
-                placeholder="Enter cat name"
                 returnKeyType="done"
                 value={props.catNameInputValue}
               />
@@ -958,7 +952,6 @@ export const NativeReaderDialogue = memo(function NativeReaderDialogue(
 
 const styles = StyleSheet.create({
   dialogueCard: {
-    bottom: ocnoerWebPlayer.dialogueCard.bottomInset,
     maxHeight: "64%",
     position: "absolute",
     zIndex: 20

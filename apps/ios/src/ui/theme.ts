@@ -175,7 +175,6 @@ export const ocnoerWebPlayer = {
     padding: 20,
     bottomInset: 12,
     sideInset: 12,
-    catNameMaxWidth: 384,
     promptPreviewMaxWidth: 216
   },
   boundaryCard: {

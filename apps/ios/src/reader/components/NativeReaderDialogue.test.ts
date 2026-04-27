@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  NATIVE_READER_CHARS_PER_SECOND,
+  NATIVE_READER_TYPING_BASE_DELAY_MS,
   createNativeReaderDialogueAnimationKey,
   getNativeReaderMaxTextStateUpdatesForDurationMs,
   getNativeReaderTextUpdateCadenceMs,
@@ -10,6 +12,11 @@ import {
 } from "../nativeReaderDialogueMotion";
 
 describe("NativeReaderDialogue motion", () => {
+  it("uses a relaxed iOS typewriter cadence", () => {
+    expect(NATIVE_READER_TYPING_BASE_DELAY_MS).toBe(30);
+    expect(NATIVE_READER_CHARS_PER_SECOND).toBe(33);
+  });
+
   it("does not tie character card animation identity to portrait load state", () => {
     const basePresentation = {
       status: "supported" as const,

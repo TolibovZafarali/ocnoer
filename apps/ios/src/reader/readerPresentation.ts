@@ -69,8 +69,7 @@ export type NativeReaderPortraitAuditEntry = {
 export type NativeDialogueCardPlacement =
   | "speaker-left"
   | "speaker-right"
-  | "center"
-  | "cat-name";
+  | "center";
 
 type NativeReaderPresentationBase = {
   chapterId: string;
@@ -162,7 +161,7 @@ function getDialogueCardPlacement(
   entry: RuntimeDialogueEntry
 ): NativeDialogueCardPlacement {
   if (entry.speaker.type === "cat_name_prompt") {
-    return "cat-name";
+    return "speaker-right";
   }
 
   if (entry.speaker.type !== "character") {
@@ -368,6 +367,35 @@ function createVisibleNativePortraits(input: {
   runtimeStageCharacters: PlayerRuntimeStageCharacter[];
   catName: string | null;
 }) {
+  if (input.entry.speaker.type === "cat_name_prompt") {
+    const activePromptStageCharacter =
+      input.runtimeStageCharacters.find(
+        (stageCharacter) => stageCharacter.isActiveSpeaker
+      ) ?? null;
+    const promptFallbackCharacter = getPromptFallbackCharacter(input.entry);
+    const promptCharacter =
+      activePromptStageCharacter ?? promptFallbackCharacter;
+    const promptImageUrl =
+      activePromptStageCharacter?.imageUrl ??
+      input.assetUrls.rightCharacterImageUrl;
+    const rightPortrait =
+      promptImageUrl && promptCharacter
+        ? createNativeReaderPortrait({
+            catName: input.catName,
+            imageUrl: promptImageUrl,
+            placement: "right",
+            character: promptCharacter,
+            isActiveSpeaker: true
+          })
+        : null;
+
+    return {
+      leftPortrait: null,
+      rightPortrait,
+      stageCharacters: rightPortrait ? [rightPortrait] : []
+    };
+  }
+
   const stagePortraits = input.runtimeStageCharacters
     .filter((stageCharacter) => stageCharacter.isActiveSpeaker)
     .map((stageCharacter) =>
@@ -379,29 +407,10 @@ function createVisibleNativePortraits(input: {
         isActiveSpeaker: stageCharacter.isActiveSpeaker
       })
     );
-  const promptFallbackCharacter = getPromptFallbackCharacter(input.entry);
-  const hasActivePromptPortrait =
-    input.entry.speaker.type !== "cat_name_prompt" ||
-    stagePortraits.some((portrait) => portrait.isActiveSpeaker);
-  const catNamePromptFallbackPortrait =
-    input.entry.speaker.type === "cat_name_prompt" &&
-    !hasActivePromptPortrait &&
-    input.assetUrls.rightCharacterImageUrl &&
-    promptFallbackCharacter
-      ? createNativeReaderPortrait({
-          catName: input.catName,
-          imageUrl: input.assetUrls.rightCharacterImageUrl,
-          placement: "right",
-          character: promptFallbackCharacter,
-          isActiveSpeaker: true
-        })
-      : null;
   const leftPortrait =
     stagePortraits.find((portrait) => portrait.side === "left") ?? null;
   const rightPortrait =
-    catNamePromptFallbackPortrait ??
-    stagePortraits.find((portrait) => portrait.side === "right") ??
-    null;
+    stagePortraits.find((portrait) => portrait.side === "right") ?? null;
   const portraits = [leftPortrait, rightPortrait].filter(
     (portrait): portrait is NativeReaderPortrait => Boolean(portrait)
   );
@@ -457,7 +466,8 @@ function isAlphaSafeDerivative(derivative: RuntimeImageDerivative) {
 
   return (
     derivative.renderKind === "bitmap" &&
-    (derivative.targetPlatform == null || derivative.targetPlatform === "ios") &&
+    (derivative.targetPlatform == null ||
+      derivative.targetPlatform === "ios") &&
     (contentType.includes("image/png") || contentType.includes("image/webp"))
   );
 }
@@ -563,8 +573,7 @@ function createPortraitAuditAssetRef(input: {
     storagePath: input.storagePath,
     assetId: input.characterId,
     cacheKey: `portrait:${input.characterId}:${input.emotionKey ?? "unknown"}:${input.dressKey ?? "__base__"}:${input.storagePath}`,
-    derivatives:
-      publicDerivatives.length > 0 ? publicDerivatives : undefined,
+    derivatives: publicDerivatives.length > 0 ? publicDerivatives : undefined,
     ...(sourceRenderKind !== "bitmap"
       ? {
           sourceRenderKind

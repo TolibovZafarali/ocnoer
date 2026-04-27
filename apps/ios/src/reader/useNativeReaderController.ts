@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import {
+  CAT_NAME_BRANCH_FLAG_KEY,
+  CAT_NAME_LOCKED_BRANCH_FLAG_KEY,
   advanceRuntimePosition,
   applySceneDressCarrySelection,
   createBoundaryStateForAdvance,
@@ -43,6 +45,7 @@ import {
   verifyReaderPortraitDerivativeUrls,
   warmNextSceneAssets
 } from "./imagePreload";
+import { NATIVE_READER_DIALOGUE_ADVANCE_COMMIT_DELAY_MS } from "./nativeReaderDialogueMotion";
 import {
   createNativeReaderPresentation,
   getNativeReaderChapterPortraitAuditEntries,
@@ -134,13 +137,18 @@ type UseNativeReaderControllerInput = {
   player: MobilePlayer;
   sessionToken: string;
   onProgressSaved?: () => void;
-  onUpdateCatName: (catName: string) => Promise<void>;
+  onUpdateCatName: (catName: string) => Promise<MobilePlayer>;
 };
 
 type NativeReaderPresentationUsage = {
   dialogueEntryId: string;
   presentationKey: string;
   sceneId: string;
+};
+
+type InFlightCatNameCommit = {
+  catName: string;
+  promise: Promise<MobilePlayer>;
 };
 
 const PRESENTATION_READY_CACHE_LIMIT = 6;
@@ -366,12 +374,36 @@ export function resolveNativeReaderAdvanceCommitPlan(input: {
   };
 }
 
+export function getNativeReaderProgressBranchFlags(input: {
+  branchFlags: PlayerProgress["branchFlags"];
+  pendingCatNameCommit: string | null;
+}) {
+  if (!input.pendingCatNameCommit) {
+    return input.branchFlags;
+  }
+
+  const nextBranchFlags = { ...input.branchFlags };
+
+  delete nextBranchFlags[CAT_NAME_BRANCH_FLAG_KEY];
+  delete nextBranchFlags[CAT_NAME_LOCKED_BRANCH_FLAG_KEY];
+
+  return nextBranchFlags;
+}
+
+function shouldPersistPendingCatNameForAdvanceResult(
+  result: RuntimeAdvanceResult
+) {
+  return result.type === "chapter-break" || result.type === "story-finished";
+}
+
 export async function commitNativeReaderAdvanceAfterPresentationGate(input: {
   commit: () => void;
+  commitDelayMs?: number;
   ensureRenderReady: () => Promise<void>;
   now?: () => number;
   targetKey: string | null;
   targetRenderReady: boolean;
+  wait?: (durationMs: number) => Promise<void>;
 }) {
   const plan = resolveNativeReaderAdvanceCommitPlan({
     targetKey: input.targetKey,
@@ -379,10 +411,16 @@ export async function commitNativeReaderAdvanceAfterPresentationGate(input: {
   });
 
   if (plan.type === "commit-instant") {
+    const waitDurationMs = Math.max(0, input.commitDelayMs ?? 0);
+
+    if (waitDurationMs > 0) {
+      await (input.wait ?? waitForDuration)(waitDurationMs);
+    }
+
     input.commit();
     return {
       commitMode: "instant" as const,
-      waitDurationMs: 0
+      waitDurationMs
     };
   }
 
@@ -729,7 +767,8 @@ export function canNativeReaderAdvanceWithReadiness(input: {
   }
 
   return (
-    input.advanceResultType === "scene-transition" &&
+    (input.advanceResultType === "scene-transition" ||
+      input.advanceResultType === "chapter-break") &&
     input.readinessStatus === "pending" &&
     input.readinessSourceKey === input.presentationRenderKey
   );
@@ -744,14 +783,13 @@ export function useNativeReaderController(
     () => createMobileRuntimeRepository(config),
     [config]
   );
-  const initialCatNameState = useMemo(
-    () =>
-      resolveInitialCatNameState({
-        catName: player.catName,
-        catNameLocked: player.catNameLocked
-      }),
-    [player.catName, player.catNameLocked]
+  const initialCatNameStateRef = useRef(
+    resolveInitialCatNameState({
+      catName: player.catName,
+      catNameLocked: player.catNameLocked
+    })
   );
+  const initialCatNameState = initialCatNameStateRef.current;
   const [runtimeState, setRuntimeState] = useState<NativeReaderRuntimeState>({
     status: "loading"
   });
@@ -769,6 +807,9 @@ export function useNativeReaderController(
   const [catNameInputError, setCatNameInputError] = useState<string | null>(
     null
   );
+  const [pendingCatNameCommit, setPendingCatNameCommitState] = useState<
+    string | null
+  >(null);
   const [isSavingCatName, setIsSavingCatName] = useState(false);
   const [isMoving, setIsMoving] = useState(false);
   const [sceneTransitionPhase, setSceneTransitionPhase] =
@@ -794,6 +835,14 @@ export function useNativeReaderController(
     new Map<string, Promise<PreparedNativeReaderPresentation>>()
   );
   const isAdvanceInFlightRef = useRef(false);
+  const persistedCatNameRef = useRef(initialCatNameState.catName);
+  const pendingCatNameCommitRef = useRef<string | null>(null);
+  const inFlightCatNameCommitRef = useRef<InFlightCatNameCommit | null>(null);
+
+  const setPendingCatNameCommit = useCallback((value: string | null) => {
+    pendingCatNameCommitRef.current = value;
+    setPendingCatNameCommitState(value);
+  }, []);
 
   const reload = useCallback(() => {
     setLoadRequestId((currentValue) => currentValue + 1);
@@ -830,6 +879,9 @@ export function useNativeReaderController(
         setCatName(initialCatNameState.catName);
         setCatNameInputValue(initialCatNameState.catName ?? "");
         setCatNameInputError(null);
+        persistedCatNameRef.current = initialCatNameState.catName;
+        setPendingCatNameCommit(null);
+        inFlightCatNameCommitRef.current = null;
 
         if (resumeAction.type === "load-from-progress") {
           const loadedRuntime = await repository.loadSession({
@@ -926,7 +978,8 @@ export function useNativeReaderController(
     initialCatNameState,
     player.id,
     loadRequestId,
-    repository
+    repository,
+    setPendingCatNameCommit
   ]);
 
   const currentScene = useMemo(() => {
@@ -958,10 +1011,14 @@ export function useNativeReaderController(
       return;
     }
 
+    const progressBranchFlags = getNativeReaderProgressBranchFlags({
+      branchFlags,
+      pendingCatNameCommit
+    });
     const progress = createStoredProgress({
       chapter: runtimeState.bundle.chapter,
       state: runtimeState.readerState,
-      branchFlags
+      branchFlags: progressBranchFlags
     });
 
     if (!progress) {
@@ -996,7 +1053,14 @@ export function useNativeReaderController(
     return () => {
       cancelled = true;
     };
-  }, [branchFlags, onProgressSaved, player.id, runtimeState, sessionToken]);
+  }, [
+    branchFlags,
+    onProgressSaved,
+    pendingCatNameCommit,
+    player.id,
+    runtimeState,
+    sessionToken
+  ]);
 
   const presentation = useMemo(() => {
     if (runtimeState.status !== "ready" && runtimeState.status !== "finished") {
@@ -1565,6 +1629,83 @@ export function useNativeReaderController(
     []
   );
 
+  const persistPendingCatNameForChapterBoundary = useCallback(
+    async (input: {
+      branchFlags: PlayerProgress["branchFlags"];
+      catName: string | null;
+    }) => {
+      const pendingCatName = pendingCatNameCommitRef.current;
+
+      if (!pendingCatName) {
+        return input;
+      }
+
+      if (pendingCatName === persistedCatNameRef.current) {
+        const nextBranchFlags = reconcileCatNameBranchFlags({
+          branchFlags: input.branchFlags,
+          catName: pendingCatName,
+          catNameLocked: true
+        });
+
+        setBranchFlags(nextBranchFlags);
+        setPendingCatNameCommit(null);
+        return {
+          catName: pendingCatName,
+          branchFlags: nextBranchFlags
+        };
+      }
+
+      setIsSavingCatName(true);
+
+      try {
+        const existingCommit = inFlightCatNameCommitRef.current;
+        const commit =
+          existingCommit?.catName === pendingCatName
+            ? existingCommit
+            : {
+                catName: pendingCatName,
+                promise: onUpdateCatName(pendingCatName)
+              };
+
+        inFlightCatNameCommitRef.current = commit;
+
+        const savedPlayer = await commit.promise;
+        const savedCatNameState = resolveInitialCatNameState({
+          catName: savedPlayer.catName,
+          catNameLocked: savedPlayer.catNameLocked
+        });
+
+        if (!savedCatNameState.catName || !savedCatNameState.catNameLocked) {
+          throw new Error("Unable to confirm the saved cat name.");
+        }
+
+        const nextBranchFlags = reconcileCatNameBranchFlags({
+          branchFlags: input.branchFlags,
+          catName: savedCatNameState.catName,
+          catNameLocked: true
+        });
+
+        persistedCatNameRef.current = savedCatNameState.catName;
+        setCatName(savedCatNameState.catName);
+        setCatNameInputValue(savedCatNameState.catName);
+        setBranchFlags(nextBranchFlags);
+        setPendingCatNameCommit(null);
+
+        return {
+          catName: savedCatNameState.catName,
+          branchFlags: nextBranchFlags
+        };
+      } finally {
+        if (inFlightCatNameCommitRef.current?.catName === pendingCatName) {
+          inFlightCatNameCommitRef.current = null;
+        }
+
+        setIsSavingCatName(false);
+      }
+    },
+    [onUpdateCatName, setPendingCatNameCommit]
+  );
+
   const advanceFromRuntimeState = useCallback(
     async (
       currentRuntimeState: ActiveNativeReaderRuntimeState,
@@ -1603,11 +1744,16 @@ export function useNativeReaderController(
         targetRenderReady
       });
       const isSceneTransition = target.result.type === "scene-transition";
+      const shouldUseBlackTransition =
+        isSceneTransition ||
+        target.result.type === "chapter-break" ||
+        (target.result.type === "story-finished" &&
+          Boolean(pendingCatNameCommitRef.current));
 
       if (
         plan.type === "blocked-until-render-ready" &&
         !options?.allowUnreadyTargetWait &&
-        !isSceneTransition
+        !shouldUseBlackTransition
       ) {
         logReaderTiming("advance blocked before target ready", {
           COLD_RENDER_ON_VISIBLE_PATH: false,
@@ -1619,16 +1765,34 @@ export function useNativeReaderController(
         return;
       }
 
-      if (isSceneTransition) {
+      if (shouldUseBlackTransition) {
         setIsMoving(true);
+        let transitionBranchFlags = resolvedBranchFlags;
+        let transitionCatName = resolvedCatName;
         logReaderTiming("scene transition blackout started", {
+          resultType: target.result.type,
           targetKey: target.targetKey,
           targetRenderReady
         });
         try {
           await runNativeReaderSceneTransition({
             prepare: async () => {
-              if (target.targetPresentation) {
+              if (shouldPersistPendingCatNameForAdvanceResult(target.result)) {
+                const persistedCatName =
+                  await persistPendingCatNameForChapterBoundary({
+                    branchFlags: transitionBranchFlags,
+                    catName: transitionCatName
+                  });
+
+                transitionBranchFlags = persistedCatName.branchFlags;
+                transitionCatName = persistedCatName.catName;
+              }
+
+              if (
+                target.targetPresentation &&
+                transitionBranchFlags === resolvedBranchFlags &&
+                transitionCatName === resolvedCatName
+              ) {
                 await warmPresentation(target.targetPresentation, "tap-wait");
                 return;
               }
@@ -1637,11 +1801,20 @@ export function useNativeReaderController(
                 supabaseUrl: config.supabaseUrl,
                 currentRuntimeState,
                 result: target.result,
-                branchFlags: resolvedBranchFlags,
-                catName: resolvedCatName
+                branchFlags: transitionBranchFlags,
+                catName: transitionCatName
               });
             },
             commit: () => {
+              if (transitionCatName !== catName) {
+                setCatName(transitionCatName);
+                setCatNameInputValue(transitionCatName ?? "");
+              }
+
+              if (transitionBranchFlags !== branchFlags) {
+                setBranchFlags(transitionBranchFlags);
+              }
+
               commitAdvanceResult(currentRuntimeState, target.result, {
                 showSceneTransitionBoundary: false
               });
@@ -1651,6 +1824,7 @@ export function useNativeReaderController(
           logReaderTiming("scene transition blackout completed", {
             COLD_RENDER_ON_VISIBLE_PATH: !targetRenderReady,
             INSTANT_COMMIT: targetRenderReady,
+            resultType: target.result.type,
             targetKey: target.targetKey,
             TAP_WAIT_MS: Date.now() - tappedAt
           });
@@ -1685,6 +1859,10 @@ export function useNativeReaderController(
 
         const commitResult =
           await commitNativeReaderAdvanceAfterPresentationGate({
+            commitDelayMs:
+              target.result.type === "line"
+                ? NATIVE_READER_DIALOGUE_ADVANCE_COMMIT_DELAY_MS
+                : 0,
             targetKey: target.targetKey,
             targetRenderReady:
               targetRenderReady || plan.type === "blocked-until-render-ready",
@@ -1721,6 +1899,7 @@ export function useNativeReaderController(
       config.supabaseUrl,
       getPreparedAdvanceTarget,
       getPreparedPresentation,
+      persistPendingCatNameForChapterBoundary,
       presentationRenderKey,
       repository.loadChapter,
       warmPresentation
@@ -1780,12 +1959,10 @@ export function useNativeReaderController(
 
     const normalizedCatName = normalizeCatNameInput(catNameInputValue);
 
-    setIsSavingCatName(true);
     setCatNameInputError(null);
     setActionError(null);
 
     try {
-      await onUpdateCatName(normalizedCatName);
       const nextBranchFlags = reconcileCatNameBranchFlags({
         branchFlags,
         catName: normalizedCatName,
@@ -1793,6 +1970,12 @@ export function useNativeReaderController(
       });
 
       setCatName(normalizedCatName);
+      setCatNameInputValue(normalizedCatName);
+      setPendingCatNameCommit(
+        normalizedCatName === persistedCatNameRef.current
+          ? null
+          : normalizedCatName
+      );
       setBranchFlags(nextBranchFlags);
 
       if (
@@ -1808,18 +1991,17 @@ export function useNativeReaderController(
       }
     } catch (error) {
       setCatNameInputError(
-        getErrorMessage(error, "Unable to save the cat name.")
+        getErrorMessage(error, "Unable to continue with that cat name.")
       );
     } finally {
       setIsMoving(false);
-      setIsSavingCatName(false);
     }
   }, [
     advanceFromRuntimeState,
     branchFlags,
     catNameInputValue,
-    onUpdateCatName,
-    runtimeState
+    runtimeState,
+    setPendingCatNameCommit
   ]);
 
   const advance = useCallback(async () => {

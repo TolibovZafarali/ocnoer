@@ -1,8 +1,11 @@
 import type { NativeReaderPresentation } from "./readerPresentation";
 
-export const NATIVE_READER_TYPING_BASE_DELAY_MS = 22;
+export const NATIVE_READER_TYPING_BASE_DELAY_MS = 30;
 export const NATIVE_READER_TYPING_COMMA_EXTRA_DELAY_MS = 42;
 export const NATIVE_READER_TYPING_SENTENCE_EXTRA_DELAY_MS = 110;
+// Holds regular line commits briefly after the card exit so the cadence feels calm
+// without stretching the slide/fade animation.
+export const NATIVE_READER_DIALOGUE_ADVANCE_COMMIT_DELAY_MS = 120;
 export const NATIVE_READER_MAX_TEXT_UPDATES_PER_SECOND = 30;
 export const NATIVE_READER_CHARS_PER_SECOND = Math.round(
   1000 / NATIVE_READER_TYPING_BASE_DELAY_MS

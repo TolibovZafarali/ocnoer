@@ -44,12 +44,14 @@ type AuthenticatedScreen =
     }
   | {
       type: "reader";
+      runId: number;
     };
 
 function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
   const { state, reload } = useRuntimeBootstrap();
   const audioPreferences = useAudioPreferences();
   const mountedRef = useRef(true);
+  const readerRunIdRef = useRef(0);
   const [activeScreen, setActiveScreen] = useState<AuthenticatedScreen>({
     type: "home"
   });
@@ -105,6 +107,14 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
   useEffect(() => {
     void refreshSavedProgress();
   }, [refreshSavedProgress]);
+
+  const openReader = useCallback(() => {
+    readerRunIdRef.current += 1;
+    setActiveScreen({
+      type: "reader",
+      runId: readerRunIdRef.current
+    });
+  }, []);
 
   useEffect(() => {
     if (!isDevelopment()) {
@@ -182,9 +192,7 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
         token: sessionToken
       });
       setSavedProgress(null);
-      setActiveScreen({
-        type: "reader"
-      });
+      openReader();
     } catch (error) {
       setProgressSyncError(
         error instanceof Error ? error.message : "Unable to restart reading."
@@ -219,6 +227,7 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
   if (state.status === "success" && activeScreen.type === "reader") {
     return (
       <ReaderScreen
+        key={activeScreen.runId}
         audioPreferences={audioPreferences.preferences}
         bootstrap={state.bootstrap}
         config={state.config}
@@ -233,6 +242,7 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
           })
         }
         player={props.storedSession.player}
+        readerRunId={activeScreen.runId}
         sessionToken={sessionToken}
       />
     );
@@ -249,11 +259,7 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
       isUpdatingCatName={isUpdatingCatName}
       isSigningOut={props.isSigningOut}
       progressSyncError={progressSyncError}
-      onContinueReading={() =>
-        setActiveScreen({
-          type: "reader"
-        })
-      }
+      onContinueReading={openReader}
       onOpenPreview={(chapterId) =>
         setActiveScreen({
           type: "preview",

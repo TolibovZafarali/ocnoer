@@ -227,6 +227,59 @@ async function waitForPlayerLoad(
   return shouldContinue();
 }
 
+function getPlayerStatus(player: AudioPlayer) {
+  try {
+    return player.currentStatus;
+  } catch {
+    return null;
+  }
+}
+
+function getPlayerRuntimeState(player: AudioPlayer) {
+  const status = getPlayerStatus(player);
+  const normalizedTimeControlStatus =
+    status?.timeControlStatus?.toLowerCase() ?? "";
+
+  return {
+    isLoaded: Boolean(player.isLoaded && (status?.isLoaded ?? true)),
+    isPaused: Boolean(
+      player.paused || normalizedTimeControlStatus.includes("paused")
+    ),
+    isPlaying: Boolean(
+      player.playing ||
+      status?.playing ||
+      normalizedTimeControlStatus.includes("playing")
+    ),
+    isWaitingToPlay: normalizedTimeControlStatus.includes("waiting")
+  };
+}
+
+function isPlayerActive(player: AudioPlayer) {
+  const state = getPlayerRuntimeState(player);
+
+  return (
+    state.isLoaded &&
+    (state.isPlaying || (state.isWaitingToPlay && !state.isPaused))
+  );
+}
+
+function shouldStartPlayer(player: AudioPlayer) {
+  const state = getPlayerRuntimeState(player);
+
+  return (
+    state.isLoaded &&
+    (state.isPaused || (!state.isPlaying && !state.isWaitingToPlay))
+  );
+}
+
+function releasePlayer(player: AudioPlayer) {
+  try {
+    player.pause();
+  } finally {
+    player.remove();
+  }
+}
+
 export class NativeBackgroundMusicAudioManager {
   private audioModeConfigured = false;
   private current: CurrentBackgroundMusicPlayer | null = null;
@@ -308,7 +361,10 @@ export class NativeBackgroundMusicAudioManager {
 
     return (
       this.current?.url === targetCue.url &&
+      this.current.key === targetCue.key &&
       this.current.sessionId === this.target.sessionId &&
+      this.current.hasStarted &&
+      isPlayerActive(this.current.player) &&
       Math.abs(this.current.player.volume - this.target.volume) < 0.02
     );
   }
@@ -323,9 +379,11 @@ export class NativeBackgroundMusicAudioManager {
       error: null
     });
 
-    await fadePlayerTo(current.player, 0, fadeMs);
-    current.player.pause();
-    current.player.remove();
+    try {
+      await fadePlayerTo(current.player, 0, fadeMs);
+    } finally {
+      releasePlayer(current.player);
+    }
   }
 
   private async createAndPlay(targetCue: BackgroundMusicPlayableTarget) {
@@ -416,8 +474,9 @@ export class NativeBackgroundMusicAudioManager {
 
     void this.process()
       .catch((error) => {
-        this.current?.player.pause();
-        this.current?.player.remove();
+        if (this.current) {
+          releasePlayer(this.current.player);
+        }
         this.current = null;
         this.emit({
           state: "error",
@@ -463,6 +522,13 @@ export class NativeBackgroundMusicAudioManager {
           continue;
         }
 
+        if (!getPlayerRuntimeState(this.current.player).isLoaded) {
+          const current = this.current;
+          this.current = null;
+          await this.removePlayer(current, this.target.fadeMs);
+          continue;
+        }
+
         this.current.key = targetCue.key;
         this.current.label = targetCue.label;
         this.current.player.loop = true;
@@ -470,8 +536,13 @@ export class NativeBackgroundMusicAudioManager {
         await this.ensureAudioMode();
         await setIsAudioActiveAsync(true);
 
-        if (!this.current.hasStarted) {
+        if (
+          !this.current.hasStarted ||
+          shouldStartPlayer(this.current.player)
+        ) {
           this.current.player.play();
+          this.current.hasStarted = true;
+        } else if (isPlayerActive(this.current.player)) {
           this.current.hasStarted = true;
         }
 

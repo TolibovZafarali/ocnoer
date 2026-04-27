@@ -56,6 +56,7 @@ type ReaderScreenProps = {
   bootstrap: PlayerRuntimeBootstrap;
   config: MobileRuntimeConfig;
   player: MobilePlayer;
+  readerRunId: number;
   sessionToken: string;
   audioPreferences: NativeAudioPreferences;
   isSigningOut: boolean;
@@ -537,7 +538,7 @@ export function ReaderScreen(props: ReaderScreenProps) {
     cue: backgroundMusicCue,
     isSessionActive: !props.isSigningOut,
     preferences: props.audioPreferences,
-    sessionId: `${props.player.id}:${props.sessionToken}`
+    sessionId: `${props.player.id}:${props.sessionToken}:reader:${props.readerRunId}`
   });
   const stageWidth = Math.min(
     dimensions.width,

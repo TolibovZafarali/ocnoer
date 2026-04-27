@@ -186,6 +186,28 @@ function waitForCreatedPlayerCount(count: number) {
   });
 }
 
+function waitForPlayerPlayCallCount(player: MockAudioPlayer, count: number) {
+  return new Promise<void>((resolve, reject) => {
+    const startedAt = Date.now();
+
+    const check = () => {
+      if (player.play.mock.calls.length >= count) {
+        resolve();
+        return;
+      }
+
+      if (Date.now() - startedAt >= 1000) {
+        reject(new Error(`Timed out waiting for ${count} play calls.`));
+        return;
+      }
+
+      globalThis.setTimeout(check, 0);
+    };
+
+    check();
+  });
+}
+
 describe("NativeBackgroundMusicAudioManager", () => {
   beforeEach(() => {
     audioMock.players.length = 0;
@@ -327,6 +349,99 @@ describe("NativeBackgroundMusicAudioManager", () => {
 
     expect(audioMock.players[0]?.pause).toHaveBeenCalledTimes(1);
     expect(audioMock.players[0]?.remove).toHaveBeenCalledTimes(1);
+  });
+
+  it("restarts the scene track when native playback was paused behind tracked state", async () => {
+    const manager = new NativeBackgroundMusicAudioManager();
+    const firstPlaying = waitForManagerState(manager, "playing");
+    const targetUrl =
+      "https://example.supabase.co/storage/v1/object/public/runtime/media/background-music/music_theme";
+
+    manager.setTarget({
+      cue: {
+        key: "scene:scene_3:music_theme",
+        label: "Theme",
+        url: targetUrl
+      },
+      sessionId: "session-a",
+      shouldPlay: true,
+      volume: 0.85,
+      fadeMs: 0
+    });
+
+    await firstPlaying;
+
+    const player = audioMock.players[0];
+
+    expect(player).toBeDefined();
+
+    player!.paused = true;
+    player!.playing = false;
+
+    manager.setTarget({
+      cue: {
+        key: "scene:scene_3:music_theme",
+        label: "Theme",
+        url: targetUrl
+      },
+      sessionId: "session-a",
+      shouldPlay: true,
+      volume: 0.85,
+      fadeMs: 0
+    });
+
+    await waitForPlayerPlayCallCount(player!, 2);
+
+    expect(audioMock.createAudioPlayer).toHaveBeenCalledTimes(1);
+    expect(player!.remove).not.toHaveBeenCalled();
+  });
+
+  it("recreates the scene track when the tracked native player was unloaded", async () => {
+    const manager = new NativeBackgroundMusicAudioManager();
+    const firstPlaying = waitForManagerState(manager, "playing");
+    const targetUrl =
+      "https://example.supabase.co/storage/v1/object/public/runtime/media/background-music/music_theme";
+
+    manager.setTarget({
+      cue: {
+        key: "scene:scene_3:music_theme",
+        label: "Theme",
+        url: targetUrl
+      },
+      sessionId: "session-a",
+      shouldPlay: true,
+      volume: 0.85,
+      fadeMs: 0
+    });
+
+    await firstPlaying;
+
+    const player = audioMock.players[0];
+
+    expect(player).toBeDefined();
+
+    player!.isLoaded = false;
+    player!.paused = true;
+    player!.playing = false;
+
+    manager.setTarget({
+      cue: {
+        key: "scene:scene_3:music_theme",
+        label: "Theme",
+        url: targetUrl
+      },
+      sessionId: "session-a",
+      shouldPlay: true,
+      volume: 0.85,
+      fadeMs: 0
+    });
+
+    await waitForCreatedPlayerCount(2);
+
+    expect(player!.pause).toHaveBeenCalledTimes(1);
+    expect(player!.remove).toHaveBeenCalledTimes(1);
+    expect(audioMock.players[1]?.seekTo).toHaveBeenCalledWith(0);
+    expect(audioMock.players[1]?.play).toHaveBeenCalledTimes(1);
   });
 
   it("restarts the same track for a new reader session", async () => {

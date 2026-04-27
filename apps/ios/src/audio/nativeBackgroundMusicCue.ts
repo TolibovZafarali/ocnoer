@@ -3,6 +3,7 @@ import {
   toPublicStorageUrl,
   type PlayerBoundaryState,
   type ReaderState,
+  type RuntimeBackgroundMusic,
   type RuntimeChapterBundle
 } from "@ocnoer/story-core";
 
@@ -59,6 +60,32 @@ function resolvePlayableCue(input: {
     runtimeFilePath: input.runtimeFilePath,
     trackId: input.trackId
   };
+}
+
+function createSceneMusicPlaybackKey(input: {
+  backgroundMusic: RuntimeBackgroundMusic;
+  bundle: RuntimeChapterBundle;
+  readerState: ReaderState;
+  source: "scene" | "scene-cue";
+  cueAfterDialogueEntryId: string | null;
+}) {
+  const scene =
+    input.bundle.chapter.scenes[input.readerState.sceneIndex] ?? null;
+  const sceneIdentity = scene?.id ?? `index-${input.readerState.sceneIndex}`;
+  const cueIdentity =
+    input.source === "scene-cue"
+      ? (input.cueAfterDialogueEntryId ?? "unknown-cue")
+      : "scene-default";
+
+  return [
+    input.source,
+    `chapter=${input.bundle.chapter.id}`,
+    `scene=${sceneIdentity}`,
+    `sceneIndex=${input.readerState.sceneIndex}`,
+    `cue=${cueIdentity}`,
+    `track=${input.backgroundMusic.id}`,
+    `path=${input.backgroundMusic.filePath}`
+  ].join("|");
 }
 
 export function resolveNativeReaderBackgroundMusicCue(input: {
@@ -125,7 +152,13 @@ export function resolveNativeReaderBackgroundMusicCue(input: {
   return resolvePlayableCue({
     supabaseUrl: input.supabaseUrl,
     source,
-    key: `${source}:${resolution.backgroundMusic.id}`,
+    key: createSceneMusicPlaybackKey({
+      backgroundMusic: resolution.backgroundMusic,
+      bundle: input.bundle,
+      readerState: input.readerState,
+      source,
+      cueAfterDialogueEntryId: resolution.cueAfterDialogueEntryId
+    }),
     label: resolution.backgroundMusic.label,
     runtimeFilePath: resolution.backgroundMusic.filePath,
     trackId: resolution.backgroundMusic.id

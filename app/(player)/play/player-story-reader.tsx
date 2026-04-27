@@ -13,7 +13,7 @@ import {
 } from "react";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
-import worldMapImage from "@/lore/world-map.jpg";
+import worldMapImage from "@/lore/Thaloraz.webp";
 
 import { signOutPlayerAction } from "@/app/(player)/play/actions";
 import { Button } from "@/components/ui/button";
@@ -1411,7 +1411,11 @@ export function PlayerStoryReader({
       })
     : null;
   const hideStagePortraits =
-    isTransitionCard || isChapterCard || isOpeningSceneRevealActive;
+    isTransitionCard ||
+    isChapterCard ||
+    isOpeningSceneRevealActive ||
+    activeEntry?.speaker.type === "dress_prompt";
+  const shouldAnimateStagePortraits = showDialogueCard && !hideStagePortraits;
   const leftStagePortrait =
     activeEntry &&
     !hideStagePortraits &&
@@ -3251,7 +3255,7 @@ export function PlayerStoryReader({
               alignment="left"
               portrait={leftStagePortrait}
               lighting={sceneLighting.left}
-              shouldAnimate={showDialogueCard}
+              shouldAnimate={shouldAnimateStagePortraits}
               prefersReducedMotion={prefersReducedMotion}
               enterDurationMs={lineEnterDurationMs}
               exitDurationMs={lineExitDurationMs}
@@ -3260,7 +3264,7 @@ export function PlayerStoryReader({
               alignment="right"
               portrait={rightStagePortrait}
               lighting={sceneLighting.right}
-              shouldAnimate={showDialogueCard}
+              shouldAnimate={shouldAnimateStagePortraits}
               prefersReducedMotion={prefersReducedMotion}
               enterDurationMs={lineEnterDurationMs}
               exitDurationMs={lineExitDurationMs}

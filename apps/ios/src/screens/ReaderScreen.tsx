@@ -48,7 +48,7 @@ import type { NativeAudioPreferences } from "../storage/audioPreferenceStorage";
 import { OcnoerButton, OcnoerSurface } from "../ui/primitives";
 import { ocnoerTheme, ocnoerWebPlayer } from "../ui/theme";
 
-const worldMapImage = require("../../../../lore/world-map.jpg") as number;
+const worldMapImage = require("../../../../lore/Thaloraz.webp") as number;
 const MAP_MIN_ZOOM_SCALE = 1;
 const MAP_MAX_ZOOM_SCALE = 3;
 const MAP_OVERLAY_PADDING = ocnoerTheme.spacing.md;

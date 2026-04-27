@@ -33,6 +33,8 @@ import {
   getNativeReaderTypingExpectedDurationMs,
   getNativeReaderVisibleTextLengthAtElapsedMs,
   shouldApplyNativeReaderForceCompleteRequest,
+  shouldDeferNativeReaderTextReveal,
+  shouldStartDeferredNativeReaderTextReveal,
   type NativeReaderForceCompleteRequest
 } from "../nativeReaderDialogueMotion";
 import { NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND } from "../nativeReaderStageStyle";
@@ -209,6 +211,8 @@ const BatchedTypedDialogueText = memo(function BatchedTypedDialogueText(props: {
   const textFrameStallsOver50MsRef = useRef(0);
   const textFrameStallsOver100MsRef = useRef(0);
   const textCompletionLoggedKeyRef = useRef<string | null>(null);
+  const deferredTypingKeyRef = useRef<string | null>(null);
+  const isExitingRef = useRef(props.isExiting);
   const [typingState, setTypingState] = useState({
     key: props.typingKey,
     startedAt: Date.now(),
@@ -262,7 +266,12 @@ const BatchedTypedDialogueText = memo(function BatchedTypedDialogueText(props: {
   );
 
   useEffect(() => {
+    isExitingRef.current = props.isExiting;
+  }, [props.isExiting]);
+
+  useEffect(() => {
     const startedAt = Date.now();
+    const usesInstantDialogueText = shouldUseInstantDialogueText();
 
     textRenderCountRef.current = 0;
     textStateUpdateCountRef.current = 0;
@@ -270,14 +279,55 @@ const BatchedTypedDialogueText = memo(function BatchedTypedDialogueText(props: {
     textFrameStallsOver50MsRef.current = 0;
     textFrameStallsOver100MsRef.current = 0;
     textCompletionLoggedKeyRef.current = null;
+    deferredTypingKeyRef.current = null;
     props.onCompleteChange(props.characters.length === 0);
     setTypingState({
       key: props.typingKey,
       startedAt,
-      visibleTextLength: shouldUseInstantDialogueText()
-        ? props.characters.length
-        : 0
+      visibleTextLength: usesInstantDialogueText ? props.characters.length : 0
     });
+
+    if (props.characters.length === 0) {
+      setReaderDecodeSchedulerInteractionState({
+        textRevealing: false
+      });
+      return;
+    }
+
+    if (usesInstantDialogueText) {
+      logDialogueTiming("text animation started", {
+        dialogueEntryId: props.dialogueEntryId,
+        lineId: props.dialogueEntryId,
+        speakerId: props.speakerId,
+        characterPortraitCount: props.characterPortraitCount,
+        renderModeCount: props.renderModeCount,
+        TEXT_EXPECTED_MS: props.textExpectedDurationMs,
+        typingKey: props.typingKey
+      });
+      logCompletion(0, true);
+      return;
+    }
+
+    // New lines can mount while a transition still holds the card hidden.
+    // Keep the typewriter clock stopped until the card is allowed to enter.
+    if (
+      shouldDeferNativeReaderTextReveal({
+        characterCount: props.characters.length,
+        isExiting: isExitingRef.current
+      })
+    ) {
+      deferredTypingKeyRef.current = props.typingKey;
+      setReaderDecodeSchedulerInteractionState({
+        textRevealing: false
+      });
+      logDialogueTiming("text animation deferred until card enter", {
+        dialogueEntryId: props.dialogueEntryId,
+        lineId: props.dialogueEntryId,
+        speakerId: props.speakerId,
+        typingKey: props.typingKey
+      });
+      return;
+    }
 
     logDialogueTiming("text animation started", {
       dialogueEntryId: props.dialogueEntryId,
@@ -289,18 +339,6 @@ const BatchedTypedDialogueText = memo(function BatchedTypedDialogueText(props: {
       typingKey: props.typingKey
     });
 
-    if (props.characters.length === 0) {
-      setReaderDecodeSchedulerInteractionState({
-        textRevealing: false
-      });
-      return;
-    }
-
-    if (shouldUseInstantDialogueText()) {
-      logCompletion(0, true);
-      return;
-    }
-
     setReaderDecodeSchedulerInteractionState({
       textRevealing: true
     });
@@ -309,6 +347,54 @@ const BatchedTypedDialogueText = memo(function BatchedTypedDialogueText(props: {
     props.characterPortraitCount,
     props.characters.length,
     props.dialogueEntryId,
+    props.onCompleteChange,
+    props.renderModeCount,
+    props.speakerId,
+    props.textExpectedDurationMs,
+    props.typingKey
+  ]);
+
+  useEffect(() => {
+    if (
+      !shouldStartDeferredNativeReaderTextReveal({
+        deferredTypingKey: deferredTypingKeyRef.current,
+        isExiting: props.isExiting,
+        typingKey: props.typingKey
+      })
+    ) {
+      return;
+    }
+
+    const startedAt = Date.now();
+    deferredTypingKeyRef.current = null;
+    textRenderCountRef.current = 0;
+    textStateUpdateCountRef.current = 0;
+    textFrameStallsOver16MsRef.current = 0;
+    textFrameStallsOver50MsRef.current = 0;
+    textFrameStallsOver100MsRef.current = 0;
+    textCompletionLoggedKeyRef.current = null;
+    props.onCompleteChange(false);
+    setTypingState({
+      key: props.typingKey,
+      startedAt,
+      visibleTextLength: 0
+    });
+    setReaderDecodeSchedulerInteractionState({
+      textRevealing: true
+    });
+    logDialogueTiming("text animation started", {
+      dialogueEntryId: props.dialogueEntryId,
+      lineId: props.dialogueEntryId,
+      speakerId: props.speakerId,
+      characterPortraitCount: props.characterPortraitCount,
+      renderModeCount: props.renderModeCount,
+      TEXT_EXPECTED_MS: props.textExpectedDurationMs,
+      typingKey: props.typingKey
+    });
+  }, [
+    props.characterPortraitCount,
+    props.dialogueEntryId,
+    props.isExiting,
     props.onCompleteChange,
     props.renderModeCount,
     props.speakerId,
@@ -990,8 +1076,8 @@ const styles = StyleSheet.create({
   ocnoerSpeaker: {
     color: ocnoerTheme.colors.textMuted,
     fontFamily: ocnoerTheme.typography.family.script,
-    fontSize: ocnoerTheme.typography.size.scriptName,
-    lineHeight: 44,
+    fontSize: 34,
+    lineHeight: 38,
     marginBottom: ocnoerTheme.spacing.sm
   },
   promptEyebrow: {

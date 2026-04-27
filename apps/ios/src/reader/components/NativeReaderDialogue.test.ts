@@ -8,7 +8,9 @@ import {
   getNativeReaderTextUpdateCadenceMs,
   getNativeReaderTypingExpectedDurationMs,
   getNativeReaderVisibleTextLengthAtElapsedMs,
-  shouldApplyNativeReaderForceCompleteRequest
+  shouldApplyNativeReaderForceCompleteRequest,
+  shouldDeferNativeReaderTextReveal,
+  shouldStartDeferredNativeReaderTextReveal
 } from "../nativeReaderDialogueMotion";
 
 describe("NativeReaderDialogue motion", () => {
@@ -112,5 +114,30 @@ describe("NativeReaderDialogue motion", () => {
         typingKey: "supported:line_two:Second line."
       })
     ).toBe(false);
+  });
+
+  it("defers text reveal until a transition-held card can enter", () => {
+    const typingKey = "supported:line_after_transition:First line.";
+
+    expect(
+      shouldDeferNativeReaderTextReveal({
+        characterCount: Array.from("First line.").length,
+        isExiting: true
+      })
+    ).toBe(true);
+    expect(
+      shouldStartDeferredNativeReaderTextReveal({
+        deferredTypingKey: typingKey,
+        isExiting: true,
+        typingKey
+      })
+    ).toBe(false);
+    expect(
+      shouldStartDeferredNativeReaderTextReveal({
+        deferredTypingKey: typingKey,
+        isExiting: false,
+        typingKey
+      })
+    ).toBe(true);
   });
 });

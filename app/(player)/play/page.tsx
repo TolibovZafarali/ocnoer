@@ -6,7 +6,7 @@ import { signOutPlayerAction } from "@/app/(player)/play/actions";
 import { PlayerStoryReader } from "@/app/(player)/play/player-story-reader";
 import { Button } from "@/components/ui/button";
 import { getPlayerSession } from "@/lib/auth/player";
-import worldMapImage from "@/lore/world-map.jpg";
+import worldMapImage from "@/lore/Thaloraz.webp";
 import {
   getPlayerRuntimeSceneAssetUrls,
   getRuntimeBootstrapConfig,

@@ -29,9 +29,24 @@ export function shouldApplyNativeReaderForceCompleteRequest(input: {
 }) {
   return Boolean(
     input.request &&
-      input.request.typingKey === input.typingKey &&
-      !input.isTextComplete
+    input.request.typingKey === input.typingKey &&
+    !input.isTextComplete
   );
+}
+
+export function shouldDeferNativeReaderTextReveal(input: {
+  characterCount: number;
+  isExiting: boolean;
+}) {
+  return input.isExiting && input.characterCount > 0;
+}
+
+export function shouldStartDeferredNativeReaderTextReveal(input: {
+  deferredTypingKey: string | null;
+  isExiting: boolean;
+  typingKey: string;
+}) {
+  return !input.isExiting && input.deferredTypingKey === input.typingKey;
 }
 
 export function getNativeReaderTypingCharacterDelayMs(character: string) {

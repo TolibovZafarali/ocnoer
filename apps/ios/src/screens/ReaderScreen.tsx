@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { BlurView } from "expo-blur";
 import {
-  ActivityIndicator,
   Animated,
   Easing,
   Image,
@@ -55,8 +54,14 @@ import {
   type NativeReaderSceneTransitionPhase,
   useNativeReaderController
 } from "../reader/useNativeReaderController";
+import {
+  NATIVE_READER_CHAPTER_CARD_MUSIC_AFTER_TEXT_DELAY_MS,
+  NATIVE_READER_RESTART_ACTION_DELAY_MS
+} from "../reader/nativeReaderDialogueMotion";
 import { getNativeReaderPortraitTransitionContinuity } from "../reader/readerPresentation";
+import type { NativeReaderBoundaryPresentation } from "../reader/boundaryPresentation";
 import type { NativeAudioPreferences } from "../storage/audioPreferenceStorage";
+import { OcnoerLoadingScreen } from "../ui/LoadingSpinner";
 import { OcnoerButton, OcnoerSurface } from "../ui/primitives";
 import { ocnoerTheme, ocnoerWebPlayer } from "../ui/theme";
 
@@ -78,9 +83,10 @@ type ReaderScreenProps = {
   sessionToken: string;
   audioPreferences: NativeAudioPreferences;
   isSigningOut: boolean;
-  onBackHome: () => void;
+  isRestartingReading?: boolean;
+  onBackHome?: () => void;
   onProgressSaved: () => void;
-  onSignOut: () => void;
+  onRestartReading?: () => void;
   onToggleAudioMuted: () => void;
   onUpdateCatName: (catName: string) => Promise<MobilePlayer>;
 };
@@ -94,6 +100,26 @@ const NO_EXITING_PORTRAITS: PortraitExitState = {
   left: false,
   right: false
 };
+
+function createBoundaryTextRevealKey(
+  boundary: NativeReaderBoundaryPresentation | null
+) {
+  if (
+    boundary?.type !== "chapter-opening-card" &&
+    boundary?.type !== "chapter-ending-card"
+  ) {
+    return null;
+  }
+
+  return `${boundary.type}:${boundary.title}:${boundary.body}`;
+}
+
+function isTerminalEndingBoundary(boundaryState: PlayerBoundaryState | null) {
+  return (
+    boundaryState?.type === "chapter-ending-card" &&
+    boundaryState.nextState.type === "story-finished"
+  );
+}
 
 function waitForDuration(durationMs: number) {
   return new Promise<void>((resolve) => {
@@ -202,41 +228,6 @@ function AppendixIcon() {
   );
 }
 
-function SignOutIcon() {
-  return (
-    <Svg fill="none" height={26} viewBox="0 0 24 24" width={26}>
-      <Path
-        d="M10 17l5-5-5-5"
-        stroke={ocnoerWebPlayer.chrome.iconColor}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2.2}
-      />
-      <Path
-        d="M15 12H3"
-        stroke={ocnoerWebPlayer.chrome.iconColor}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2.2}
-      />
-      <Path
-        d="M21 5v14a2 2 0 0 1-2 2h-6"
-        stroke={ocnoerWebPlayer.chrome.iconColor}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-      />
-      <Path
-        d="M13 3h6a2 2 0 0 1 2 2"
-        stroke={ocnoerWebPlayer.chrome.iconColor}
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth={2}
-      />
-    </Svg>
-  );
-}
-
 function AudioIcon(props: { muted: boolean }) {
   return (
     <Svg fill="none" height={26} viewBox="0 0 24 24" width={26}>
@@ -336,21 +327,24 @@ function ReaderIconButton(props: {
 function ReaderChrome(props: {
   audioPreferences: NativeAudioPreferences;
   canRetreat: boolean;
-  isSigningOut: boolean;
+  isRetreatVisible: boolean;
   onOpenAppendix: () => void;
   onOpenMap: () => void;
   onRetreat: () => void;
-  onSignOut: () => void;
   onToggleAudioMuted: () => void;
 }) {
   return (
     <View pointerEvents="box-none" style={styles.chrome}>
-      <ReaderIconButton
-        accessibilityLabel="Previous dialogue"
-        disabled={!props.canRetreat}
-        icon={<PreviousDialogueIcon />}
-        onPress={props.onRetreat}
-      />
+      {props.isRetreatVisible ? (
+        <ReaderIconButton
+          accessibilityLabel="Previous dialogue"
+          disabled={!props.canRetreat}
+          icon={<PreviousDialogueIcon />}
+          onPress={props.onRetreat}
+        />
+      ) : (
+        <View pointerEvents="none" style={styles.invisibleChromeIcon} />
+      )}
       <View pointerEvents="box-none" style={styles.chromeRight}>
         <ReaderIconButton
           accessibilityLabel="Open appendix"
@@ -371,12 +365,6 @@ function ReaderChrome(props: {
           icon={<AudioIcon muted={props.audioPreferences.muted} />}
           onPress={props.onToggleAudioMuted}
         />
-        <ReaderIconButton
-          accessibilityLabel="Sign out"
-          disabled={props.isSigningOut}
-          icon={<SignOutIcon />}
-          onPress={props.onSignOut}
-        />
       </View>
     </View>
   );
@@ -385,12 +373,11 @@ function ReaderChrome(props: {
 function ReaderChromeLayer(props: {
   audioPreferences: NativeAudioPreferences;
   canRetreat: boolean;
-  isSigningOut: boolean;
+  isRetreatVisible: boolean;
   visible: boolean;
   onOpenAppendix: () => void;
   onOpenMap: () => void;
   onRetreat: () => void;
-  onSignOut: () => void;
   onToggleAudioMuted: () => void;
 }) {
   const progress = useRef(new Animated.Value(props.visible ? 1 : 0)).current;
@@ -431,11 +418,10 @@ function ReaderChromeLayer(props: {
         <ReaderChrome
           audioPreferences={props.audioPreferences}
           canRetreat={props.canRetreat}
-          isSigningOut={props.isSigningOut}
+          isRetreatVisible={props.isRetreatVisible}
           onOpenAppendix={props.onOpenAppendix}
           onOpenMap={props.onOpenMap}
           onRetreat={props.onRetreat}
-          onSignOut={props.onSignOut}
           onToggleAudioMuted={props.onToggleAudioMuted}
         />
       </SafeAreaView>
@@ -664,14 +650,15 @@ function ReaderMessageScreen(props: {
   onBackHome?: () => void;
   onRetry?: () => void;
 }) {
+  if (props.loading) {
+    return <OcnoerLoadingScreen accessibilityLabel={props.title} />;
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.messageScreen}>
         <View style={styles.centered}>
           <OcnoerSurface style={styles.messagePanel} variant="glass">
-            {props.loading ? (
-              <ActivityIndicator color={ocnoerTheme.colors.text} size="large" />
-            ) : null}
             <Text style={styles.messageTitle}>{props.title}</Text>
             <Text style={styles.messageBody}>{props.body}</Text>
             {props.onRetry ? (
@@ -701,6 +688,14 @@ export function ReaderScreen(props: ReaderScreenProps) {
   const [isMapOpen, setIsMapOpen] = useState(false);
   const [isAppendixOpen, setIsAppendixOpen] = useState(false);
   const [keyboardBottomInset, setKeyboardBottomInset] = useState(0);
+  const [completedChapterCardRevealKey, setCompletedChapterCardRevealKey] =
+    useState<string | null>(null);
+  const [endingCardMusicReadyKey, setEndingCardMusicReadyKey] = useState<
+    string | null
+  >(null);
+  const [restartActionReadyKey, setRestartActionReadyKey] = useState<
+    string | null
+  >(null);
   const backgroundMusicManager = useMemo(
     () => getNativeBackgroundMusicAudioManager(),
     []
@@ -761,6 +756,10 @@ export function ReaderScreen(props: ReaderScreenProps) {
   const presentation = reader.presentation;
   const boundaryPresentation = reader.boundaryPresentation;
   const hasBoundaryPresentation = Boolean(boundaryPresentation);
+  const isTerminalClosingScreen =
+    isTerminalEndingBoundary(reader.boundaryState) ||
+    reader.boundaryState?.type === "story-finished" ||
+    reader.state.status === "finished";
   const backgroundMusicCue = useMemo(() => {
     if (reader.state.status !== "ready" && reader.state.status !== "finished") {
       return resolveNativeReaderBackgroundMusicCue({
@@ -778,12 +777,83 @@ export function ReaderScreen(props: ReaderScreenProps) {
       boundaryState: reader.boundaryState
     });
   }, [props.config.supabaseUrl, reader.boundaryState, reader.state]);
+  const chapterCardRevealKey = useMemo(
+    () => createBoundaryTextRevealKey(boundaryPresentation),
+    [boundaryPresentation]
+  );
+  const endingCardMusicGateKey =
+    backgroundMusicCue.status === "playable" &&
+    backgroundMusicCue.source === "chapter-ending-card" &&
+    chapterCardRevealKey &&
+    boundaryPresentation?.type === "chapter-ending-card"
+      ? `${chapterCardRevealKey}:${backgroundMusicCue.key}`
+      : null;
+  const isBackgroundMusicPlaybackEnabled =
+    !endingCardMusicGateKey ||
+    endingCardMusicReadyKey === endingCardMusicGateKey;
   useNativeBackgroundMusic({
     cue: backgroundMusicCue,
+    isPlaybackEnabled: isBackgroundMusicPlaybackEnabled,
     isSessionActive: !props.isSigningOut,
     preferences: props.audioPreferences,
     sessionId: readerSessionId
   });
+  const hasCompletedClosingText =
+    Boolean(chapterCardRevealKey) &&
+    completedChapterCardRevealKey === chapterCardRevealKey;
+  const restartActionGateKey =
+    isTerminalClosingScreen && chapterCardRevealKey
+      ? `restart:${chapterCardRevealKey}`
+      : null;
+  const shouldShowRestartAction =
+    Boolean(props.onRestartReading) &&
+    restartActionGateKey !== null &&
+    restartActionReadyKey === restartActionGateKey;
+  useEffect(() => {
+    if (!chapterCardRevealKey) {
+      setCompletedChapterCardRevealKey(null);
+      return;
+    }
+
+    setCompletedChapterCardRevealKey((currentKey) =>
+      currentKey === chapterCardRevealKey ? currentKey : null
+    );
+  }, [chapterCardRevealKey]);
+  useEffect(() => {
+    if (
+      !endingCardMusicGateKey ||
+      completedChapterCardRevealKey !== chapterCardRevealKey
+    ) {
+      setEndingCardMusicReadyKey(null);
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setEndingCardMusicReadyKey(endingCardMusicGateKey);
+    }, NATIVE_READER_CHAPTER_CARD_MUSIC_AFTER_TEXT_DELAY_MS);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [
+    chapterCardRevealKey,
+    completedChapterCardRevealKey,
+    endingCardMusicGateKey
+  ]);
+  useEffect(() => {
+    if (!restartActionGateKey || !hasCompletedClosingText) {
+      setRestartActionReadyKey(null);
+      return;
+    }
+
+    const timeoutId = setTimeout(() => {
+      setRestartActionReadyKey(restartActionGateKey);
+    }, NATIVE_READER_RESTART_ACTION_DELAY_MS);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [hasCompletedClosingText, restartActionGateKey]);
   useEffect(() => {
     if (Platform.OS !== "ios") {
       return;
@@ -902,10 +972,6 @@ export function ReaderScreen(props: ReaderScreenProps) {
 
     void runWithLineExit(reader.submitCatName);
   }, [reader.catNameInputValue, reader.submitCatName, runWithLineExit]);
-  const handleSignOut = useCallback(() => {
-    setIsChromeVisible(false);
-    props.onSignOut();
-  }, [props.onSignOut]);
   const handleOpenMap = useCallback(() => {
     setIsChromeVisible(false);
     setIsAppendixOpen(false);
@@ -1014,14 +1080,16 @@ export function ReaderScreen(props: ReaderScreenProps) {
             <ReaderChromeLayer
               audioPreferences={props.audioPreferences}
               canRetreat={
-                reader.canRetreat && !reader.isMoving && !isLineExiting
+                !isTerminalClosingScreen &&
+                reader.canRetreat &&
+                !reader.isMoving &&
+                !isLineExiting
               }
-              isSigningOut={props.isSigningOut}
+              isRetreatVisible={!isTerminalClosingScreen}
               visible={isChromeVisible}
               onOpenAppendix={handleOpenAppendix}
               onOpenMap={handleOpenMap}
               onRetreat={handleRetreat}
-              onSignOut={handleSignOut}
               onToggleAudioMuted={props.onToggleAudioMuted}
             />
 
@@ -1029,10 +1097,16 @@ export function ReaderScreen(props: ReaderScreenProps) {
               <NativeReaderBoundaryCard
                 actionError={reader.actionError}
                 boundary={boundaryPresentation}
+                isRestarting={props.isRestartingReading}
                 isMoving={reader.isMoving}
                 persistenceError={reader.persistenceError}
                 onAdvance={handleAdvance}
+                onChapterCardTextRevealComplete={
+                  setCompletedChapterCardRevealKey
+                }
                 onRevealChrome={revealChrome}
+                onRestart={props.onRestartReading}
+                showRestartAction={shouldShowRestartAction}
               />
             ) : reader.state.status === "finished" ? (
               <Pressable
@@ -1140,6 +1214,11 @@ const styles = StyleSheet.create({
   },
   chromeIconDisabled: {
     opacity: 0.45
+  },
+  invisibleChromeIcon: {
+    height: ocnoerWebPlayer.chrome.iconSize,
+    opacity: 0,
+    width: ocnoerWebPlayer.chrome.iconSize
   },
   chromeIconPressed: {
     opacity: 0.76

@@ -74,6 +74,9 @@ import type { NativeReaderPresentation } from "./readerPresentation";
 import { ensureSceneAssetsReady } from "./imagePreload";
 import { NATIVE_READER_DIALOGUE_ADVANCE_COMMIT_DELAY_MS } from "./nativeReaderDialogueMotion";
 import {
+  NATIVE_OPENING_TRANSITION_COVER_MS,
+  NATIVE_OPENING_TRANSITION_MIN_BLACKOUT_MS,
+  NATIVE_OPENING_TRANSITION_POST_COMMIT_HOLD_MS,
   NATIVE_SCENE_TRANSITION_COVER_MS,
   NATIVE_SCENE_TRANSITION_MIN_BLACKOUT_MS,
   NATIVE_SCENE_TRANSITION_POST_COMMIT_HOLD_MS,
@@ -84,6 +87,7 @@ import {
   computeNativeReaderAdvanceTargets,
   createNativeReaderPresentationReadinessKey,
   ensureNativeReaderPresentationRenderReady,
+  getNativeReaderOpeningBoundaryForRetreat,
   getNativeReaderProgressBranchFlags,
   resolveNativeReaderAdvanceCommitPlan,
   runNativeReaderSceneTransition
@@ -210,6 +214,105 @@ function createPresentation(
     ...overrides
   } as NativeReaderPresentation;
 }
+
+describe("native opening boundary retreat", () => {
+  it("treats the chapter opening card as previous state at the first line", () => {
+    const bundle = createBundle([
+      createEntry({
+        id: "line_one",
+        speaker: {
+          type: "narrator"
+        },
+        stage: {
+          left: null,
+          right: null
+        }
+      })
+    ]);
+    bundle.chapter.openingCardText = "In the beginning, there was darkness.";
+
+    expect(
+      getNativeReaderOpeningBoundaryForRetreat({
+        manifest,
+        bundle,
+        readerState: {
+          sceneIndex: 0,
+          dialogueIndex: 0,
+          isChapterComplete: false
+        }
+      })
+    ).toMatchObject({
+      type: "chapter-opening-card",
+      chapterId: "chapter_one",
+      text: "In the beginning, there was darkness."
+    });
+  });
+
+  it("does not restore the opening card once a previous dialogue line exists", () => {
+    const bundle = createBundle([
+      createEntry({
+        id: "line_one",
+        speaker: {
+          type: "narrator"
+        },
+        stage: {
+          left: null,
+          right: null
+        }
+      }),
+      createEntry({
+        id: "line_two",
+        speaker: {
+          type: "narrator"
+        },
+        stage: {
+          left: null,
+          right: null
+        }
+      })
+    ]);
+    bundle.chapter.openingCardText = "In the beginning, there was darkness.";
+
+    expect(
+      getNativeReaderOpeningBoundaryForRetreat({
+        manifest,
+        bundle,
+        readerState: {
+          sceneIndex: 0,
+          dialogueIndex: 1,
+          isChapterComplete: false
+        }
+      })
+    ).toBeNull();
+  });
+
+  it("does not create a retreat boundary when no opening card is published", () => {
+    const bundle = createBundle([
+      createEntry({
+        id: "line_one",
+        speaker: {
+          type: "narrator"
+        },
+        stage: {
+          left: null,
+          right: null
+        }
+      })
+    ]);
+
+    expect(
+      getNativeReaderOpeningBoundaryForRetreat({
+        manifest,
+        bundle,
+        readerState: {
+          sceneIndex: 0,
+          dialogueIndex: 0,
+          isChapterComplete: false
+        }
+      })
+    ).toBeNull();
+  });
+});
 
 describe("commitNativeReaderStateAfterAssetGate", () => {
   beforeEach(() => {
@@ -777,6 +880,60 @@ describe("native scene transition choreography", () => {
     expect(commit).toHaveBeenCalledTimes(1);
     expect(waits[2]?.durationMs).toBe(
       NATIVE_SCENE_TRANSITION_POST_COMMIT_HOLD_MS
+    );
+
+    waits[2]?.resolve();
+    await flushPromises();
+
+    expect(events.at(-1)).toBe("phase:revealing");
+    expect(waits[3]?.durationMs).toBe(NATIVE_SCENE_TRANSITION_REVEAL_MS);
+
+    waits[3]?.resolve();
+    await transitionPromise;
+
+    expect(events.at(-1)).toBe("phase:idle");
+  });
+
+  it("holds the opening blackout for at least three seconds before reveal", async () => {
+    const events: string[] = [];
+    const { wait, waits } = createDeferredWait();
+    const commit = vi.fn(() => {
+      events.push("commit");
+    });
+    const transitionPromise = runNativeReaderSceneTransition({
+      coverDurationMs: NATIVE_OPENING_TRANSITION_COVER_MS,
+      minimumBlackoutMs: NATIVE_OPENING_TRANSITION_MIN_BLACKOUT_MS,
+      postCommitHoldMs: NATIVE_OPENING_TRANSITION_POST_COMMIT_HOLD_MS,
+      prepare: vi.fn(async () => {
+        events.push("prepare");
+      }),
+      commit,
+      setPhase: (phase) => {
+        events.push(`phase:${phase}`);
+      },
+      wait
+    });
+
+    expect(waits[0]?.durationMs).toBe(NATIVE_OPENING_TRANSITION_COVER_MS);
+
+    waits[0]?.resolve();
+    await flushPromises();
+
+    expect(events).toEqual(["phase:covering", "phase:blackout", "prepare"]);
+    expect(waits[1]?.durationMs).toBe(
+      NATIVE_OPENING_TRANSITION_MIN_BLACKOUT_MS
+    );
+    expect(NATIVE_OPENING_TRANSITION_MIN_BLACKOUT_MS).toBeGreaterThanOrEqual(
+      3000
+    );
+    expect(commit).not.toHaveBeenCalled();
+
+    waits[1]?.resolve();
+    await flushPromises();
+
+    expect(commit).toHaveBeenCalledTimes(1);
+    expect(waits[2]?.durationMs).toBe(
+      NATIVE_OPENING_TRANSITION_POST_COMMIT_HOLD_MS
     );
 
     waits[2]?.resolve();

@@ -9,11 +9,13 @@ import { Directory, File, Paths } from "expo-file-system";
 export type BackgroundMusicPlayableTarget = {
   key: string;
   label: string;
+  loop?: boolean;
   url: string;
 };
 
 export type BackgroundMusicManagerState =
   | "idle"
+  | "ended"
   | "loading"
   | "playing"
   | "stopping"
@@ -37,9 +39,12 @@ type BackgroundMusicTarget = {
 type CurrentBackgroundMusicPlayer = {
   key: string;
   label: string;
+  loop: boolean;
   sessionId: string | null;
   url: string;
   player: AudioPlayer;
+  endSubscription: { remove: () => void } | null;
+  hasEnded: boolean;
   hasStarted: boolean;
 };
 
@@ -546,6 +551,35 @@ function releasePlayer(player: AudioPlayer) {
   }
 }
 
+function releaseCurrentPlayer(current: CurrentBackgroundMusicPlayer) {
+  current.endSubscription?.remove();
+  releasePlayer(current.player);
+}
+
+function subscribeToPlaybackEnd(
+  player: AudioPlayer,
+  onEnd: () => void
+): { remove: () => void } | null {
+  const addListener = (
+    player as AudioPlayer & {
+      addListener?: (
+        eventName: "playbackStatusUpdate",
+        listener: (status: { didJustFinish?: boolean }) => void
+      ) => { remove: () => void };
+    }
+  ).addListener;
+
+  if (!addListener) {
+    return null;
+  }
+
+  return addListener.call(player, "playbackStatusUpdate", (status) => {
+    if (status.didJustFinish) {
+      onEnd();
+    }
+  });
+}
+
 async function waitForPlayerPlaybackStart(
   player: AudioPlayer,
   shouldContinue: () => boolean
@@ -740,9 +774,11 @@ export class NativeBackgroundMusicAudioManager {
       this.current?.url === targetCue.url &&
       this.current.key === targetCue.key &&
       this.current.sessionId === this.target.sessionId &&
+      this.current.loop === (targetCue.loop ?? true) &&
       this.current.hasStarted &&
-      isPlayerActive(this.current.player) &&
-      Math.abs(this.current.player.volume - this.target.volume) < 0.02
+      ((this.current.hasEnded && !this.current.loop) ||
+        (isPlayerActive(this.current.player) &&
+          Math.abs(this.current.player.volume - this.target.volume) < 0.02))
     );
   }
 
@@ -759,7 +795,7 @@ export class NativeBackgroundMusicAudioManager {
     try {
       await fadePlayerTo(current.player, 0, fadeMs);
     } finally {
-      releasePlayer(current.player);
+      releaseCurrentPlayer(current);
     }
   }
 
@@ -811,17 +847,38 @@ export class NativeBackgroundMusicAudioManager {
       }
     );
 
-    player.loop = true;
+    const shouldLoop = targetCue.loop ?? true;
+
+    player.loop = shouldLoop;
     player.volume = 0;
 
-    this.current = {
+    const current: CurrentBackgroundMusicPlayer = {
       key: targetCue.key,
       label: targetCue.label,
+      loop: shouldLoop,
       sessionId: targetSessionId,
       url: targetCue.url,
       player,
+      endSubscription: null,
+      hasEnded: false,
       hasStarted: false
     };
+
+    current.endSubscription = shouldLoop
+      ? null
+      : subscribeToPlaybackEnd(player, () => {
+          if (this.current !== current || current.hasEnded) {
+            return;
+          }
+
+          current.hasEnded = true;
+          this.emit({
+            state: "ended",
+            activeLabel: current.label,
+            error: null
+          });
+        });
+    this.current = current;
 
     const didLoad = await waitForPlayerLoad(player, isStillTarget);
 
@@ -901,7 +958,7 @@ export class NativeBackgroundMusicAudioManager {
         }
 
         if (this.current) {
-          releasePlayer(this.current.player);
+          releaseCurrentPlayer(this.current);
         }
         this.current = null;
         this.emit({
@@ -957,7 +1014,39 @@ export class NativeBackgroundMusicAudioManager {
 
         this.current.key = targetCue.key;
         this.current.label = targetCue.label;
-        this.current.player.loop = true;
+        const nextLoop = targetCue.loop ?? true;
+
+        if (this.current.loop !== nextLoop) {
+          this.current.endSubscription?.remove();
+          this.current.endSubscription = null;
+          this.current.hasEnded = false;
+          this.current.loop = nextLoop;
+          this.current.endSubscription = nextLoop
+            ? null
+            : subscribeToPlaybackEnd(this.current.player, () => {
+                if (!this.current || this.current.url !== targetCue.url) {
+                  return;
+                }
+
+                this.current.hasEnded = true;
+                this.emit({
+                  state: "ended",
+                  activeLabel: this.current.label,
+                  error: null
+                });
+              });
+        }
+
+        this.current.player.loop = this.current.loop;
+
+        if (this.current.hasEnded && !this.current.loop) {
+          this.emit({
+            state: "ended",
+            activeLabel: this.current.label,
+            error: null
+          });
+          return;
+        }
 
         await this.ensureAudioMode();
         await setIsAudioActiveAsync(true);

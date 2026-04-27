@@ -15,6 +15,7 @@ export type NativeBackgroundMusicStatus = {
   label: string;
   detail: string | null;
   state:
+    | "ended"
     | "loading"
     | "muted"
     | "playing"
@@ -32,6 +33,7 @@ function createDisplayStatus(input: {
   cue: NativeBackgroundMusicCue;
   preferences: NativeAudioPreferences;
   isAppActive: boolean;
+  isPlaybackEnabled: boolean;
   isSessionActive: boolean;
   managerSnapshot: BackgroundMusicManagerSnapshot;
 }): NativeBackgroundMusicStatus {
@@ -40,6 +42,14 @@ function createDisplayStatus(input: {
       state: "muted",
       label: "Audio muted",
       detail: "Music is off"
+    };
+  }
+
+  if (!input.isPlaybackEnabled) {
+    return {
+      state: "paused",
+      label: "Audio paused",
+      detail: "Waiting for ending text"
     };
   }
 
@@ -66,6 +76,17 @@ function createDisplayStatus(input: {
       state: "error",
       label: "Audio issue",
       detail: input.managerSnapshot.error
+    };
+  }
+
+  if (
+    input.cue.status === "playable" &&
+    input.managerSnapshot.state === "ended"
+  ) {
+    return {
+      state: "ended",
+      label: input.cue.label,
+      detail: "Ending music complete"
     };
   }
 
@@ -99,6 +120,7 @@ function createDisplayStatus(input: {
 
 export function useNativeBackgroundMusic(input: {
   cue: NativeBackgroundMusicCue;
+  isPlaybackEnabled?: boolean;
   isSessionActive?: boolean;
   preferences: NativeAudioPreferences;
   sessionId: string;
@@ -134,6 +156,7 @@ export function useNativeBackgroundMusic(input: {
         ? {
             key: input.cue.key,
             label: input.cue.label,
+            loop: input.cue.source !== "chapter-ending-card",
             url: input.cue.url
           }
         : null;
@@ -145,6 +168,7 @@ export function useNativeBackgroundMusic(input: {
         cue &&
         isAppActive &&
         !input.preferences.muted &&
+        (input.isPlaybackEnabled ?? true) &&
         (input.isSessionActive ?? true)
       ),
       volume: input.preferences.volume,
@@ -152,6 +176,7 @@ export function useNativeBackgroundMusic(input: {
     });
   }, [
     input.cue,
+    input.isPlaybackEnabled,
     input.isSessionActive,
     input.preferences.muted,
     input.preferences.volume,
@@ -172,11 +197,13 @@ export function useNativeBackgroundMusic(input: {
         cue: input.cue,
         preferences: input.preferences,
         isAppActive,
+        isPlaybackEnabled: input.isPlaybackEnabled ?? true,
         isSessionActive: input.isSessionActive ?? true,
         managerSnapshot
       }),
     [
       input.cue,
+      input.isPlaybackEnabled,
       input.isSessionActive,
       input.preferences,
       isAppActive,

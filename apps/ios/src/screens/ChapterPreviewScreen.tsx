@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -14,6 +13,7 @@ import type { RuntimeChapterBundle, RuntimeManifest } from "@ocnoer/story-core";
 import type { MobileRuntimeConfig } from "../config/runtime";
 import { createChapterPreview, type ChapterPreview } from "../runtime/preview";
 import { createMobileRuntimeRepository } from "../runtime/runtimeRepository";
+import { OcnoerLoadingScreen } from "../ui/LoadingSpinner";
 
 type ChapterPreviewState =
   | {
@@ -114,17 +114,14 @@ export function ChapterPreviewScreen(props: ChapterPreviewScreenProps) {
     void loadPreview();
   }, [loadPreview]);
 
+  if (state.status === "loading") {
+    return <OcnoerLoadingScreen accessibilityLabel="Loading chapter bundle" />;
+  }
+
   return (
     <SafeAreaView style={styles.safeArea}>
       <ScrollView contentContainerStyle={styles.content}>
         <SecondaryButton label="Back" onPress={props.onBack} />
-
-        {state.status === "loading" ? (
-          <View style={styles.centeredPanel}>
-            <ActivityIndicator color="#facc15" size="large" />
-            <Text style={styles.loadingText}>Loading chapter bundle</Text>
-          </View>
-        ) : null}
 
         {state.status === "error" ? (
           <View style={styles.panel}>
@@ -185,15 +182,6 @@ const styles = StyleSheet.create({
     padding: 24,
     paddingBottom: 42
   },
-  centeredPanel: {
-    alignItems: "center",
-    backgroundColor: "#171d26",
-    borderColor: "#303b4a",
-    borderRadius: 8,
-    borderWidth: 1,
-    marginTop: 20,
-    padding: 24
-  },
   eyebrow: {
     color: "#facc15",
     fontSize: 12,
@@ -215,11 +203,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 24,
     marginBottom: 16
-  },
-  loadingText: {
-    color: "#e2e8f0",
-    fontSize: 16,
-    marginTop: 14
   },
   panel: {
     backgroundColor: "#171d26",

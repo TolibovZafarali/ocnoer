@@ -129,6 +129,29 @@ function createResponse(input: {
   };
 }
 
+function createBitmapDerivativePortraitAssetRef(slug: string) {
+  return {
+    role: "portrait" as const,
+    url: `https://example.supabase.co/storage/v1/object/public/runtime/${slug}.svg`,
+    storagePath: `runtime/${slug}.svg`,
+    cacheKey: `portrait:${slug}`,
+    sourceRenderKind: "svg" as const,
+    derivatives: [
+      {
+        storagePath: `runtime/${slug}.phone-3x.reader.webp`,
+        url: `https://example.supabase.co/storage/v1/object/public/runtime/${slug}.phone-3x.reader.webp`,
+        contentType: "image/webp",
+        renderKind: "bitmap" as const,
+        variantKey: "phone-3x",
+        width: 752,
+        height: 1129,
+        hash: `${slug}-phone3`,
+        derivativeOf: `runtime/${slug}.svg`
+      }
+    ]
+  };
+}
+
 describe("reader asset cache", () => {
   beforeEach(() => {
     mockFiles.clear();
@@ -634,34 +657,122 @@ describe("reader asset cache", () => {
         })
       )
     );
-    const { ensureSceneAssetsReady, getReaderAssetRenderDiagnostics } =
-      await import("./imagePreload");
-    const assetRef = {
-      role: "portrait" as const,
-      url: "https://example.supabase.co/storage/v1/object/public/runtime/null-ref.svg",
-      storagePath: "runtime/null-ref.svg",
-      cacheKey: "portrait:null-ref",
-      sourceRenderKind: "svg" as const,
-      derivatives: [
-        {
-          storagePath: "runtime/null-ref.phone-3x.reader.webp",
-          url: "https://example.supabase.co/storage/v1/object/public/runtime/null-ref.phone-3x.reader.webp",
-          contentType: "image/webp",
-          renderKind: "bitmap" as const,
-          variantKey: "phone-3x",
-          width: 752,
-          height: 1129,
-          hash: "phone3",
-          derivativeOf: "runtime/null-ref.svg"
-        }
-      ]
-    };
+    const {
+      createCachedReaderImageSource,
+      ensureSceneAssetsReady,
+      getPreloadedReaderImageRef,
+      getReaderAssetRenderDiagnostics
+    } = await import("./imagePreload");
+    const assetRef = createBitmapDerivativePortraitAssetRef("null-ref");
 
     const result = await ensureSceneAssetsReady("scene_null_ref", [assetRef]);
 
     expect(result.status).toBe("error");
     expect(result.errors[0]?.message).toContain("Native ImageRef is required");
     expect(getReaderAssetRenderDiagnostics(assetRef)).toMatchObject({
+      fileReady: true,
+      imageRefReady: false,
+      renderReady: false,
+      failureReason: "image-ref-load-failed-or-null"
+    });
+    expect(createCachedReaderImageSource(assetRef.url)).toEqual(
+      expect.objectContaining({
+        uri: expect.stringContaining("ocnoer-reader-assets")
+      })
+    );
+    expect(getPreloadedReaderImageRef(assetRef.url)).toBeNull();
+  });
+
+  it("refreshes a cached bitmap derivative once when ImageRef loading fails", async () => {
+    const fetchMock = vi.fn(async () =>
+      createResponse({
+        contentType: "image/webp",
+        body: createPngBytes()
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const assetRef =
+      createBitmapDerivativePortraitAssetRef("cached-refresh-success");
+    const firstModule = await import("./imagePreload");
+
+    const firstResult = await firstModule.ensureSceneAssetsReady(
+      "scene_cached_refresh_first",
+      [assetRef]
+    );
+
+    expect(firstResult.status).toBe("success");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.resetModules();
+    fetchMock.mockClear();
+    mockLoadAsync.mockReset();
+    mockLoadAsync
+      .mockImplementationOnce(async () => null as any)
+      .mockResolvedValue({ id: "image-ref-refresh" });
+    const refreshedModule = await import("./imagePreload");
+
+    const refreshedResult = await refreshedModule.ensureSceneAssetsReady(
+      "scene_cached_refresh_second",
+      [assetRef]
+    );
+
+    expect(refreshedResult.status).toBe("success");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(mockLoadAsync).toHaveBeenCalledTimes(2);
+    expect(refreshedResult.assets[0]).toMatchObject({
+      fromCache: false,
+      renderMode: "bitmap-derivative"
+    });
+    expect(
+      refreshedModule.getReaderAssetRenderDiagnostics(assetRef)
+    ).toMatchObject({
+      fileReady: true,
+      imageRefReady: true,
+      renderReady: true,
+      failureReason: null
+    });
+  });
+
+  it("reports an error when a refreshed cached bitmap derivative still has no ImageRef", async () => {
+    const fetchMock = vi.fn(async () =>
+      createResponse({
+        contentType: "image/webp",
+        body: createPngBytes()
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const assetRef =
+      createBitmapDerivativePortraitAssetRef("cached-refresh-failure");
+    const firstModule = await import("./imagePreload");
+
+    const firstResult = await firstModule.ensureSceneAssetsReady(
+      "scene_cached_refresh_failure_first",
+      [assetRef]
+    );
+
+    expect(firstResult.status).toBe("success");
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+
+    vi.resetModules();
+    fetchMock.mockClear();
+    mockLoadAsync.mockReset();
+    mockLoadAsync.mockResolvedValue(null as any);
+    const refreshedModule = await import("./imagePreload");
+
+    const refreshedResult = await refreshedModule.ensureSceneAssetsReady(
+      "scene_cached_refresh_failure_second",
+      [assetRef]
+    );
+
+    expect(refreshedResult.status).toBe("error");
+    expect(refreshedResult.errors[0]?.message).toContain(
+      "Native ImageRef is required"
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(mockLoadAsync).toHaveBeenCalledTimes(2);
+    expect(
+      refreshedModule.getReaderAssetRenderDiagnostics(assetRef)
+    ).toMatchObject({
       fileReady: true,
       imageRefReady: false,
       renderReady: false,

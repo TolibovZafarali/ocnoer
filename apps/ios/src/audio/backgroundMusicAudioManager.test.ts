@@ -7,9 +7,11 @@ import {
 
 type MockAudioPlayer = {
   isLoaded: boolean;
+  listeners: Array<(status: { didJustFinish?: boolean }) => void>;
   loop: boolean;
   paused: boolean;
   playing: boolean;
+  addListener: ReturnType<typeof vi.fn>;
   volume: number;
   play: ReturnType<typeof vi.fn>;
   pause: ReturnType<typeof vi.fn>;
@@ -22,9 +24,20 @@ const audioMock = vi.hoisted(() => {
   const createAudioPlayer = vi.fn(() => {
     const player: MockAudioPlayer = {
       isLoaded: true,
+      listeners: [],
       loop: false,
       paused: true,
       playing: false,
+      addListener: vi.fn((_eventName, listener) => {
+        player.listeners.push(listener);
+        return {
+          remove: vi.fn(() => {
+            player.listeners = player.listeners.filter(
+              (currentListener) => currentListener !== listener
+            );
+          })
+        };
+      }),
       volume: 1,
       play: vi.fn(() => {
         player.paused = false;
@@ -49,6 +62,16 @@ const audioMock = vi.hoisted(() => {
     setIsAudioActiveAsync: vi.fn(async () => undefined)
   };
 });
+
+function emitPlaybackFinished(player: MockAudioPlayer) {
+  player.paused = true;
+  player.playing = false;
+  player.listeners.forEach((listener) => {
+    listener({
+      didJustFinish: true
+    });
+  });
+}
 
 const fileSystemMock = vi.hoisted(() => {
   const files = new Map<string, { exists: boolean; size: number }>();
@@ -637,6 +660,62 @@ describe("NativeBackgroundMusicAudioManager", () => {
 
     expect(audioMock.players[0]?.pause).toHaveBeenCalledTimes(1);
     expect(audioMock.players[0]?.remove).toHaveBeenCalledTimes(1);
+  });
+
+  it("plays chapter ending music once and reports when it ends", async () => {
+    const manager = new NativeBackgroundMusicAudioManager();
+    const playing = waitForManagerState(manager, "playing");
+    const targetUrl =
+      "https://example.supabase.co/storage/v1/object/public/runtime/media/background-music/ending_theme";
+
+    manager.setTarget({
+      cue: {
+        key: "chapter-ending-card:chapter_one:ending_theme",
+        label: "Ending",
+        loop: false,
+        url: targetUrl
+      },
+      sessionId: "session-a",
+      shouldPlay: true,
+      volume: 0.85,
+      fadeMs: 0
+    });
+
+    await playing;
+
+    const player = audioMock.players[0];
+    const ended = waitForManagerState(manager, "ended");
+
+    expect(player?.loop).toBe(false);
+    expect(player?.addListener).toHaveBeenCalledWith(
+      "playbackStatusUpdate",
+      expect.any(Function)
+    );
+
+    emitPlaybackFinished(player!);
+
+    await expect(ended).resolves.toMatchObject({
+      activeLabel: "Ending",
+      error: null,
+      state: "ended"
+    });
+
+    manager.setTarget({
+      cue: {
+        key: "chapter-ending-card:chapter_one:ending_theme",
+        label: "Ending",
+        loop: false,
+        url: targetUrl
+      },
+      sessionId: "session-a",
+      shouldPlay: true,
+      volume: 0.85,
+      fadeMs: 0
+    });
+    await waitForNextTick();
+
+    expect(player?.play).toHaveBeenCalledTimes(1);
+    expect(audioMock.createAudioPlayer).toHaveBeenCalledTimes(1);
   });
 
   it("restarts the scene track when native playback was paused behind tracked state", async () => {

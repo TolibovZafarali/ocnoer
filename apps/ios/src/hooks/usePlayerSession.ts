@@ -141,18 +141,18 @@ export function usePlayerSession() {
       });
     }
 
-    if (token) {
-      await createPlayerSessionClient()
-        .signOut(token)
-        .catch(() => undefined);
-    }
-
     await clearStoredPlayerSession();
     setMountedState({
       status: "signed-out",
       error: null,
       isSubmitting: false
     });
+
+    if (token) {
+      void createPlayerSessionClient()
+        .signOut(token)
+        .catch(() => undefined);
+    }
   }, [setMountedState, state]);
 
   const replacePlayer = useCallback(

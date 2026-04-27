@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
+  ImageBackground,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -11,8 +11,10 @@ import {
   View
 } from "react-native";
 
-import { OcnoerScreenBackground } from "../ui/primitives";
+import { LoadingSpinner } from "../ui/LoadingSpinner";
 import { ocnoerTheme, ocnoerWebPlayer } from "../ui/theme";
+
+const loginBackgroundImage = require("../../../../lore/background.jpg");
 
 type SignInScreenProps = {
   error: string | null;
@@ -24,11 +26,15 @@ export function SignInScreen(props: SignInScreenProps) {
   const inputRef = useRef<TextInput>(null);
   const [secret, setSecret] = useState("");
   const [expanded, setExpanded] = useState(false);
+  const [hasEditedSinceError, setHasEditedSinceError] = useState(false);
   const canSubmit = secret.trim().length > 0 && !props.isSubmitting;
+  const showErrorState = Boolean(props.error && !hasEditedSinceError);
 
   useEffect(() => {
     if (props.error) {
       setExpanded(true);
+      setHasEditedSinceError(false);
+      return;
     }
   }, [props.error]);
 
@@ -50,9 +56,22 @@ export function SignInScreen(props: SignInScreenProps) {
     }
   }
 
+  function handleSecretChange(nextSecret: string) {
+    setSecret(nextSecret);
+
+    if (props.error) {
+      setHasEditedSinceError(true);
+    }
+  }
+
   return (
-    <SafeAreaView style={styles.safeArea}>
-      <OcnoerScreenBackground>
+    <ImageBackground
+      resizeMode="cover"
+      source={loginBackgroundImage}
+      style={styles.backgroundImage}
+    >
+      <View pointerEvents="none" style={styles.backgroundScrim} />
+      <SafeAreaView style={styles.safeArea}>
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : undefined}
           style={styles.container}
@@ -62,7 +81,7 @@ export function SignInScreen(props: SignInScreenProps) {
               style={[
                 styles.gatePill,
                 expanded ? styles.gatePillExpanded : styles.gatePillCollapsed,
-                props.error ? styles.gatePillError : null
+                showErrorState ? styles.gatePillError : null
               ]}
             >
               {expanded ? (
@@ -72,7 +91,7 @@ export function SignInScreen(props: SignInScreenProps) {
                   autoCapitalize="none"
                   autoCorrect={false}
                   editable={!props.isSubmitting}
-                  onChangeText={setSecret}
+                  onChangeText={handleSecretChange}
                   onSubmitEditing={() => {
                     if (canSubmit) {
                       props.onSignIn(secret);
@@ -95,31 +114,45 @@ export function SignInScreen(props: SignInScreenProps) {
                 onPress={handleArrowPress}
                 style={({ pressed }) => [
                   styles.arrowButton,
+                  showErrorState ? styles.arrowButtonError : null,
                   pressed && !props.isSubmitting ? styles.pressed : null,
                   props.isSubmitting ? styles.disabled : null
                 ]}
               >
                 {props.isSubmitting ? (
-                  <ActivityIndicator color={ocnoerTheme.colors.stageDeep} />
+                  <LoadingSpinner
+                    accessibilityLabel="Submitting credential"
+                    size={24}
+                    tintColor={ocnoerTheme.colors.stageDeep}
+                  />
                 ) : (
-                  <Text style={styles.arrowText}>{"\u2192"}</Text>
+                  <Text
+                    style={[
+                      styles.arrowText,
+                      showErrorState ? styles.arrowTextError : null
+                    ]}
+                  >
+                    {"\u2192"}
+                  </Text>
                 )}
               </Pressable>
             </View>
-
-            {props.error ? (
-              <Text style={styles.error}>{props.error}</Text>
-            ) : null}
           </View>
         </KeyboardAvoidingView>
-      </OcnoerScreenBackground>
-    </SafeAreaView>
+      </SafeAreaView>
+    </ImageBackground>
   );
 }
 
 const styles = StyleSheet.create({
+  backgroundImage: {
+    flex: 1
+  },
+  backgroundScrim: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(0, 0, 0, 0.38)"
+  },
   safeArea: {
-    backgroundColor: ocnoerTheme.colors.night,
     flex: 1
   },
   container: {
@@ -148,10 +181,12 @@ const styles = StyleSheet.create({
     width: "100%"
   },
   gatePillCollapsed: {
+    justifyContent: "center",
+    padding: 0,
     width: ocnoerWebPlayer.gate.collapsedPillSize
   },
   gatePillError: {
-    borderColor: "rgba(253, 164, 175, 0.36)"
+    borderColor: "#7f1d1d"
   },
   input: {
     color: ocnoerTheme.colors.text,
@@ -169,19 +204,17 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 56
   },
+  arrowButtonError: {
+    backgroundColor: "#7f1d1d"
+  },
   arrowText: {
     color: ocnoerWebPlayer.gate.arrowColor,
     fontSize: 25,
     fontWeight: "900",
     lineHeight: 28
   },
-  error: {
-    color: ocnoerTheme.colors.rose,
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: ocnoerTheme.spacing.lg,
-    maxWidth: 360,
-    textAlign: "center"
+  arrowTextError: {
+    color: ocnoerTheme.colors.text
   },
   pressed: {
     opacity: ocnoerTheme.opacity.pressed,

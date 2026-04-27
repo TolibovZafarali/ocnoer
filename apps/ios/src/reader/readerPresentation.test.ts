@@ -482,6 +482,50 @@ describe("createNativeReaderPresentation", () => {
     expect(presentation?.stageCharacters).toHaveLength(1);
   });
 
+  it("keeps an active right-side character visible when an inactive left character is staged", () => {
+    const presentation = createNativeReaderPresentation({
+      supabaseUrl,
+      bundle: createBundle({
+        entry: createDialogueEntry({
+          speaker: {
+            type: "character",
+            characterId: "character_right",
+            characterName: "Right",
+            characterSlug: "right",
+            emotionKey: "default",
+            emotionLabel: "Default",
+            emotionImagePath: "runtime/media/right.png"
+          },
+          stage: {
+            left: createStageCharacter({
+              characterId: "character_left",
+              characterName: "Left",
+              characterSlug: "left",
+              imagePath: "runtime/media/left.png"
+            }),
+            right: createStageCharacter({
+              characterId: "character_right",
+              characterName: "Right",
+              characterSlug: "right",
+              imagePath: "runtime/media/right.png"
+            })
+          }
+        })
+      }),
+      readerState,
+      branchFlags: {},
+      catName: null
+    });
+
+    expect(presentation?.leftPortrait).toBeNull();
+    expect(presentation?.rightPortrait).toMatchObject({
+      side: "right",
+      imageUrl: publicUrl("runtime/media/right.png"),
+      isActiveSpeaker: true
+    });
+    expect(presentation?.stageCharacters).toHaveLength(1);
+  });
+
   it("pins cat-name prompt portraits right and places the card on the left lane", () => {
     const presentation = createNativeReaderPresentation({
       supabaseUrl,

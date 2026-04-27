@@ -1,12 +1,5 @@
 import { useState } from "react";
-import {
-  ActivityIndicator,
-  SafeAreaView,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View
-} from "react-native";
+import { SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { MOBILE_RUNTIME_ENV_VARS } from "../config/runtime";
 import type { RuntimeBootstrapState } from "../hooks/useRuntimeBootstrap";
@@ -18,6 +11,7 @@ import type { MobilePlayer } from "../api/playerSessionTypes";
 import type { PlayerProgress } from "@ocnoer/story-core";
 import { AudioStatusPanel } from "../audio/AudioControls";
 import type { NativeAudioPreferences } from "../storage/audioPreferenceStorage";
+import { OcnoerLoadingScreen } from "../ui/LoadingSpinner";
 import {
   OcnoerButton,
   OcnoerInfoRow,
@@ -77,18 +71,7 @@ function SectionHeader(props: {
 }
 
 function LoadingState() {
-  return (
-    <SafeAreaView style={styles.safeArea}>
-      <OcnoerScreenBackground>
-        <View style={styles.centered}>
-          <OcnoerSurface style={styles.centerPanel} variant="glass">
-            <ActivityIndicator color={ocnoerTheme.colors.text} size="large" />
-            <Text style={styles.loadingText}>Loading published runtime</Text>
-          </OcnoerSurface>
-        </View>
-      </OcnoerScreenBackground>
-    </SafeAreaView>
-  );
+  return <OcnoerLoadingScreen accessibilityLabel="Loading published runtime" />;
 }
 
 function getProgressSummary(input: {
@@ -336,16 +319,6 @@ const styles = StyleSheet.create({
     backgroundColor: ocnoerTheme.colors.night,
     flex: 1
   },
-  centered: {
-    alignItems: "center",
-    flex: 1,
-    justifyContent: "center",
-    paddingHorizontal: ocnoerTheme.spacing.xxl
-  },
-  centerPanel: {
-    alignItems: "center",
-    width: "100%"
-  },
   content: {
     padding: ocnoerTheme.spacing.xl,
     paddingBottom: 44
@@ -443,11 +416,6 @@ const styles = StyleSheet.create({
   },
   body: {
     ...ocnoerTheme.text.body
-  },
-  loadingText: {
-    color: ocnoerTheme.colors.textMuted,
-    fontSize: 17,
-    marginTop: ocnoerTheme.spacing.lg
   },
   card: {
     marginBottom: ocnoerTheme.spacing.lg

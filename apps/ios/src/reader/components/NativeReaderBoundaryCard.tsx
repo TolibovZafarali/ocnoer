@@ -1,6 +1,20 @@
-import { Pressable, StyleSheet, Text, View } from "react-native";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  Animated,
+  Easing,
+  Pressable,
+  StyleSheet,
+  Text,
+  View
+} from "react-native";
 
 import type { NativeReaderBoundaryPresentation } from "../boundaryPresentation";
+import {
+  NATIVE_READER_CHAPTER_CARD_TEXT_APPEAR_DELAY_MS,
+  createNativeReaderChapterCardRevealPlan,
+  getNativeReaderChapterCardVisibleTextLengthAtElapsedMs,
+  getNativeReaderTextUpdateCadenceMs
+} from "../nativeReaderDialogueMotion";
 import { OcnoerButton, OcnoerSurface, OcnoerPill } from "../../ui/primitives";
 import { ocnoerTheme, ocnoerWebPlayer } from "../../ui/theme";
 import { FadeInView } from "./NativeCinematic";
@@ -10,9 +24,47 @@ type NativeReaderBoundaryCardProps = {
   actionError: string | null;
   persistenceError: string | null;
   isMoving: boolean;
+  isRestarting?: boolean;
   onAdvance: () => void;
+  onChapterCardTextRevealComplete?: (revealKey: string) => void;
   onRevealChrome?: () => void;
+  onRestart?: () => void;
+  showRestartAction?: boolean;
 };
+
+type ChapterCardRevealPhase = "waiting" | "typing" | "complete";
+
+type ChapterCardRevealState = {
+  key: string;
+  phase: ChapterCardRevealPhase;
+  startedAt: number;
+  visibleTextLength: number;
+};
+
+function createChapterCardRevealKey(
+  boundary: NativeReaderBoundaryPresentation
+) {
+  return `${boundary.type}:${boundary.title}:${boundary.body}`;
+}
+
+function ChapterCardText(props: {
+  characters: string[];
+  visibleTextLength: number;
+}) {
+  const visibleText = props.characters
+    .slice(0, props.visibleTextLength)
+    .join("");
+  const hiddenText = props.characters.slice(props.visibleTextLength).join("");
+
+  return (
+    <Text style={styles.chapterCardText}>
+      {visibleText}
+      {hiddenText.length > 0 ? (
+        <Text style={styles.hiddenText}>{hiddenText}</Text>
+      ) : null}
+    </Text>
+  );
+}
 
 function BoundaryActions(props: {
   primaryActionLabel: string | null;
@@ -34,7 +86,283 @@ function BoundaryActions(props: {
   );
 }
 
+function RestartEndingAction(props: {
+  isRestarting?: boolean;
+  onRestart?: () => void;
+  visible: boolean;
+}) {
+  const progress = useRef(new Animated.Value(props.visible ? 1 : 0)).current;
+
+  useEffect(() => {
+    const animation = Animated.timing(progress, {
+      toValue: props.visible ? 1 : 0,
+      duration: ocnoerTheme.motion.continueEnterMs,
+      easing: props.visible
+        ? Easing.out(Easing.cubic)
+        : Easing.in(Easing.cubic),
+      useNativeDriver: true
+    });
+
+    animation.start();
+
+    return () => {
+      animation.stop();
+    };
+  }, [progress, props.visible]);
+
+  return (
+    <Animated.View
+      pointerEvents={props.visible ? "auto" : "none"}
+      style={[
+        styles.restartActionWrap,
+        {
+          opacity: progress
+        }
+      ]}
+    >
+      <Pressable
+        accessibilityLabel={
+          props.isRestarting ? "Restarting story" : "Restart story"
+        }
+        accessibilityRole="button"
+        disabled={!props.visible || props.isRestarting || !props.onRestart}
+        onPress={props.onRestart}
+        style={({ pressed }) => [
+          styles.restartActionButton,
+          props.isRestarting ? styles.disabledAction : null,
+          pressed && props.visible && !props.isRestarting
+            ? styles.restartActionPressed
+            : null
+        ]}
+      >
+        <Text style={styles.restartActionIcon}>{"\u21bb"}</Text>
+      </Pressable>
+    </Animated.View>
+  );
+}
+
 export function NativeReaderBoundaryCard(props: NativeReaderBoundaryCardProps) {
+  const isChapterCard =
+    props.boundary.type === "chapter-opening-card" ||
+    props.boundary.type === "chapter-ending-card";
+  const isTerminalChapterCard =
+    props.boundary.type === "chapter-ending-card" &&
+    !props.boundary.primaryActionLabel;
+  const animationKey = `${props.boundary.type}:${props.boundary.title}:${props.boundary.body}`;
+  const chapterCardRevealKey = createChapterCardRevealKey(props.boundary);
+  const chapterCardRevealPlan = useMemo(
+    () =>
+      createNativeReaderChapterCardRevealPlan({
+        text: props.boundary.body,
+        enablePauseMarker: props.boundary.type === "chapter-ending-card"
+      }),
+    [props.boundary.body, props.boundary.type]
+  );
+  const [chapterCardRevealState, setChapterCardRevealState] =
+    useState<ChapterCardRevealState>({
+      key: chapterCardRevealKey,
+      phase:
+        chapterCardRevealPlan.totalVisibleCharacterCount === 0
+          ? "complete"
+          : "waiting",
+      startedAt: Date.now(),
+      visibleTextLength: 0
+    });
+  const completedRevealKeyRef = useRef<string | null>(null);
+  const chapterCardVisibleTextLength =
+    chapterCardRevealState.key === chapterCardRevealKey
+      ? chapterCardRevealState.visibleTextLength
+      : 0;
+  const isChapterCardTextRevealComplete =
+    chapterCardVisibleTextLength >=
+    chapterCardRevealPlan.totalVisibleCharacterCount;
+  const completeChapterCardReveal = useCallback(() => {
+    setChapterCardRevealState((currentState) => {
+      if (currentState.key !== chapterCardRevealKey) {
+        return currentState;
+      }
+
+      return {
+        key: chapterCardRevealKey,
+        phase: "complete",
+        startedAt: currentState.startedAt,
+        visibleTextLength: chapterCardRevealPlan.totalVisibleCharacterCount
+      };
+    });
+  }, [chapterCardRevealKey, chapterCardRevealPlan.totalVisibleCharacterCount]);
+  const handleChapterCardPress = useCallback(() => {
+    if (isTerminalChapterCard) {
+      props.onRevealChrome?.();
+      return;
+    }
+
+    if (!isChapterCardTextRevealComplete) {
+      if (chapterCardRevealState.phase === "typing") {
+        completeChapterCardReveal();
+      }
+
+      return;
+    }
+
+    props.onAdvance();
+  }, [
+    chapterCardRevealState.phase,
+    completeChapterCardReveal,
+    isTerminalChapterCard,
+    isChapterCardTextRevealComplete,
+    props.onRevealChrome,
+    props.onAdvance
+  ]);
+
+  useEffect(() => {
+    completedRevealKeyRef.current = null;
+    setChapterCardRevealState({
+      key: chapterCardRevealKey,
+      phase:
+        chapterCardRevealPlan.totalVisibleCharacterCount === 0
+          ? "complete"
+          : "waiting",
+      startedAt: Date.now(),
+      visibleTextLength: 0
+    });
+  }, [chapterCardRevealKey, chapterCardRevealPlan.totalVisibleCharacterCount]);
+
+  useEffect(() => {
+    if (
+      !isChapterCard ||
+      chapterCardRevealState.key !== chapterCardRevealKey ||
+      chapterCardRevealState.phase !== "waiting"
+    ) {
+      return;
+    }
+
+    const delayMs =
+      props.boundary.type === "chapter-ending-card"
+        ? NATIVE_READER_CHAPTER_CARD_TEXT_APPEAR_DELAY_MS
+        : 0;
+    const timeoutId = setTimeout(() => {
+      setChapterCardRevealState((currentState) => {
+        if (currentState.key !== chapterCardRevealKey) {
+          return currentState;
+        }
+
+        return {
+          key: chapterCardRevealKey,
+          phase: "typing",
+          startedAt: Date.now(),
+          visibleTextLength: 0
+        };
+      });
+    }, delayMs);
+
+    return () => {
+      clearTimeout(timeoutId);
+    };
+  }, [
+    chapterCardRevealKey,
+    chapterCardRevealState.key,
+    chapterCardRevealState.phase,
+    isChapterCard,
+    props.boundary.type
+  ]);
+
+  useEffect(() => {
+    if (
+      !isChapterCard ||
+      chapterCardRevealState.key !== chapterCardRevealKey ||
+      chapterCardRevealState.phase !== "typing" ||
+      isChapterCardTextRevealComplete
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const cadenceMs = getNativeReaderTextUpdateCadenceMs();
+
+    const tick = () => {
+      if (cancelled) {
+        return;
+      }
+
+      const nextVisibleTextLength =
+        getNativeReaderChapterCardVisibleTextLengthAtElapsedMs({
+          elapsedMs: Date.now() - chapterCardRevealState.startedAt,
+          plan: chapterCardRevealPlan
+        });
+
+      setChapterCardRevealState((currentState) => {
+        if (currentState.key !== chapterCardRevealKey) {
+          return currentState;
+        }
+
+        const boundedVisibleTextLength = Math.min(
+          nextVisibleTextLength,
+          chapterCardRevealPlan.totalVisibleCharacterCount
+        );
+
+        if (currentState.visibleTextLength === boundedVisibleTextLength) {
+          return currentState;
+        }
+
+        return {
+          key: chapterCardRevealKey,
+          phase:
+            boundedVisibleTextLength >=
+            chapterCardRevealPlan.totalVisibleCharacterCount
+              ? "complete"
+              : "typing",
+          startedAt: currentState.startedAt,
+          visibleTextLength: boundedVisibleTextLength
+        };
+      });
+
+      if (
+        nextVisibleTextLength >=
+        chapterCardRevealPlan.totalVisibleCharacterCount
+      ) {
+        return;
+      }
+
+      timeoutId = setTimeout(tick, cadenceMs);
+    };
+
+    timeoutId = setTimeout(tick, cadenceMs);
+
+    return () => {
+      cancelled = true;
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [
+    chapterCardRevealKey,
+    chapterCardRevealPlan,
+    chapterCardRevealState.key,
+    chapterCardRevealState.phase,
+    chapterCardRevealState.startedAt,
+    isChapterCard,
+    isChapterCardTextRevealComplete
+  ]);
+
+  useEffect(() => {
+    if (!isChapterCard || !isChapterCardTextRevealComplete) {
+      return;
+    }
+
+    if (completedRevealKeyRef.current === chapterCardRevealKey) {
+      return;
+    }
+
+    completedRevealKeyRef.current = chapterCardRevealKey;
+    props.onChapterCardTextRevealComplete?.(chapterCardRevealKey);
+  }, [
+    chapterCardRevealKey,
+    isChapterCard,
+    isChapterCardTextRevealComplete,
+    props.onChapterCardTextRevealComplete
+  ]);
+
   if (props.boundary.type === "scene-transition") {
     return (
       <Pressable
@@ -58,33 +386,40 @@ export function NativeReaderBoundaryCard(props: NativeReaderBoundaryCardProps) {
     );
   }
 
-  const isChapterCard =
-    props.boundary.type === "chapter-opening-card" ||
-    props.boundary.type === "chapter-ending-card";
-  const animationKey = `${props.boundary.type}:${props.boundary.title}:${props.boundary.body}`;
-
   if (isChapterCard) {
     return (
       <FadeInView
         key={animationKey}
         animationKey={animationKey}
-        durationMs={ocnoerTheme.motion.stageFadeMs}
+        durationMs={
+          props.boundary.type === "chapter-opening-card"
+            ? ocnoerTheme.motion.openingFadeMs
+            : ocnoerTheme.motion.stageFadeMs
+        }
         style={styles.fullCardWrap}
       >
         <Pressable
           accessibilityLabel={props.boundary.eyebrow}
           accessibilityRole="button"
-          disabled={props.isMoving || !props.boundary.primaryActionLabel}
-          onPress={props.onAdvance}
+          disabled={props.isMoving}
+          onPress={handleChapterCardPress}
           style={styles.fullCard}
         >
-          <Text style={styles.chapterCardText}>{props.boundary.body}</Text>
+          <ChapterCardText
+            characters={chapterCardRevealPlan.displayCharacters}
+            visibleTextLength={chapterCardVisibleTextLength}
+          />
           {props.actionError ? (
             <Text style={styles.errorText}>{props.actionError}</Text>
           ) : null}
           {props.persistenceError ? (
             <Text style={styles.warningText}>{props.persistenceError}</Text>
           ) : null}
+          <RestartEndingAction
+            isRestarting={props.isRestarting}
+            visible={Boolean(props.showRestartAction)}
+            onRestart={props.onRestart}
+          />
         </Pressable>
       </FadeInView>
     );
@@ -148,6 +483,9 @@ const styles = StyleSheet.create({
     lineHeight: ocnoerTheme.typography.lineHeight.chapterCard,
     maxWidth: ocnoerTheme.stage.chapterCardMaxWidth,
     textAlign: "center"
+  },
+  hiddenText: {
+    color: "transparent"
   },
   metaPill: {
     marginTop: ocnoerTheme.spacing.xxl
@@ -225,5 +563,31 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     marginTop: ocnoerTheme.spacing.md,
     textAlign: "center"
+  },
+  restartActionWrap: {
+    alignItems: "center",
+    bottom: ocnoerTheme.spacing.xxxl,
+    left: 0,
+    position: "absolute",
+    right: 0
+  },
+  restartActionButton: {
+    alignItems: "center",
+    backgroundColor: "transparent",
+    height: 54,
+    justifyContent: "center",
+    width: 54
+  },
+  restartActionPressed: {
+    opacity: 0.72
+  },
+  disabledAction: {
+    opacity: 0.5
+  },
+  restartActionIcon: {
+    color: ocnoerTheme.colors.text,
+    fontSize: 34,
+    fontWeight: "800",
+    lineHeight: 38
   }
 });

@@ -51,9 +51,10 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
   const { state, reload } = useRuntimeBootstrap();
   const audioPreferences = useAudioPreferences();
   const mountedRef = useRef(true);
-  const readerRunIdRef = useRef(0);
+  const readerRunIdRef = useRef(1);
   const [activeScreen, setActiveScreen] = useState<AuthenticatedScreen>({
-    type: "home"
+    type: "reader",
+    runId: readerRunIdRef.current
   });
   const [savedProgress, setSavedProgress] = useState<PlayerProgress | null>(
     null
@@ -122,8 +123,10 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
     }
 
     globalThis.__OCNOER_READER_RELOAD_RUNTIME = () => {
+      readerRunIdRef.current += 1;
       setActiveScreen({
-        type: "home"
+        type: "reader",
+        runId: readerRunIdRef.current
       });
       void reload();
     };
@@ -205,13 +208,6 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
     }
   }
 
-  function returnHomeFromReader() {
-    setActiveScreen({
-      type: "home"
-    });
-    void refreshSavedProgress();
-  }
-
   if (state.status === "success" && activeScreen.type === "preview") {
     return (
       <ChapterPreviewScreen
@@ -234,11 +230,11 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
         audioPreferences={audioPreferences.preferences}
         bootstrap={state.bootstrap}
         config={state.config}
+        isRestartingReading={isResettingProgress}
         isSigningOut={props.isSigningOut}
         onToggleAudioMuted={audioPreferences.toggleMuted}
-        onBackHome={returnHomeFromReader}
         onProgressSaved={() => undefined}
-        onSignOut={props.onSignOut}
+        onRestartReading={restartReading}
         onUpdateCatName={(catName) =>
           updateCatName(catName, {
             rethrow: true

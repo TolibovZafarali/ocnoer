@@ -61,6 +61,10 @@ function NativeCachedImage(props: {
     getPreloadedReaderImageRef(props.imageUrl);
   const mountedAtRef = useRef(Date.now());
 
+  if (!source) {
+    return <View style={[props.style, styles.missingAsset]} />;
+  }
+
   if (props.requireImageRef && !resolvedImageRef) {
     const details = {
       diagnostics: getReaderAssetRenderDiagnostics(props.imageUrl),
@@ -77,12 +81,6 @@ function NativeCachedImage(props: {
       "[reader-assets] bitmap derivative portrait is rendering without ImageRef",
       details
     );
-
-    return <View style={[props.style, styles.missingImageRef]} />;
-  }
-
-  if (!source) {
-    return <View style={[props.style, styles.missingAsset]} />;
   }
 
   return (
@@ -118,7 +116,7 @@ function NativeCachedImage(props: {
       }}
       priority="high"
       recyclingKey={props.imageUrl}
-      source={resolvedImageRef ?? source}
+      source={source}
       style={props.style}
       transition={0}
     />
@@ -589,8 +587,5 @@ const styles = StyleSheet.create({
   },
   missingAsset: {
     backgroundColor: "transparent"
-  },
-  missingImageRef: {
-    backgroundColor: "rgba(255, 0, 0, 0.28)"
   }
 });

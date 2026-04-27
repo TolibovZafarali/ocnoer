@@ -2,7 +2,6 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { BlurView } from "expo-blur";
 import { Image as ExpoImage } from "expo-image";
 import {
-  ActivityIndicator,
   Animated,
   Easing,
   Pressable,
@@ -38,6 +37,7 @@ import {
   type NativeReaderForceCompleteRequest
 } from "../nativeReaderDialogueMotion";
 import { NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND } from "../nativeReaderStageStyle";
+import { LoadingSpinner } from "../../ui/LoadingSpinner";
 import { OcnoerTextInput } from "../../ui/primitives";
 import { ocnoerTheme, ocnoerWebPlayer } from "../../ui/theme";
 import {
@@ -669,7 +669,11 @@ function ContinueArrow(props: {
           ]}
         >
           {props.isMoving ? (
-            <ActivityIndicator color={ocnoerTheme.colors.text} size="small" />
+            <LoadingSpinner
+              accessibilityLabel="Loading next line"
+              size={18}
+              tintColor={ocnoerTheme.colors.text}
+            />
           ) : (
             <Text style={styles.continueText}>{"\u2192"}</Text>
           )}

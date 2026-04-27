@@ -292,6 +292,10 @@ type ReaderImagePreloadOptions = {
   waitForCompletion?: boolean;
 };
 
+type ReaderAssetReadyOptions = {
+  forceRefresh?: boolean;
+};
+
 type SvgPayloadClassification = {
   renderKind: ReaderAssetRenderKind;
   embeddedRaster: {
@@ -1781,6 +1785,19 @@ function getCachedRecord(assetRefOrUrl: ReaderAssetRef | string) {
   return null;
 }
 
+function clearNativeImageRefCacheForRecord(record: ReaderCachedAsset) {
+  const urls = [
+    record.sourceUrl,
+    record.originalUrl,
+    record.selectedDerivativeUrl
+  ].filter((url): url is string => Boolean(url));
+
+  urls.forEach((url) => {
+    nativeImageRefCache.delete(url);
+    inFlightNativeImageLoads.delete(url);
+  });
+}
+
 function isColdRenderOnVisiblePath(record: ReaderCachedAsset) {
   if (!isReadyFile(new File(record.localUri))) {
     return !isDataUri(record.localUri);
@@ -2970,12 +2987,18 @@ async function writeSvgAsset(input: {
   return record;
 }
 
-async function downloadAndCacheAsset(assetRef: ReaderAssetRef) {
+async function downloadAndCacheAsset(
+  assetRef: ReaderAssetRef,
+  options?: {
+    skipExistingCache?: boolean;
+  }
+) {
   ensureCacheDirectory();
 
   const renderAssetRef = resolveReaderAssetRefForVisibleRender(assetRef);
-  const existingCachedAsset =
-    findExistingCachedAssetForAnyRenderMode(renderAssetRef);
+  const existingCachedAsset = options?.skipExistingCache
+    ? null
+    : findExistingCachedAssetForAnyRenderMode(renderAssetRef);
 
   if (existingCachedAsset) {
     logAssetMetric("cache hit", {
@@ -3103,7 +3126,10 @@ async function downloadAndCacheAsset(assetRef: ReaderAssetRef) {
   return record;
 }
 
-export async function ensureReaderAssetReady(assetRef: ReaderAssetRef) {
+export async function ensureReaderAssetReady(
+  assetRef: ReaderAssetRef,
+  options?: ReaderAssetReadyOptions
+) {
   const renderAssetRef = resolveReaderAssetRefForVisibleRender(assetRef);
 
   if (isDataUri(renderAssetRef.url)) {
@@ -3145,7 +3171,9 @@ export async function ensureReaderAssetReady(assetRef: ReaderAssetRef) {
     });
   }
 
-  const cachedRecord = findExistingCachedAssetForAnyRenderMode(renderAssetRef);
+  const cachedRecord = options?.forceRefresh
+    ? null
+    : findExistingCachedAssetForAnyRenderMode(renderAssetRef);
 
   if (cachedRecord) {
     return cachedRecord;
@@ -3153,7 +3181,9 @@ export async function ensureReaderAssetReady(assetRef: ReaderAssetRef) {
 
   const downloadKey = `${getResolvedBaseCacheKey(
     renderAssetRef
-  )}-download-v${READER_ASSET_RENDER_CACHE_VERSION}`;
+  )}-download-v${READER_ASSET_RENDER_CACHE_VERSION}${
+    options?.forceRefresh ? "-refresh" : ""
+  }`;
   const existingLoad = inFlightAssetLoads.get(downloadKey);
 
   if (existingLoad) {
@@ -3161,13 +3191,87 @@ export async function ensureReaderAssetReady(assetRef: ReaderAssetRef) {
   }
 
   const load = runWithDownloadLimit(() =>
-    downloadAndCacheAsset(assetRef)
+    downloadAndCacheAsset(assetRef, {
+      skipExistingCache: options?.forceRefresh
+    })
   ).finally(() => {
     inFlightAssetLoads.delete(downloadKey);
   });
 
   inFlightAssetLoads.set(downloadKey, load);
   return load;
+}
+
+function getDecodePriorityForScope(input: {
+  override?: ReaderDecodePriority;
+  scope: ReaderAssetCacheResult["scope"];
+}) {
+  return (
+    input.override ??
+    (input.scope === "chapter"
+      ? "low"
+      : input.scope === "warm"
+        ? "medium"
+        : "high")
+  );
+}
+
+function canRefreshCachedBitmapDerivative(record: ReaderCachedAsset) {
+  const refreshUrl = record.selectedDerivativeUrl ?? record.sourceUrl;
+
+  return (
+    record.fromCache &&
+    isBlockingPortraitRecord(record) &&
+    !isDataUri(record.localUri) &&
+    isRemoteImageUrl(refreshUrl)
+  );
+}
+
+async function prepareReaderCachedAssetRenderReadyWithCacheRefresh(input: {
+  asset: ReaderCachedAsset;
+  assetRef: ReaderAssetRef;
+  priority: ReaderDecodePriority;
+  requireImageRef: boolean;
+  scope: ReaderAssetCacheResult["scope"];
+}) {
+  try {
+    await prepareReaderCachedAssetRenderReady(input.asset, {
+      priority: input.priority,
+      requireImageRef: input.requireImageRef
+    });
+    return input.asset;
+  } catch (error) {
+    if (
+      input.scope !== "scene" ||
+      !input.requireImageRef ||
+      !canRefreshCachedBitmapDerivative(input.asset)
+    ) {
+      throw error;
+    }
+
+    clearNativeImageRefCacheForRecord(input.asset);
+    logAssetWarning(
+      "cached bitmap derivative failed native decode; refreshing local cache",
+      {
+        assetId: input.asset.assetId,
+        cacheKey: input.asset.cacheKey,
+        cachedUri: input.asset.localUri,
+        failureReason: input.asset.failureReason,
+        storagePath: input.asset.storagePath
+      }
+    );
+
+    const refreshedAsset = await ensureReaderAssetReady(input.assetRef, {
+      forceRefresh: true
+    });
+
+    await prepareReaderCachedAssetRenderReady(refreshedAsset, {
+      priority: input.priority,
+      requireImageRef: input.requireImageRef
+    });
+
+    return refreshedAsset;
+  }
 }
 
 async function ensureAssetRefsReady(input: {
@@ -3188,6 +3292,7 @@ async function ensureAssetRefsReady(input: {
     uniqueAssetRefs.map((assetRef) => ensureReaderAssetReady(assetRef))
   );
   const assets: ReaderCachedAsset[] = [];
+  const assetRefsForAssets: ReaderAssetRef[] = [];
   const errors: ReaderAssetCacheError[] = [];
 
   settledResults.forEach((result, index) => {
@@ -3199,6 +3304,7 @@ async function ensureAssetRefsReady(input: {
 
     if (result.status === "fulfilled") {
       assets.push(result.value);
+      assetRefsForAssets.push(assetRef);
       return;
     }
 
@@ -3227,20 +3333,31 @@ async function ensureAssetRefsReady(input: {
       scopeId: input.scopeId
     });
 
+    const priority = getDecodePriorityForScope({
+      override: input.priority,
+      scope: input.scope
+    });
     const renderReadyResults = await Promise.allSettled(
-      assets.map((asset) =>
-        prepareReaderCachedAssetRenderReady(asset, {
-          priority:
-            input.priority ??
-            (input.scope === "chapter"
-              ? "low"
-              : input.scope === "warm"
-                ? "medium"
-                : "high"),
-          requireImageRef:
-            input.scope === "scene" && isBlockingPortraitRecord(asset)
-        })
-      )
+      assets.map((asset, index) => {
+        const assetRef = assetRefsForAssets[index];
+        const requireImageRef =
+          input.scope === "scene" && isBlockingPortraitRecord(asset);
+
+        return prepareReaderCachedAssetRenderReadyWithCacheRefresh({
+          asset,
+          assetRef: assetRef ?? {
+            role: asset.role,
+            url: asset.sourceUrl,
+            storagePath: asset.storagePath,
+            cacheKey: asset.cacheKey
+          },
+          priority,
+          requireImageRef,
+          scope: input.scope
+        }).then((preparedAsset) => {
+          assets[index] = preparedAsset;
+        });
+      })
     );
 
     renderReadyResults.forEach((result, index) => {

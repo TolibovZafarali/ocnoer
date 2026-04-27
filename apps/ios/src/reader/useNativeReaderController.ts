@@ -162,6 +162,13 @@ export const NATIVE_SCENE_TRANSITION_COVER_MS = 900;
 export const NATIVE_SCENE_TRANSITION_MIN_BLACKOUT_MS = 2000;
 export const NATIVE_SCENE_TRANSITION_POST_COMMIT_HOLD_MS = 380;
 export const NATIVE_SCENE_TRANSITION_REVEAL_MS = 880;
+export const NATIVE_ENDING_TRANSITION_COVER_MS = 1600;
+export const NATIVE_ENDING_TRANSITION_MIN_BLACKOUT_MS = 400;
+export const NATIVE_ENDING_TRANSITION_POST_COMMIT_HOLD_MS = 220;
+export const NATIVE_OPENING_TRANSITION_COVER_MS =
+  NATIVE_SCENE_TRANSITION_COVER_MS;
+export const NATIVE_OPENING_TRANSITION_MIN_BLACKOUT_MS = 3000;
+export const NATIVE_OPENING_TRANSITION_POST_COMMIT_HOLD_MS = 0;
 
 function waitForDuration(durationMs: number) {
   return new Promise<void>((resolve) => {
@@ -490,6 +497,27 @@ function getInitialBoundaryState(input: {
       input.resumeActionType === "use-initial-state" && !input.storedProgress
         ? "initial-entry"
         : "resume"
+  });
+}
+
+export function getNativeReaderOpeningBoundaryForRetreat(input: {
+  manifest: RuntimeManifest;
+  bundle: RuntimeChapterBundle;
+  readerState: ReaderState;
+}) {
+  if (
+    findPreviousPlayableReaderState(input.bundle.chapter, input.readerState)
+  ) {
+    return null;
+  }
+
+  if (getChapterIndex(input.manifest, input.bundle.chapter.id) !== 0) {
+    return null;
+  }
+
+  return getChapterOpeningBoundaryState({
+    chapter: input.bundle.chapter,
+    reason: "backtrack"
   });
 }
 
@@ -1525,6 +1553,16 @@ export function useNativeReaderController(
       return true;
     }
 
+    if (
+      getNativeReaderOpeningBoundaryForRetreat({
+        manifest: runtimeState.manifest,
+        bundle: runtimeState.bundle,
+        readerState: runtimeState.readerState
+      })
+    ) {
+      return true;
+    }
+
     return (
       getChapterIndex(runtimeState.manifest, runtimeState.bundle.chapter.id) > 0
     );
@@ -1763,8 +1801,7 @@ export function useNativeReaderController(
       const shouldUseBlackTransition =
         isSceneTransition ||
         target.result.type === "chapter-break" ||
-        (target.result.type === "story-finished" &&
-          Boolean(pendingCatNameCommitRef.current));
+        target.result.type === "story-finished";
 
       if (
         plan.type === "blocked-until-render-ready" &&
@@ -1792,6 +1829,18 @@ export function useNativeReaderController(
         });
         try {
           await runNativeReaderSceneTransition({
+            coverDurationMs:
+              target.result.type === "story-finished"
+                ? NATIVE_ENDING_TRANSITION_COVER_MS
+                : undefined,
+            minimumBlackoutMs:
+              target.result.type === "story-finished"
+                ? NATIVE_ENDING_TRANSITION_MIN_BLACKOUT_MS
+                : undefined,
+            postCommitHoldMs:
+              target.result.type === "story-finished"
+                ? NATIVE_ENDING_TRANSITION_POST_COMMIT_HOLD_MS
+                : undefined,
             prepare: async () => {
               if (shouldPersistPendingCatNameForAdvanceResult(target.result)) {
                 const persistedCatName =
@@ -2044,16 +2093,6 @@ export function useNativeReaderController(
         boundaryState.type === "chapter-ending-card" &&
         boundaryState.nextState.type === "story-finished"
       ) {
-        setBoundaryState(boundaryState.nextState);
-        setRuntimeState({
-          status: "finished",
-          manifest: runtimeState.manifest,
-          bundle: runtimeState.bundle,
-          readerState: {
-            ...runtimeState.readerState,
-            isChapterComplete: true
-          }
-        });
         return;
       }
 
@@ -2061,6 +2100,42 @@ export function useNativeReaderController(
         boundaryState,
         currentChapter: runtimeState.bundle.chapter
       });
+
+      if (boundaryState.type === "chapter-opening-card") {
+        setIsMoving(true);
+        isAdvanceInFlightRef.current = true;
+
+        try {
+          await runNativeReaderSceneTransition({
+            coverDurationMs: NATIVE_OPENING_TRANSITION_COVER_MS,
+            minimumBlackoutMs: NATIVE_OPENING_TRANSITION_MIN_BLACKOUT_MS,
+            postCommitHoldMs: NATIVE_OPENING_TRANSITION_POST_COMMIT_HOLD_MS,
+            prepare: async () => {},
+            commit: () => {
+              if (nextBoundaryState !== boundaryState) {
+                setBoundaryState(nextBoundaryState);
+              }
+            },
+            afterCommit: async () => {
+              await waitForSceneTransitionAudioStart?.({
+                boundaryState: nextBoundaryState,
+                bundle: runtimeState.bundle,
+                readerState: runtimeState.readerState
+              });
+            },
+            setPhase: setSceneTransitionPhase
+          });
+        } catch (error) {
+          setActionError(
+            getErrorMessage(error, "Unable to begin the first scene.")
+          );
+        } finally {
+          isAdvanceInFlightRef.current = false;
+          setIsMoving(false);
+        }
+
+        return;
+      }
 
       if (nextBoundaryState !== boundaryState) {
         setBoundaryState(nextBoundaryState);
@@ -2116,7 +2191,8 @@ export function useNativeReaderController(
     isMoving,
     presentation,
     presentationRenderKey,
-    runtimeState
+    runtimeState,
+    waitForSceneTransitionAudioStart
   ]);
 
   const retreat = useCallback(async () => {
@@ -2147,6 +2223,17 @@ export function useNativeReaderController(
       });
 
       if (result.type === "story-start") {
+        const openingBoundaryState = getNativeReaderOpeningBoundaryForRetreat({
+          manifest: runtimeState.manifest,
+          bundle: runtimeState.bundle,
+          readerState: runtimeState.readerState
+        });
+
+        if (openingBoundaryState) {
+          setBoundaryState(openingBoundaryState);
+          return;
+        }
+
         setActionError("Already at the beginning of the story.");
         return;
       }

@@ -1,6 +1,5 @@
 import type { ReactNode } from "react";
 import {
-  ActivityIndicator,
   Pressable,
   StyleSheet,
   Text,
@@ -12,6 +11,7 @@ import {
   type ViewStyle
 } from "react-native";
 
+import { LoadingSpinner } from "./LoadingSpinner";
 import { ocnoerTheme, ocnoerWebPlayer } from "./theme";
 
 type OcnoerButtonVariant = "primary" | "secondary" | "ghost" | "danger";
@@ -127,8 +127,10 @@ export function OcnoerButton(props: OcnoerButtonProps) {
       ]}
     >
       {props.loading ? (
-        <ActivityIndicator
-          color={
+        <LoadingSpinner
+          accessibilityLabel={`${props.label} loading`}
+          size={24}
+          tintColor={
             variant === "primary"
               ? ocnoerTheme.colors.stageDeep
               : ocnoerTheme.colors.text

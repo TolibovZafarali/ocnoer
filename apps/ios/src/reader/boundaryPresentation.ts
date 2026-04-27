@@ -42,9 +42,7 @@ export function createNativeReaderBoundaryPresentation(input: {
             ? "End of published story"
             : "Chapter complete",
         primaryActionLabel:
-          boundaryState.nextState.type === "story-finished"
-            ? "Finish"
-            : "Continue"
+          boundaryState.nextState.type === "story-finished" ? null : "Continue"
       };
     case "chapter-break":
       return {

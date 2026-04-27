@@ -45,7 +45,7 @@ export function FadeInView(props: {
   pointerEvents?: "auto" | "box-none" | "box-only" | "none";
   style?: StyleProp<ViewStyle>;
 }) {
-  const opacity = useRef(new Animated.Value(1)).current;
+  const opacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     opacity.setValue(0);

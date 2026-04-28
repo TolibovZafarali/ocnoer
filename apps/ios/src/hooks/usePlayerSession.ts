@@ -16,6 +16,7 @@ import {
 type SignedOutState = {
   status: "signed-out";
   error: string | null;
+  isCredentialError: boolean;
   isSubmitting: boolean;
 };
 
@@ -23,6 +24,7 @@ type SignedInState = {
   status: "signed-in";
   storedSession: StoredPlayerSession;
   error: string | null;
+  isCredentialError: boolean;
   isSubmitting: boolean;
 };
 
@@ -39,6 +41,10 @@ function getErrorMessage(error: unknown, fallback: string) {
   }
 
   return error instanceof Error ? error.message : fallback;
+}
+
+function isCredentialSignInError(error: unknown) {
+  return error instanceof MobileApiError && error.status === 401;
 }
 
 export function usePlayerSession() {
@@ -68,6 +74,7 @@ export function usePlayerSession() {
           setMountedState({
             status: "signed-out",
             error: null,
+            isCredentialError: false,
             isSubmitting: false
           });
           return;
@@ -82,6 +89,7 @@ export function usePlayerSession() {
           status: "signed-in",
           storedSession: refreshedSession,
           error: null,
+          isCredentialError: false,
           isSubmitting: false
         });
       } catch (error) {
@@ -92,6 +100,7 @@ export function usePlayerSession() {
             error instanceof MobileApiError && error.status === 401
               ? null
               : getErrorMessage(error, "Unable to restore the mobile session."),
+          isCredentialError: false,
           isSubmitting: false
         });
       }
@@ -105,6 +114,7 @@ export function usePlayerSession() {
       setMountedState({
         status: "signed-out",
         error: null,
+        isCredentialError: false,
         isSubmitting: true
       });
 
@@ -116,12 +126,14 @@ export function usePlayerSession() {
           status: "signed-in",
           storedSession,
           error: null,
+          isCredentialError: false,
           isSubmitting: false
         });
       } catch (error) {
         setMountedState({
           status: "signed-out",
           error: getErrorMessage(error, "Unable to sign in right now."),
+          isCredentialError: isCredentialSignInError(error),
           isSubmitting: false
         });
       }
@@ -137,6 +149,7 @@ export function usePlayerSession() {
       setMountedState({
         ...state,
         error: null,
+        isCredentialError: false,
         isSubmitting: true
       });
     }
@@ -145,6 +158,7 @@ export function usePlayerSession() {
     setMountedState({
       status: "signed-out",
       error: null,
+      isCredentialError: false,
       isSubmitting: false
     });
 

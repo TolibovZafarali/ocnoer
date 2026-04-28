@@ -297,7 +297,7 @@ export default function App() {
       <>
         <StatusBar style="light" />
         <SignInScreen
-          error={state.error}
+          credentialError={state.isCredentialError ? state.error : null}
           isSubmitting={state.isSubmitting}
           onSignIn={signIn}
         />

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import {
+  Animated,
+  Easing,
   ImageBackground,
   KeyboardAvoidingView,
   Platform,
@@ -8,6 +10,7 @@ import {
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View
 } from "react-native";
 
@@ -15,28 +18,69 @@ import { LoadingSpinner } from "../ui/LoadingSpinner";
 import { ocnoerTheme, ocnoerWebPlayer } from "../ui/theme";
 
 const loginBackgroundImage = require("../../../../lore/background.jpg");
+const GATE_EXPANSION_DURATION_MS = 280;
 
 type SignInScreenProps = {
-  error: string | null;
+  credentialError: string | null;
   isSubmitting: boolean;
   onSignIn: (secret: string) => void;
 };
 
 export function SignInScreen(props: SignInScreenProps) {
   const inputRef = useRef<TextInput>(null);
+  const expansionProgress = useRef(new Animated.Value(0)).current;
+  const { width: windowWidth } = useWindowDimensions();
   const [secret, setSecret] = useState("");
   const [expanded, setExpanded] = useState(false);
   const [hasEditedSinceError, setHasEditedSinceError] = useState(false);
+  const expandedPillWidth = Math.max(
+    ocnoerWebPlayer.gate.collapsedPillSize,
+    Math.min(
+      windowWidth - ocnoerTheme.spacing.lg * 2,
+      ocnoerWebPlayer.gate.expandedPillMaxWidth
+    )
+  );
+  const gatePillWidth = expansionProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [
+      ocnoerWebPlayer.gate.collapsedPillSize,
+      expandedPillWidth
+    ]
+  });
+  const inputOpacity = expansionProgress.interpolate({
+    inputRange: [0, 0.45, 1],
+    outputRange: [0, 0, 1]
+  });
+  const inputTranslateX = expansionProgress.interpolate({
+    inputRange: [0, 1],
+    outputRange: [-12, 0]
+  });
   const canSubmit = secret.trim().length > 0 && !props.isSubmitting;
-  const showErrorState = Boolean(props.error && !hasEditedSinceError);
+  const showErrorState = Boolean(
+    props.credentialError && !hasEditedSinceError
+  );
 
   useEffect(() => {
-    if (props.error) {
-      setExpanded(true);
+    const animation = Animated.timing(expansionProgress, {
+      duration: GATE_EXPANSION_DURATION_MS,
+      easing: Easing.out(Easing.cubic),
+      toValue: expanded ? 1 : 0,
+      useNativeDriver: false
+    });
+
+    animation.start();
+
+    return () => {
+      animation.stop();
+    };
+  }, [expanded, expansionProgress]);
+
+  useEffect(() => {
+    if (props.credentialError) {
       setHasEditedSinceError(false);
       return;
     }
-  }, [props.error]);
+  }, [props.credentialError]);
 
   function focusInput() {
     setTimeout(() => {
@@ -59,7 +103,7 @@ export function SignInScreen(props: SignInScreenProps) {
   function handleSecretChange(nextSecret: string) {
     setSecret(nextSecret);
 
-    if (props.error) {
+    if (props.credentialError) {
       setHasEditedSinceError(true);
     }
   }
@@ -77,32 +121,48 @@ export function SignInScreen(props: SignInScreenProps) {
           style={styles.container}
         >
           <View style={styles.gateWrap}>
-            <View
+            <Animated.View
               style={[
                 styles.gatePill,
-                expanded ? styles.gatePillExpanded : styles.gatePillCollapsed,
+                {
+                  width: gatePillWidth
+                },
                 showErrorState ? styles.gatePillError : null
               ]}
             >
               {expanded ? (
-                <TextInput
-                  ref={inputRef}
-                  accessibilityLabel="Password"
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  editable={!props.isSubmitting}
-                  onChangeText={handleSecretChange}
-                  onSubmitEditing={() => {
-                    if (canSubmit) {
-                      props.onSignIn(secret);
+                <Animated.View
+                  style={[
+                    styles.inputSlot,
+                    {
+                      opacity: inputOpacity,
+                      transform: [
+                        {
+                          translateX: inputTranslateX
+                        }
+                      ]
                     }
-                  }}
-                  returnKeyType="go"
-                  secureTextEntry
-                  selectionColor={ocnoerTheme.colors.text}
-                  style={styles.input}
-                  value={secret}
-                />
+                  ]}
+                >
+                  <TextInput
+                    ref={inputRef}
+                    accessibilityLabel="Password"
+                    autoCapitalize="none"
+                    autoCorrect={false}
+                    editable={!props.isSubmitting}
+                    onChangeText={handleSecretChange}
+                    onSubmitEditing={() => {
+                      if (canSubmit) {
+                        props.onSignIn(secret);
+                      }
+                    }}
+                    returnKeyType="go"
+                    secureTextEntry
+                    selectionColor={ocnoerTheme.colors.text}
+                    style={styles.input}
+                    value={secret}
+                  />
+                </Animated.View>
               ) : null}
 
               <Pressable
@@ -136,7 +196,7 @@ export function SignInScreen(props: SignInScreenProps) {
                   </Text>
                 )}
               </Pressable>
-            </View>
+            </Animated.View>
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -176,30 +236,28 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     padding: ocnoerTheme.spacing.sm
   },
-  gatePillExpanded: {
-    maxWidth: ocnoerWebPlayer.gate.expandedPillMaxWidth,
-    width: "100%"
-  },
-  gatePillCollapsed: {
-    justifyContent: "center",
-    padding: 0,
-    width: ocnoerWebPlayer.gate.collapsedPillSize
-  },
   gatePillError: {
     borderColor: "#7f1d1d"
   },
+  inputSlot: {
+    flex: 1,
+    height: "100%",
+    minWidth: 0
+  },
   input: {
     color: ocnoerTheme.colors.text,
-    flex: 1,
     fontSize: 16,
+    height: "100%",
     minWidth: 0,
-    paddingHorizontal: ocnoerTheme.spacing.lg
+    paddingHorizontal: ocnoerTheme.spacing.lg,
+    width: "100%"
   },
   arrowButton: {
     ...ocnoerTheme.shadows.glow,
     alignItems: "center",
     backgroundColor: ocnoerWebPlayer.gate.arrowBackground,
     borderRadius: ocnoerTheme.radii.pill,
+    flexShrink: 0,
     height: 56,
     justifyContent: "center",
     width: 56

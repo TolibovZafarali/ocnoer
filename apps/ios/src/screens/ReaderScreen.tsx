@@ -429,6 +429,27 @@ function ReaderChromeLayer(props: {
   );
 }
 
+function PersistentMutedAudioButtonLayer(props: {
+  visible: boolean;
+  onToggleAudioMuted: () => void;
+}) {
+  if (!props.visible) {
+    return null;
+  }
+
+  return (
+    <SafeAreaView pointerEvents="box-none" style={styles.mutedAudioWrap}>
+      <View pointerEvents="box-none" style={styles.mutedAudioBar}>
+        <ReaderIconButton
+          accessibilityLabel="Unmute background music"
+          icon={<AudioIcon muted />}
+          onPress={props.onToggleAudioMuted}
+        />
+      </View>
+    </SafeAreaView>
+  );
+}
+
 function SceneTransitionBlackoutOverlay(props: {
   phase: NativeReaderSceneTransitionPhase;
 }) {
@@ -1092,6 +1113,14 @@ export function ReaderScreen(props: ReaderScreenProps) {
               onRetreat={handleRetreat}
               onToggleAudioMuted={props.onToggleAudioMuted}
             />
+            <PersistentMutedAudioButtonLayer
+              visible={
+                Platform.OS === "ios" &&
+                props.audioPreferences.muted &&
+                !isChromeVisible
+              }
+              onToggleAudioMuted={props.onToggleAudioMuted}
+            />
 
             {boundaryPresentation ? (
               <NativeReaderBoundaryCard
@@ -1229,6 +1258,17 @@ const styles = StyleSheet.create({
     gap: ocnoerTheme.spacing.xs,
     maxWidth: "78%",
     justifyContent: "flex-end"
+  },
+  mutedAudioWrap: {
+    ...StyleSheet.absoluteFillObject,
+    elevation: 45,
+    zIndex: 45
+  },
+  mutedAudioBar: {
+    alignItems: "flex-end",
+    paddingHorizontal: ocnoerWebPlayer.chrome.inset,
+    paddingTop: ocnoerWebPlayer.chrome.inset,
+    width: "100%"
   },
   mapOverlay: {
     ...StyleSheet.absoluteFillObject,

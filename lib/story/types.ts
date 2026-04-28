@@ -283,6 +283,7 @@ export type RuntimeDressPromptOption = {
   key: string;
   label: string;
   previewImagePath: string | null;
+  previewImageDerivatives?: RuntimeImageDerivative[];
 };
 
 export type RuntimeDialogueSpeaker =

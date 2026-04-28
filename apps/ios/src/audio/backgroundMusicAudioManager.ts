@@ -144,6 +144,10 @@ function targetMatchesCue(
   );
 }
 
+function getTargetIdentityKey(target: BackgroundMusicTargetIdentity) {
+  return JSON.stringify([target.sessionId, target.key, target.url]);
+}
+
 function waitForDuration(durationMs: number) {
   return new Promise<void>((resolve) => {
     globalThis.setTimeout(resolve, durationMs);
@@ -607,6 +611,7 @@ export class NativeBackgroundMusicAudioManager {
   private failedTarget: FailedBackgroundMusicTarget | null = null;
   private isRunning = false;
   private listeners = new Set<BackgroundMusicListener>();
+  private playedOneShotTargets = new Set<string>();
   private snapshot: BackgroundMusicManagerSnapshot = {
     state: "idle",
     activeLabel: null,
@@ -665,6 +670,37 @@ export class NativeBackgroundMusicAudioManager {
     this.failedTarget = null;
 
     this.run();
+  }
+
+  private hasPlayedOneShotTarget(
+    cue: BackgroundMusicPlayableTarget,
+    sessionId: string | null
+  ) {
+    if ((cue.loop ?? true) !== false) {
+      return false;
+    }
+
+    return this.playedOneShotTargets.has(
+      getTargetIdentityKey({
+        key: cue.key,
+        sessionId,
+        url: cue.url
+      })
+    );
+  }
+
+  private markOneShotTargetPlayed(current: CurrentBackgroundMusicPlayer) {
+    if (current.loop) {
+      return;
+    }
+
+    this.playedOneShotTargets.add(
+      getTargetIdentityKey({
+        key: current.key,
+        sessionId: current.sessionId,
+        url: current.url
+      })
+    );
   }
 
   waitForTargetPlaybackStart(input: {
@@ -770,6 +806,13 @@ export class NativeBackgroundMusicAudioManager {
       return true;
     }
 
+    if (
+      this.hasPlayedOneShotTarget(targetCue, this.target.sessionId) &&
+      !targetMatchesCue(this.current, targetCue, this.target.sessionId)
+    ) {
+      return this.current == null;
+    }
+
     return (
       this.current?.url === targetCue.url &&
       this.current.key === targetCue.key &&
@@ -780,6 +823,33 @@ export class NativeBackgroundMusicAudioManager {
         (isPlayerActive(this.current.player) &&
           Math.abs(this.current.player.volume - this.target.volume) < 0.02))
     );
+  }
+
+  private emitPlayedOneShotTargetEndedIfNeeded() {
+    const targetCue = this.target.shouldPlay ? this.target.cue : null;
+
+    if (
+      !targetCue ||
+      !this.hasPlayedOneShotTarget(targetCue, this.target.sessionId) ||
+      targetMatchesCue(this.current, targetCue, this.target.sessionId) ||
+      this.current
+    ) {
+      return;
+    }
+
+    if (
+      this.snapshot.state === "ended" &&
+      this.snapshot.activeLabel === targetCue.label &&
+      this.snapshot.error === null
+    ) {
+      return;
+    }
+
+    this.emit({
+      state: "ended",
+      activeLabel: targetCue.label,
+      error: null
+    });
   }
 
   private async removePlayer(
@@ -901,6 +971,7 @@ export class NativeBackgroundMusicAudioManager {
 
     player.play();
     this.current.hasStarted = true;
+    this.markOneShotTargetPlayed(this.current);
     this.failedTarget = null;
 
     await waitForPlayerPlaybackStart(player, isStillTarget);
@@ -919,7 +990,12 @@ export class NativeBackgroundMusicAudioManager {
   }
 
   private run() {
-    if (this.isRunning || this.isSatisfied()) {
+    if (this.isRunning) {
+      return;
+    }
+
+    if (this.isSatisfied()) {
+      this.emitPlayedOneShotTargetEndedIfNeeded();
       return;
     }
 
@@ -970,9 +1046,12 @@ export class NativeBackgroundMusicAudioManager {
       .finally(() => {
         this.isRunning = false;
 
-        if (!this.isSatisfied()) {
-          this.run();
+        if (this.isSatisfied()) {
+          this.emitPlayedOneShotTargetEndedIfNeeded();
+          return;
         }
+
+        this.run();
       });
   }
 
@@ -1057,8 +1136,10 @@ export class NativeBackgroundMusicAudioManager {
         ) {
           this.current.player.play();
           this.current.hasStarted = true;
+          this.markOneShotTargetPlayed(this.current);
         } else if (isPlayerActive(this.current.player)) {
           this.current.hasStarted = true;
+          this.markOneShotTargetPlayed(this.current);
         }
 
         const currentPlayer = this.current.player;
@@ -1092,6 +1173,16 @@ export class NativeBackgroundMusicAudioManager {
         this.current = null;
         await this.removePlayer(current, this.target.fadeMs);
         continue;
+      }
+
+      if (this.hasPlayedOneShotTarget(targetCue, this.target.sessionId)) {
+        await setIsAudioActiveAsync(false).catch(() => undefined);
+        this.emit({
+          state: "ended",
+          activeLabel: targetCue.label,
+          error: null
+        });
+        return;
       }
 
       await this.createAndPlay(targetCue);

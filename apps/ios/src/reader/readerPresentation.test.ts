@@ -440,7 +440,7 @@ describe("createNativeReaderPresentation", () => {
     ).toBe(BASE_DRESS_OPTION_KEY);
   });
 
-  it("shows only the staged dress-prompt speaker", () => {
+  it("hides staged characters behind dress prompts", () => {
     const presentation = createNativeReaderPresentation({
       supabaseUrl,
       bundle: createBundle({
@@ -473,13 +473,117 @@ describe("createNativeReaderPresentation", () => {
       catName: null
     });
 
-    expect(presentation?.leftPortrait).toMatchObject({
-      side: "left",
-      imageUrl: publicUrl("runtime/media/left.png"),
-      isActiveSpeaker: true
-    });
+    expect(presentation?.leftPortrait).toBeNull();
     expect(presentation?.rightPortrait).toBeNull();
-    expect(presentation?.stageCharacters).toHaveLength(1);
+    expect(presentation?.stageCharacters).toEqual([]);
+    expect(presentation?.blockingPreloadImageUrls).not.toContain(
+      publicUrl("runtime/media/left.png")
+    );
+    expect(presentation?.blockingPreloadImageUrls).not.toContain(
+      publicUrl("runtime/media/right.png")
+    );
+  });
+
+  it("carries iOS bitmap derivative metadata into dress preview asset refs", () => {
+    const derivative = {
+      storagePath: "runtime/media/ocnoer-gala.reader.webp",
+      contentType: "image/webp",
+      renderKind: "bitmap" as const,
+      targetPlatform: "ios" as const,
+      width: 900,
+      height: 1400,
+      hash: "gala-derivative-hash",
+      sourceHash: "source-hash",
+      sourceAssetId: "dress_gala_default",
+      sourceStoragePath: "runtime/media/ocnoer-gala.svg",
+      sourceRenderKind: "svg" as const,
+      derivativeOf: "runtime/media/ocnoer-gala.svg"
+    };
+    const character = createRuntimeCharacter({
+      id: "character_ocnoer",
+      name: "Ocnoer",
+      slug: "ocnoer",
+      imagePath: "runtime/media/ocnoer-default.svg",
+      dresses: [
+        {
+          key: "gala",
+          label: "Gala",
+          emotionOverrides: [
+            {
+              emotionKey: "default",
+              imagePath: "runtime/media/ocnoer-gala.svg",
+              imageDerivatives: [derivative]
+            }
+          ]
+        }
+      ]
+    });
+    const presentation = createNativeReaderPresentation({
+      supabaseUrl,
+      bundle: createBundle({
+        characterPool: [character],
+        entry: createDialogueEntry({
+          speaker: {
+            type: "dress_prompt",
+            characterId: "character_ocnoer",
+            characterName: "Ocnoer",
+            characterSlug: "ocnoer",
+            dressOptions: [
+              {
+                key: "gala",
+                label: "Gala",
+                previewImagePath: "runtime/media/ocnoer-gala.svg"
+              }
+            ]
+          },
+          stage: {
+            left: createStageCharacter({
+              characterId: "character_ocnoer",
+              characterName: "Ocnoer",
+              characterSlug: "ocnoer",
+              imagePath: "runtime/media/ocnoer-default.svg"
+            }),
+            right: null
+          }
+        })
+      }),
+      readerState,
+      branchFlags: {},
+      catName: null
+    });
+
+    expect(presentation?.status).toBe("supported");
+    if (presentation?.status !== "supported") {
+      throw new Error("Expected supported dress prompt presentation.");
+    }
+
+    expect(presentation.dressOptions[0]?.previewImageUrl).toBe(
+      publicUrl("runtime/media/ocnoer-gala.svg")
+    );
+    expect(presentation.blockingAssetRefs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "dress-preview",
+          url: publicUrl("runtime/media/ocnoer-gala.svg"),
+          sourceRenderKind: "svg",
+          originalSvgStoragePath: "runtime/media/ocnoer-gala.svg",
+          originalSvgUrl: publicUrl("runtime/media/ocnoer-gala.svg"),
+          iosRenderKind: "bitmap",
+          iosDerivativeStoragePath: "runtime/media/ocnoer-gala.reader.webp",
+          iosDerivativeUrl: publicUrl("runtime/media/ocnoer-gala.reader.webp"),
+          iosDerivativeContentType: "image/webp",
+          iosDerivativeWidth: 900,
+          iosDerivativeHeight: 1400,
+          iosDerivativeHash: "gala-derivative-hash",
+          derivatives: [
+            expect.objectContaining({
+              url: publicUrl("runtime/media/ocnoer-gala.reader.webp"),
+              renderKind: "bitmap"
+            })
+          ]
+        })
+      ])
+    );
   });
 
   it("keeps an active right-side character visible when an inactive left character is staged", () => {

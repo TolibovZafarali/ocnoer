@@ -573,6 +573,57 @@ describe("reader asset cache", () => {
     });
   });
 
+  it("renders dress preview derivatives from the original preview URL", async () => {
+    const fetchMock = vi.fn(async () =>
+      createResponse({
+        contentType: "image/webp",
+        body: createPngBytes()
+      })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const {
+      createCachedReaderImageSource,
+      ensureSceneAssetsReady,
+      getAssetRenderMode,
+      getCachedAssetUri
+    } = await import("./imagePreload");
+    const assetRef = {
+      role: "dress-preview" as const,
+      url: "https://example.supabase.co/storage/v1/object/public/runtime/dress.svg",
+      storagePath: "runtime/dress.svg",
+      cacheKey: "dress-preview:ocnoer:gala",
+      derivatives: [
+        {
+          storagePath: "runtime/dress.reader.webp",
+          url: "https://example.supabase.co/storage/v1/object/public/runtime/dress.reader.webp",
+          cacheKey: "dress-preview:ocnoer:gala:webp",
+          contentType: "image/webp",
+          renderKind: "bitmap" as const,
+          width: 900,
+          height: 1400,
+          hash: "dress-preview-hash",
+          derivativeOf: "runtime/dress.svg"
+        }
+      ]
+    };
+
+    const result = await ensureSceneAssetsReady("scene_dress_preview", [
+      assetRef
+    ]);
+
+    expect(result.status).toBe("success");
+    expect(fetchMock).toHaveBeenCalledWith(
+      "https://example.supabase.co/storage/v1/object/public/runtime/dress.reader.webp"
+    );
+    expect(getAssetRenderMode(assetRef.url)).toBe("bitmap");
+    expect(getCachedAssetUri(assetRef.url)?.endsWith(".png")).toBe(true);
+    expect(createCachedReaderImageSource(assetRef.url)).toEqual(
+      expect.objectContaining({
+        uri: expect.stringContaining("ocnoer-reader-assets")
+      })
+    );
+  });
+
   it("selects the smallest derivative variant that satisfies phone @3x display", async () => {
     const { selectReaderAssetDerivativeVariant, setReaderStageMetrics } =
       await import("./imagePreload");
@@ -691,8 +742,9 @@ describe("reader asset cache", () => {
       })
     );
     vi.stubGlobal("fetch", fetchMock);
-    const assetRef =
-      createBitmapDerivativePortraitAssetRef("cached-refresh-success");
+    const assetRef = createBitmapDerivativePortraitAssetRef(
+      "cached-refresh-success"
+    );
     const firstModule = await import("./imagePreload");
 
     const firstResult = await firstModule.ensureSceneAssetsReady(
@@ -741,8 +793,9 @@ describe("reader asset cache", () => {
       })
     );
     vi.stubGlobal("fetch", fetchMock);
-    const assetRef =
-      createBitmapDerivativePortraitAssetRef("cached-refresh-failure");
+    const assetRef = createBitmapDerivativePortraitAssetRef(
+      "cached-refresh-failure"
+    );
     const firstModule = await import("./imagePreload");
 
     const firstResult = await firstModule.ensureSceneAssetsReady(

@@ -21,8 +21,9 @@ const loginBackgroundImage = require("../../../../lore/background.jpg");
 const GATE_EXPANSION_DURATION_MS = 280;
 
 type SignInScreenProps = {
-  credentialError: string | null;
+  isCredentialError: boolean;
   isSubmitting: boolean;
+  signInError: string | null;
   onSignIn: (secret: string) => void;
 };
 
@@ -55,10 +56,14 @@ export function SignInScreen(props: SignInScreenProps) {
     inputRange: [0, 1],
     outputRange: [-12, 0]
   });
-  const canSubmit = secret.trim().length > 0 && !props.isSubmitting;
-  const showErrorState = Boolean(
-    props.credentialError && !hasEditedSinceError
-  );
+  const trimmedSecret = secret.trim();
+  const canSubmit = trimmedSecret.length > 0 && !props.isSubmitting;
+  const isArrowDisabled = props.isSubmitting || (expanded && !canSubmit);
+  const visibleError =
+    props.signInError && !(props.isCredentialError && hasEditedSinceError)
+      ? props.signInError
+      : null;
+  const showErrorState = Boolean(visibleError);
 
   useEffect(() => {
     const animation = Animated.timing(expansionProgress, {
@@ -76,11 +81,11 @@ export function SignInScreen(props: SignInScreenProps) {
   }, [expanded, expansionProgress]);
 
   useEffect(() => {
-    if (props.credentialError) {
+    if (props.signInError) {
       setHasEditedSinceError(false);
       return;
     }
-  }, [props.credentialError]);
+  }, [props.signInError]);
 
   function focusInput() {
     setTimeout(() => {
@@ -96,14 +101,14 @@ export function SignInScreen(props: SignInScreenProps) {
     }
 
     if (canSubmit) {
-      props.onSignIn(secret);
+      props.onSignIn(trimmedSecret);
     }
   }
 
   function handleSecretChange(nextSecret: string) {
     setSecret(nextSecret);
 
-    if (props.credentialError) {
+    if (props.signInError && props.isCredentialError) {
       setHasEditedSinceError(true);
     }
   }
@@ -153,7 +158,7 @@ export function SignInScreen(props: SignInScreenProps) {
                     onChangeText={handleSecretChange}
                     onSubmitEditing={() => {
                       if (canSubmit) {
-                        props.onSignIn(secret);
+                        props.onSignIn(trimmedSecret);
                       }
                     }}
                     returnKeyType="go"
@@ -170,13 +175,13 @@ export function SignInScreen(props: SignInScreenProps) {
                   expanded ? "Submit credential" : "Open credential field"
                 }
                 accessibilityRole="button"
-                disabled={props.isSubmitting}
+                disabled={isArrowDisabled}
                 onPress={handleArrowPress}
                 style={({ pressed }) => [
                   styles.arrowButton,
                   showErrorState ? styles.arrowButtonError : null,
-                  pressed && !props.isSubmitting ? styles.pressed : null,
-                  props.isSubmitting ? styles.disabled : null
+                  pressed && !isArrowDisabled ? styles.pressed : null,
+                  isArrowDisabled ? styles.disabled : null
                 ]}
               >
                 {props.isSubmitting ? (
@@ -197,6 +202,9 @@ export function SignInScreen(props: SignInScreenProps) {
                 )}
               </Pressable>
             </Animated.View>
+            {visibleError ? (
+              <Text style={styles.errorText}>{visibleError}</Text>
+            ) : null}
           </View>
         </KeyboardAvoidingView>
       </SafeAreaView>
@@ -223,6 +231,14 @@ const styles = StyleSheet.create({
   gateWrap: {
     alignItems: "center",
     width: "100%"
+  },
+  errorText: {
+    color: ocnoerTheme.colors.text,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: ocnoerTheme.spacing.md,
+    maxWidth: ocnoerWebPlayer.gate.expandedPillMaxWidth,
+    textAlign: "center"
   },
   gatePill: {
     ...ocnoerTheme.shadows.card,

@@ -21,7 +21,7 @@ import { STORY_SCHEMA_VERSION } from "@/lib/story/types";
 import {
   BASE_DRESS_OPTION_KEY,
   BASE_DRESS_OPTION_LABEL,
-  getDressPreviewImagePath
+  getDressPreviewImageAsset
 } from "@/lib/story/wardrobe";
 
 type RuntimeCompileContext = {
@@ -130,18 +130,27 @@ function createDressPromptOptions(
   character: RuntimeCharacter,
   dressOptionKeys: string[]
 ) {
-  return dressOptionKeys.map((dressKey) => ({
-    key: dressKey,
-    label:
-      dressKey === BASE_DRESS_OPTION_KEY
-        ? BASE_DRESS_OPTION_LABEL
-        : (character.dresses.find((dress) => dress.key === dressKey)?.label ??
-          dressKey),
-    previewImagePath: getDressPreviewImagePath({
+  return dressOptionKeys.map((dressKey) => {
+    const previewImageAsset = getDressPreviewImageAsset({
       character,
       dressKey
-    })
-  }));
+    });
+
+    return {
+      key: dressKey,
+      label:
+        dressKey === BASE_DRESS_OPTION_KEY
+          ? BASE_DRESS_OPTION_LABEL
+          : (character.dresses.find((dress) => dress.key === dressKey)?.label ??
+            dressKey),
+      previewImagePath: previewImageAsset.imagePath,
+      ...(previewImageAsset.imageDerivatives?.length
+        ? {
+            previewImageDerivatives: previewImageAsset.imageDerivatives
+          }
+        : {})
+    };
+  });
 }
 
 function compileScene(input: {

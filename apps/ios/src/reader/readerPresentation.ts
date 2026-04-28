@@ -367,6 +367,14 @@ function createVisibleNativePortraits(input: {
   runtimeStageCharacters: PlayerRuntimeStageCharacter[];
   catName: string | null;
 }) {
+  if (input.entry.speaker.type === "dress_prompt") {
+    return {
+      leftPortrait: null,
+      rightPortrait: null,
+      stageCharacters: []
+    };
+  }
+
   if (input.entry.speaker.type === "cat_name_prompt") {
     const activePromptStageCharacter =
       input.runtimeStageCharacters.find(

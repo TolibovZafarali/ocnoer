@@ -480,4 +480,88 @@ describe("compileRuntimeStory", () => {
     expect(smileEmotion?.imageDerivatives).toEqual([derivative]);
     expect(ocnoerEntry?.stage.left?.imageDerivatives).toEqual([derivative]);
   });
+
+  it("publishes iOS bitmap derivative metadata for dress prompt previews", () => {
+    const derivative = {
+      storagePath:
+        "runtime/runtime/portrait-derivatives/dress_gala/hash.reader.webp",
+      contentType: "image/webp",
+      renderKind: "bitmap" as const,
+      targetPlatform: "ios" as const,
+      width: 900,
+      height: 1400,
+      hash: "dress-derivative-hash",
+      sourceHash: "source-hash",
+      sourceAssetId: "dress_gala",
+      sourceStoragePath: "runtime/media/ocnoer-gala.svg",
+      sourceRenderKind: "svg" as const,
+      derivativeOf: "runtime/media/ocnoer-gala.svg"
+    };
+    const compiled = compileRuntimeStory({
+      snapshot: {
+        ...snapshot,
+        characters: snapshot.characters.map((character) =>
+          character.id === "character_ocnoer"
+            ? {
+                ...character,
+                dresses: [
+                  {
+                    id: "dress_gala",
+                    key: "gala",
+                    label: "Gala",
+                    createdAt: "2026-03-16T00:00:00.000Z",
+                    updatedAt: "2026-03-16T00:00:00.000Z",
+                    emotionOverrides: [
+                      {
+                        id: "dress_gala_smile",
+                        emotionKey: "smile",
+                        imagePath: "runtime/media/ocnoer-gala.svg",
+                        imageDerivatives: [derivative],
+                        createdAt: "2026-03-16T00:00:00.000Z",
+                        updatedAt: "2026-03-16T00:00:00.000Z"
+                      }
+                    ]
+                  }
+                ]
+              }
+            : character
+        ),
+        chapters: snapshot.chapters.map((chapter) => ({
+          ...chapter,
+          scenes: chapter.scenes.map((scene) => ({
+            ...scene,
+            dialogue: [
+              ...scene.dialogue,
+              {
+                id: "dialogue_dress_prompt",
+                orderIndex: 4,
+                text: "Choose your dress.",
+                speaker: {
+                  type: "dress_prompt" as const,
+                  characterId: "character_ocnoer",
+                  dressOptionKeys: ["gala"]
+                },
+                createdAt: "2026-03-16T00:00:00.000Z",
+                updatedAt: "2026-03-16T00:00:00.000Z"
+              }
+            ]
+          }))
+        }))
+      },
+      bucket: "runtime",
+      runtimePrefix: "runtime",
+      generatedAt: "2026-03-20T01:00:00.000Z"
+    });
+    const dressPrompt =
+      compiled.chapterBundles[0]?.bundle.chapter.scenes[0]?.dialogue[3];
+
+    expect(dressPrompt?.speaker.type).toBe("dress_prompt");
+    if (dressPrompt?.speaker.type === "dress_prompt") {
+      expect(dressPrompt.speaker.dressOptions[0]).toMatchObject({
+        key: "gala",
+        previewImagePath: "runtime/media/ocnoer-gala.svg",
+        previewImageDerivatives: [derivative]
+      });
+    }
+  });
 });

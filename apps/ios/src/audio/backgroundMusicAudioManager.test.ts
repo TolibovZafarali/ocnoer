@@ -718,6 +718,73 @@ describe("NativeBackgroundMusicAudioManager", () => {
     expect(audioMock.createAudioPlayer).toHaveBeenCalledTimes(1);
   });
 
+  it("does not replay chapter ending music after it has been stopped", async () => {
+    const manager = new NativeBackgroundMusicAudioManager();
+    const playing = waitForManagerState(manager, "playing");
+    const targetUrl =
+      "https://example.supabase.co/storage/v1/object/public/runtime/media/background-music/ending_theme";
+    const cue = {
+      key: "chapter-ending-card:chapter_one:ending_theme",
+      label: "Ending",
+      loop: false,
+      url: targetUrl
+    };
+
+    manager.setTarget({
+      cue,
+      sessionId: "session-a",
+      shouldPlay: true,
+      volume: 0.85,
+      fadeMs: 0
+    });
+
+    await playing;
+
+    const player = audioMock.players[0];
+    const idle = waitForManagerState(manager, "idle");
+
+    manager.setTarget({
+      cue,
+      sessionId: "session-a",
+      shouldPlay: false,
+      volume: 0,
+      fadeMs: 0
+    });
+
+    await idle;
+
+    const ended = waitForManagerState(manager, "ended");
+
+    manager.setTarget({
+      cue,
+      sessionId: "session-a",
+      shouldPlay: true,
+      volume: 0.85,
+      fadeMs: 0
+    });
+
+    await ended;
+    await waitForNextTick();
+
+    expect(player?.play).toHaveBeenCalledTimes(1);
+    expect(audioMock.createAudioPlayer).toHaveBeenCalledTimes(1);
+
+    const nextSessionPlaying = waitForManagerState(manager, "playing");
+
+    manager.setTarget({
+      cue,
+      sessionId: "session-b",
+      shouldPlay: true,
+      volume: 0.85,
+      fadeMs: 0
+    });
+
+    await nextSessionPlaying;
+
+    expect(audioMock.createAudioPlayer).toHaveBeenCalledTimes(2);
+    expect(audioMock.players[1]?.play).toHaveBeenCalledTimes(1);
+  });
+
   it("restarts the scene track when native playback was paused behind tracked state", async () => {
     const manager = new NativeBackgroundMusicAudioManager();
     const firstPlaying = waitForManagerState(manager, "playing");

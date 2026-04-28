@@ -6,6 +6,16 @@ export const BASE_DRESS_OPTION_LABEL = "Default Dress";
 
 type CharacterWithDressState = CharacterDefinition | RuntimeCharacter;
 
+function getDefaultEmotion(character: CharacterWithDressState) {
+  return (
+    character.emotions.find(
+      (emotion) => emotion.key === character.defaultEmotionKey
+    ) ??
+    character.emotions[0] ??
+    null
+  );
+}
+
 function getDefaultEmotionImagePath(character: CharacterWithDressState) {
   const runtimeCharacter = character as RuntimeCharacter;
 
@@ -13,13 +23,7 @@ function getDefaultEmotionImagePath(character: CharacterWithDressState) {
     return runtimeCharacter.defaultEmotionImagePath;
   }
 
-  return (
-    character.emotions.find(
-      (emotion) => emotion.key === character.defaultEmotionKey
-    )?.imagePath ??
-    character.emotions[0]?.imagePath ??
-    null
-  );
+  return getDefaultEmotion(character)?.imagePath ?? null;
 }
 
 export function getDressBranchFlagKey(characterId: string) {
@@ -110,27 +114,42 @@ export function getDressPreviewImagePath(input: {
   character: CharacterWithDressState;
   dressKey: string;
 }) {
+  return getDressPreviewImageAsset(input).imagePath;
+}
+
+export function getDressPreviewImageAsset(input: {
+  character: CharacterWithDressState;
+  dressKey: string;
+}) {
+  const defaultEmotion = getDefaultEmotion(input.character);
   const defaultImagePath = getDefaultEmotionImagePath(input.character);
 
   if (isBaseDressOptionKey(input.dressKey)) {
-    return defaultImagePath;
+    return {
+      imagePath: defaultImagePath,
+      imageDerivatives: defaultEmotion?.imageDerivatives
+    };
   }
 
   const dress =
     input.character.dresses.find((item) => item.key === input.dressKey) ?? null;
 
   if (!dress) {
-    return defaultImagePath;
+    return {
+      imagePath: defaultImagePath,
+      imageDerivatives: defaultEmotion?.imageDerivatives
+    };
   }
 
   const defaultOverride =
     dress.emotionOverrides.find(
       (override) => override.emotionKey === input.character.defaultEmotionKey
     ) ?? null;
+  const previewAsset = defaultOverride ?? dress.emotionOverrides[0] ?? null;
 
-  return (
-    defaultOverride?.imagePath ??
-    dress.emotionOverrides[0]?.imagePath ??
-    defaultImagePath
-  );
+  return {
+    imagePath: previewAsset?.imagePath ?? defaultImagePath,
+    imageDerivatives:
+      previewAsset?.imageDerivatives ?? defaultEmotion?.imageDerivatives
+  };
 }

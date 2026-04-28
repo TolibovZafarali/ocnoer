@@ -12,12 +12,14 @@ import type {
   RuntimeImageDerivative,
   RuntimeChapterBundle,
   RuntimeDialogueEntry,
+  RuntimeDressPromptOption,
   RuntimeManifest,
   RuntimeScene,
   RuntimeStageCharacter
 } from "./types";
 import {
   applySceneDressCarrySelection,
+  getDressPreviewImageAsset,
   getSelectedDressKey,
   resolveDressImagePath
 } from "./wardrobe";
@@ -255,6 +257,43 @@ function getRuntimeImagePlatformMetadata(input: {
   }
 
   return metadata;
+}
+
+function getDressPromptOptionImageDerivatives(input: {
+  supabaseUrl: string;
+  scene: RuntimeScene;
+  characterId: string;
+  dressOption: RuntimeDressPromptOption;
+}) {
+  if (input.dressOption.previewImageDerivatives?.length) {
+    return toPublicStorageDerivatives({
+      supabaseUrl: input.supabaseUrl,
+      derivatives: input.dressOption.previewImageDerivatives
+    });
+  }
+
+  const character =
+    input.scene.characterPool.find(
+      (candidate) => candidate.id === input.characterId
+    ) ?? null;
+
+  if (!character) {
+    return [];
+  }
+
+  const previewAsset = getDressPreviewImageAsset({
+    character,
+    dressKey: input.dressOption.key
+  });
+
+  if (previewAsset.imagePath !== input.dressOption.previewImagePath) {
+    return [];
+  }
+
+  return toPublicStorageDerivatives({
+    supabaseUrl: input.supabaseUrl,
+    derivatives: previewAsset.imageDerivatives
+  });
 }
 
 function resolveStageCharacterImageAsset(input: {
@@ -807,7 +846,7 @@ function getRuntimeSceneAssetRefs(input: {
         asset.cacheKey ?? `${asset.role}:${asset.assetId ?? storagePath}`,
       derivatives: asset.derivatives,
       stagePlacement: asset.stagePlacement ?? null,
-      ...(asset.role === "portrait"
+      ...(asset.role === "portrait" || asset.role === "dress-preview"
         ? getRuntimeImagePlatformMetadata({
             supabaseUrl: input.supabaseUrl,
             derivatives: asset.derivatives,
@@ -880,11 +919,19 @@ function getRuntimeSceneAssetRefs(input: {
       const characterId = dialogueEntry.speaker.characterId;
 
       dialogueEntry.speaker.dressOptions.forEach((dressOption) => {
+        const derivatives = getDressPromptOptionImageDerivatives({
+          supabaseUrl: input.supabaseUrl,
+          scene: input.scene,
+          characterId,
+          dressOption
+        });
+
         addAssetRef({
           role: "dress-preview",
           storagePath: dressOption.previewImagePath,
           assetId: characterId,
-          cacheKey: `dress-preview:${characterId}:${dressOption.key}`
+          cacheKey: `dress-preview:${characterId}:${dressOption.key}`,
+          derivatives: derivatives.length > 0 ? derivatives : undefined
         });
       });
     }

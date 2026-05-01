@@ -3,6 +3,7 @@
 /* eslint-disable @next/next/no-img-element */
 
 import {
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -868,9 +869,11 @@ function SortableDialogueDraftCard(props: {
 
 export function SceneDraftEditor(props: SceneDraftEditorProps) {
   const router = useRouter();
+  const { chapterId, initialSourceSceneUpdatedAt, sceneId, upsertDraftAction } =
+    props;
   const localDraftStorageKey = useMemo(
-    () => getLocalSceneDraftStorageKey(props.chapterId, props.sceneId),
-    [props.chapterId, props.sceneId]
+    () => getLocalSceneDraftStorageKey(chapterId, sceneId),
+    [chapterId, sceneId]
   );
   const charactersById = useMemo(
     () =>
@@ -1057,40 +1060,49 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
     props.sceneId
   ]);
 
-  async function persistDraft(nextDraft: SceneDraftPayload) {
-    const nextHash = getDraftHash(nextDraft);
+  const persistDraft = useCallback(
+    async function persistDraft(nextDraft: SceneDraftPayload) {
+      const nextHash = getDraftHash(nextDraft);
 
-    if (nextHash === lastSyncedHash) {
+      if (nextHash === lastSyncedHash) {
+        return true;
+      }
+
+      const saveId = latestSaveIdRef.current + 1;
+      latestSaveIdRef.current = saveId;
+      setDraftStatus("saving");
+      setDraftError(null);
+
+      const result = await upsertDraftAction({
+        chapterId,
+        sceneId,
+        sourceSceneUpdatedAt: initialSourceSceneUpdatedAt,
+        payload: nextDraft
+      });
+
+      if (latestSaveIdRef.current !== saveId) {
+        return result.ok;
+      }
+
+      if (!result.ok) {
+        setDraftStatus("error");
+        setDraftError(result.error);
+        return false;
+      }
+
+      setLastSyncedHash(nextHash);
+      setHasPersistedDraft(true);
+      setDraftStatus("saved");
       return true;
-    }
-
-    const saveId = latestSaveIdRef.current + 1;
-    latestSaveIdRef.current = saveId;
-    setDraftStatus("saving");
-    setDraftError(null);
-
-    const result = await props.upsertDraftAction({
-      chapterId: props.chapterId,
-      sceneId: props.sceneId,
-      sourceSceneUpdatedAt: props.initialSourceSceneUpdatedAt,
-      payload: nextDraft
-    });
-
-    if (latestSaveIdRef.current !== saveId) {
-      return result.ok;
-    }
-
-    if (!result.ok) {
-      setDraftStatus("error");
-      setDraftError(result.error);
-      return false;
-    }
-
-    setLastSyncedHash(nextHash);
-    setHasPersistedDraft(true);
-    setDraftStatus("saved");
-    return true;
-  }
+    },
+    [
+      chapterId,
+      initialSourceSceneUpdatedAt,
+      lastSyncedHash,
+      sceneId,
+      upsertDraftAction
+    ]
+  );
 
   useEffect(() => {
     if (!hasDirtyDraft) {
@@ -1104,7 +1116,7 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
     return () => {
       window.clearTimeout(timeoutId);
     };
-  }, [draft, hasDirtyDraft]);
+  }, [draft, hasDirtyDraft, persistDraft]);
 
   useEffect(() => {
     function handleVisibilityChange() {
@@ -1129,7 +1141,7 @@ export function SceneDraftEditor(props: SceneDraftEditorProps) {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
       window.removeEventListener("pagehide", handlePageHide);
     };
-  }, [lastSyncedHash]);
+  }, [lastSyncedHash, persistDraft]);
 
   function updateSceneField(
     field: keyof SceneDraftPayload["scene"],

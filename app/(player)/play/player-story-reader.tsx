@@ -13,6 +13,7 @@ import {
 } from "react";
 
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
+import { ArrowLeft, ArrowRight, LogOut, Map as MapIcon, X } from "lucide-react";
 import worldMapImage from "@/lore/Thaloraz.webp";
 
 import { signOutPlayerAction } from "@/app/(player)/play/actions";
@@ -2918,9 +2919,7 @@ export function PlayerStoryReader({
                   disabled={isLoadingChapter}
                   className="pointer-events-auto inline-flex h-11 w-11 items-center justify-center bg-transparent text-slate-100 transition-colors hover:text-white disabled:cursor-default disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                 >
-                  <span aria-hidden className="material-symbols-outlined">
-                    arrow_back
-                  </span>
+                  <ArrowLeft aria-hidden size={28} strokeWidth={1.8} />
                 </button>
                 <div className="pointer-events-auto flex items-center gap-1.5">
                   <button
@@ -2929,9 +2928,7 @@ export function PlayerStoryReader({
                     aria-label="Open world map"
                     className="inline-flex h-11 w-11 items-center justify-center bg-transparent text-slate-100 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                   >
-                    <span aria-hidden className="material-symbols-outlined">
-                      map
-                    </span>
+                    <MapIcon aria-hidden size={28} strokeWidth={1.8} />
                   </button>
                   <form action={signOutPlayerAction}>
                     <button
@@ -2939,9 +2936,7 @@ export function PlayerStoryReader({
                       aria-label="Sign out"
                       className="inline-flex h-11 w-11 items-center justify-center bg-transparent text-slate-100 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                     >
-                      <span aria-hidden className="material-symbols-outlined">
-                        logout
-                      </span>
+                      <LogOut aria-hidden size={28} strokeWidth={1.8} />
                     </button>
                   </form>
                 </div>
@@ -3113,12 +3108,7 @@ export function PlayerStoryReader({
                           aria-label="Previous dress option"
                           className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/15 bg-black/25 text-slate-100 transition-colors hover:border-white/30 hover:text-white disabled:cursor-default disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                         >
-                          <span
-                            aria-hidden
-                            className="material-symbols-outlined text-[20px]"
-                          >
-                            arrow_back
-                          </span>
+                          <ArrowLeft aria-hidden size={20} strokeWidth={1.8} />
                         </button>
 
                         <div className="relative w-[min(58vw,13.5rem)] shrink-0">
@@ -3178,12 +3168,7 @@ export function PlayerStoryReader({
                           aria-label="Next dress option"
                           className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-white/15 bg-black/25 text-slate-100 transition-colors hover:border-white/30 hover:text-white disabled:cursor-default disabled:opacity-45 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40"
                         >
-                          <span
-                            aria-hidden
-                            className="material-symbols-outlined text-[20px]"
-                          >
-                            arrow_forward
-                          </span>
+                          <ArrowRight aria-hidden size={20} strokeWidth={1.8} />
                         </button>
                       </div>
                     </div>
@@ -3235,12 +3220,7 @@ export function PlayerStoryReader({
                           }
                           className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-transparent text-slate-100 transition-opacity hover:text-white disabled:cursor-default disabled:opacity-45"
                         >
-                          <span
-                            aria-hidden
-                            className="material-symbols-outlined"
-                          >
-                            arrow_forward
-                          </span>
+                          <ArrowRight aria-hidden size={28} strokeWidth={1.8} />
                         </button>
                       </motion.div>
                     </div>
@@ -3312,9 +3292,7 @@ export function PlayerStoryReader({
                   aria-label="Close world map"
                   className="absolute left-2 top-2 z-10 inline-flex h-12 w-12 items-center justify-center rounded-full border border-white/20 bg-black/35 text-slate-100 transition-colors hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/40 md:left-3 md:top-3"
                 >
-                  <span aria-hidden className="material-symbols-outlined">
-                    close
-                  </span>
+                  <X aria-hidden size={28} strokeWidth={1.8} />
                 </button>
 
                 {isMapImageReady ? (

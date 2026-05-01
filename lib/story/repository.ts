@@ -6,10 +6,7 @@ import type { Prisma } from "@prisma/client";
 import sharp from "sharp";
 
 import { prisma } from "@/lib/prisma";
-import {
-  compileRuntimeChapterBundle,
-  compileRuntimeStory
-} from "@/lib/story/published";
+import { compileRuntimeStory } from "@/lib/story/published";
 import {
   createSceneDraftPayload,
   isSceneDraftTempId,
@@ -1550,26 +1547,6 @@ async function persistRuntimeArtifacts(snapshot: StoryAuthoringSnapshot) {
   await removeStorageObjects(staleChapterPaths);
 }
 
-async function persistRuntimeChapterArtifact(
-  snapshot: StoryAuthoringSnapshot,
-  chapterId: string
-) {
-  const { runtimeBucket } = getSupabaseServerEnv();
-  const runtimeSnapshot =
-    await addRuntimePortraitDerivativesToSnapshot(snapshot);
-  const chapterBundle = compileRuntimeChapterBundle({
-    snapshot: runtimeSnapshot,
-    chapterId,
-    bucket: runtimeBucket,
-    runtimePrefix: RUNTIME_PREFIX
-  });
-
-  await writeJsonFile(
-    `${RUNTIME_PREFIX}/chapters/${chapterBundle.chapterId}.json`,
-    chapterBundle.bundle
-  );
-}
-
 async function commitSnapshot(snapshot: StoryAuthoringSnapshot) {
   const normalizedSnapshot = await persistAuthoringSnapshot(snapshot);
 
@@ -1578,10 +1555,7 @@ async function commitSnapshot(snapshot: StoryAuthoringSnapshot) {
   return normalizedSnapshot;
 }
 
-async function commitChapterScopedSnapshot(
-  snapshot: StoryAuthoringSnapshot,
-  _chapterId: string
-) {
+async function commitChapterScopedSnapshot(snapshot: StoryAuthoringSnapshot) {
   const normalizedSnapshot = await persistChaptersSnapshot(snapshot);
 
   await persistRuntimeArtifacts(normalizedSnapshot);
@@ -2503,7 +2477,7 @@ export async function saveSceneDraft(input: {
     scene.orderIndex = nextSceneOrder;
   }
 
-  await commitChapterScopedSnapshot(snapshot, chapter.id);
+  await commitChapterScopedSnapshot(snapshot);
   await discardSceneDraft(input.sceneId);
 
   return {
@@ -3463,7 +3437,7 @@ export async function createDialogueEntry(input: {
   scene.dialogue.push(entry);
   scene.updatedAt = nowIsoString();
   chapter.updatedAt = nowIsoString();
-  await commitChapterScopedSnapshot(snapshot, chapter.id);
+  await commitChapterScopedSnapshot(snapshot);
 
   return entry;
 }
@@ -3533,7 +3507,7 @@ export async function updateDialogueEntry(input: {
     entry.orderIndex = input.orderIndex;
   }
 
-  await commitChapterScopedSnapshot(snapshot, chapter.id);
+  await commitChapterScopedSnapshot(snapshot);
 
   return entry;
 }
@@ -3557,7 +3531,7 @@ export async function reorderDialogueEntry(input: {
   scene.updatedAt = nowIsoString();
   chapter.updatedAt = nowIsoString();
 
-  await commitChapterScopedSnapshot(snapshot, chapter.id);
+  await commitChapterScopedSnapshot(snapshot);
 
   return entry;
 }
@@ -3576,5 +3550,5 @@ export async function deleteDialogueEntry(input: {
   );
   scene.updatedAt = nowIsoString();
   chapter.updatedAt = nowIsoString();
-  await commitChapterScopedSnapshot(snapshot, chapter.id);
+  await commitChapterScopedSnapshot(snapshot);
 }

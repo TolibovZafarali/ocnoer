@@ -48,11 +48,13 @@ model PlayerProfile {
   catName            String?
   catNameLocked      Boolean                @default(false)
   status             PlayerStatus           @default(ACTIVE)
+  lastSeenAt         DateTime?
   createdAt          DateTime               @default(now())
   updatedAt          DateTime               @updatedAt
   readingProgress    PlayerReadingProgress?
 
   @@index([status])
+  @@index([lastSeenAt])
 }
 
 model PlayerReadingProgress {

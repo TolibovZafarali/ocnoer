@@ -4,7 +4,8 @@ import { PlayerStatus } from "@prisma/client";
 
 import {
   findPlayerProfileForSecret,
-  getPlayerProfileSessionData
+  getPlayerProfileSessionData,
+  touchPlayerPresence
 } from "@/lib/player-profiles";
 import { getSupabaseServerEnv } from "@/lib/supabase/env";
 
@@ -56,6 +57,14 @@ function toPlayerIdentity(profile: {
     catName: profile.catName,
     catNameLocked: profile.catNameLocked
   };
+}
+
+async function recordPlayerPresence(playerId: string) {
+  try {
+    await touchPlayerPresence(playerId);
+  } catch (error) {
+    console.error("Unable to record player presence.", error);
+  }
 }
 
 export function getPlayerSessionExpiresAt(issuedAtMs: number) {
@@ -143,6 +152,8 @@ export async function authenticatePlayerSecret(
     };
   }
 
+  await recordPlayerPresence(profile.id);
+
   return {
     ok: true,
     player: toPlayerIdentity(profile)
@@ -173,6 +184,8 @@ export async function resolvePlayerSessionToken(
       player: null
     };
   }
+
+  await recordPlayerPresence(profile.id);
 
   return {
     player: toPlayerIdentity(profile),

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const findPlayerProfileForSecretMock = vi.fn();
 const getPlayerProfileSessionDataMock = vi.fn();
+const touchPlayerPresenceMock = vi.fn();
 const cookieSetMock = vi.fn();
 const cookieGetMock = vi.fn();
 const cookiesMock = vi.fn(async () => ({
@@ -15,7 +16,8 @@ vi.mock("next/headers", () => ({
 
 vi.mock("@/lib/player-profiles", () => ({
   findPlayerProfileForSecret: findPlayerProfileForSecretMock,
-  getPlayerProfileSessionData: getPlayerProfileSessionDataMock
+  getPlayerProfileSessionData: getPlayerProfileSessionDataMock,
+  touchPlayerPresence: touchPlayerPresenceMock
 }));
 
 vi.mock("@/lib/supabase/env", () => ({
@@ -25,14 +27,14 @@ vi.mock("@/lib/supabase/env", () => ({
 }));
 
 const { PlayerStatus } = await import("@prisma/client");
-const { getPlayerSession, signInAsPlayerSecret } = await import(
-  "@/lib/auth/player"
-);
+const { getPlayerSession, signInAsPlayerSecret } =
+  await import("@/lib/auth/player");
 
 describe("player auth", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     cookieGetMock.mockReturnValue(undefined);
+    touchPlayerPresenceMock.mockResolvedValue({ count: 1 });
   });
 
   it("denies sign-in for inactive players", async () => {
@@ -48,6 +50,7 @@ describe("player auth", () => {
       ok: false
     });
     expect(cookieSetMock).not.toHaveBeenCalled();
+    expect(touchPlayerPresenceMock).not.toHaveBeenCalled();
   });
 
   it("creates a signed cookie for active players", async () => {
@@ -70,6 +73,7 @@ describe("player auth", () => {
     });
 
     expect(cookieSetMock).toHaveBeenCalledTimes(1);
+    expect(touchPlayerPresenceMock).toHaveBeenCalledWith("player_1");
     const [cookieName, cookieValue, options] = cookieSetMock.mock.calls[0];
     expect(cookieName).toBe("ocnoer_player_session");
     expect(String(cookieValue).startsWith("player_1.")).toBe(true);

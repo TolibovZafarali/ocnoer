@@ -21,8 +21,10 @@ vi.mock("@/lib/prisma", () => ({
 const {
   PlayerProfileError,
   createPlayerProfile,
+  isPlayerOnline,
   normalizePlayerUsername,
   setPlayerProfileCatNameOnce,
+  touchPlayerPresence,
   updatePlayerProfile
 } = await import("@/lib/player-profiles");
 const { PlayerStatus } = await import("@prisma/client");
@@ -34,6 +36,18 @@ describe("player profile helpers", () => {
 
   it("normalizes usernames to lowercase and trimmed values", () => {
     expect(normalizePlayerUsername("  LUNA.Secret  ")).toBe("luna.secret");
+  });
+
+  it("detects online players from a recent last-seen timestamp", () => {
+    const now = new Date("2026-05-01T12:00:00.000Z");
+
+    expect(isPlayerOnline(new Date("2026-05-01T11:56:00.000Z"), now)).toBe(
+      true
+    );
+    expect(isPlayerOnline(new Date("2026-05-01T11:54:59.000Z"), now)).toBe(
+      false
+    );
+    expect(isPlayerOnline(null, now)).toBe(false);
   });
 
   it("creates profiles with normalized username and lock state based on cat name", async () => {
@@ -194,6 +208,32 @@ describe("player profile helpers", () => {
       catName: "Nox",
       catNameLocked: true,
       status: PlayerStatus.ACTIVE
+    });
+  });
+
+  it("touches player presence only when the stored timestamp is stale", async () => {
+    const now = new Date("2026-05-01T12:00:00.000Z");
+    updateManyMock.mockResolvedValueOnce({ count: 1 });
+
+    await touchPlayerPresence("player_1", now);
+
+    expect(updateManyMock).toHaveBeenCalledWith({
+      where: {
+        id: "player_1",
+        OR: [
+          {
+            lastSeenAt: null
+          },
+          {
+            lastSeenAt: {
+              lt: new Date("2026-05-01T11:59:00.000Z")
+            }
+          }
+        ]
+      },
+      data: {
+        lastSeenAt: now
+      }
     });
   });
 });

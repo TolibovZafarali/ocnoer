@@ -35,6 +35,8 @@ export type PlayerSessionState =
   | SignedOutState
   | SignedInState;
 
+const PLAYER_PRESENCE_HEARTBEAT_MS = 60 * 1000;
+
 function getErrorMessage(error: unknown, fallback: string) {
   if (error instanceof MobileApiError) {
     return error.message;
@@ -52,6 +54,8 @@ export function usePlayerSession() {
   const [state, setState] = useState<PlayerSessionState>({
     status: "restoring"
   });
+  const sessionToken =
+    state.status === "signed-in" ? state.storedSession.session.token : null;
 
   const setMountedState = useCallback((nextState: PlayerSessionState) => {
     if (mountedRef.current) {
@@ -108,6 +112,24 @@ export function usePlayerSession() {
 
     void restoreSession();
   }, [setMountedState]);
+
+  useEffect(() => {
+    if (!sessionToken) {
+      return undefined;
+    }
+
+    const client = createPlayerSessionClient();
+    const heartbeat = () => {
+      void client.heartbeat(sessionToken).catch(() => undefined);
+    };
+
+    heartbeat();
+    const interval = setInterval(heartbeat, PLAYER_PRESENCE_HEARTBEAT_MS);
+
+    return () => {
+      clearInterval(interval);
+    };
+  }, [sessionToken]);
 
   const signIn = useCallback(
     async (secret: string) => {

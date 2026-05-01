@@ -8,6 +8,7 @@ import type {
 export type PlayerSessionClient = {
   signIn: (secret: string) => Promise<MobilePlayerSessionPayload>;
   validateSession: (token: string) => Promise<MobilePlayerSessionPayload>;
+  heartbeat: (token: string) => Promise<void>;
   signOut: (token: string) => Promise<void>;
   getProfile: (token: string) => Promise<MobilePlayerProfilePayload>;
   updateCatName: (
@@ -37,6 +38,12 @@ export function createPlayerSessionClient(
           token
         }
       ),
+    heartbeat: async (token) => {
+      await apiClient.requestJson<{ ok: boolean }>("/api/player/activity", {
+        method: "POST",
+        token
+      });
+    },
     signOut: async (token) => {
       await apiClient.requestJson<{ ok: boolean }>(
         "/api/mobile/player/session",

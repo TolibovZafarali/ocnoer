@@ -9,6 +9,8 @@ const MIN_FIRST_NAME_LENGTH = 1;
 const MAX_FIRST_NAME_LENGTH = 80;
 const MIN_CAT_NAME_LENGTH = 1;
 const MAX_CAT_NAME_LENGTH = 80;
+export const PLAYER_ONLINE_WINDOW_MS = 5 * 60 * 1000;
+export const PLAYER_PRESENCE_TOUCH_INTERVAL_MS = 60 * 1000;
 
 export class PlayerProfileError extends Error {}
 
@@ -22,6 +24,23 @@ export type PlayerProfileSessionData = {
 
 export function normalizePlayerUsername(value: string) {
   return value.trim().toLowerCase();
+}
+
+export function isPlayerOnline(
+  lastSeenAt: Date | string | null | undefined,
+  now = new Date()
+) {
+  if (!lastSeenAt) {
+    return false;
+  }
+
+  const lastSeenMs =
+    lastSeenAt instanceof Date ? lastSeenAt.getTime() : Date.parse(lastSeenAt);
+
+  return (
+    Number.isFinite(lastSeenMs) &&
+    lastSeenMs >= now.getTime() - PLAYER_ONLINE_WINDOW_MS
+  );
 }
 
 function normalizeOptionalText(value: string | null) {
@@ -114,8 +133,36 @@ function getPrismaErrorCode(error: unknown) {
 
 export async function listPlayerProfiles() {
   return prisma.playerProfile.findMany({
+    include: {
+      readingProgress: true
+    },
     orderBy: {
       createdAt: "desc"
+    }
+  });
+}
+
+export async function touchPlayerPresence(playerId: string, now = new Date()) {
+  const staleBefore = new Date(
+    now.getTime() - PLAYER_PRESENCE_TOUCH_INTERVAL_MS
+  );
+
+  return prisma.playerProfile.updateMany({
+    where: {
+      id: playerId,
+      OR: [
+        {
+          lastSeenAt: null
+        },
+        {
+          lastSeenAt: {
+            lt: staleBefore
+          }
+        }
+      ]
+    },
+    data: {
+      lastSeenAt: now
     }
   });
 }

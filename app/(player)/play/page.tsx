@@ -3,6 +3,7 @@ import type { CSSProperties } from "react";
 import { redirect } from "next/navigation";
 
 import { signOutPlayerAction } from "@/app/(player)/play/actions";
+import { PlayerPresenceHeartbeat } from "@/app/(player)/play/player-presence-heartbeat";
 import { PlayerStoryReader } from "@/app/(player)/play/player-story-reader";
 import { Button } from "@/components/ui/button";
 import { getPlayerSession } from "@/lib/auth/player";
@@ -93,6 +94,7 @@ export default async function PlayerPlayPage() {
 
     return (
       <main className="relative min-h-screen overflow-hidden bg-black text-slate-50">
+        <PlayerPresenceHeartbeat />
         <PlayerStoryReader
           manifestPath={runtime.manifestPath}
           progressStorageKey={`ocnoer:player-progress:${session.player.id}`}

@@ -1,16 +1,36 @@
 {
   "expo": {
-    "name": "Ocnoer iOS",
+    "name": "Ocnoer",
     "slug": "ocnoer-ios",
     "scheme": "ocnoer",
     "version": "0.1.0",
     "orientation": "portrait",
     "platforms": ["ios"],
     "userInterfaceStyle": "dark",
+    "icon": "./assets/icon.png",
     "ios": {
       "bundleIdentifier": "com.ocnoer.player",
-      "supportsTablet": false
+      "buildNumber": "1",
+      "supportsTablet": false,
+      "requireFullScreen": true,
+      "userInterfaceStyle": "dark",
+      "icon": "./assets/icon.png",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
+    "plugins": [
+      [
+        "expo-splash-screen",
+        {
+          "ios": {
+            "backgroundColor": "#020617",
+            "image": "./assets/splash.png",
+            "resizeMode": "contain"
+          }
+        }
+      ]
+    ],
     "extra": {
       "portStage": "mobile-session-bootstrap"
     }

@@ -5,7 +5,13 @@
   "main": "index.ts",
   "scripts": {
     "start": "expo start --ios",
+    "start:dev-client": "expo start --dev-client --ios",
     "ios": "expo start --ios",
+    "expo:config": "expo config --type public",
+    "eas:build:development": "corepack pnpm dlx eas-cli@18.9.1 build --platform ios --profile development",
+    "eas:build:preview": "corepack pnpm dlx eas-cli@18.9.1 build --platform ios --profile preview",
+    "eas:build:production": "corepack pnpm dlx eas-cli@18.9.1 build --platform ios --profile production",
+    "eas:submit:production": "corepack pnpm dlx eas-cli@18.9.1 submit --platform ios --profile production --latest",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
@@ -14,9 +20,11 @@
     "expo": "~54.0.34",
     "expo-audio": "~1.1.1",
     "expo-blur": "~15.0.8",
+    "expo-dev-client": "~6.0.21",
     "expo-file-system": "~19.0.22",
     "expo-image": "~3.0.11",
     "expo-secure-store": "~15.0.8",
+    "expo-splash-screen": "~31.0.13",
     "expo-status-bar": "~3.0.9",
     "react": "19.1.0",
     "react-native": "0.81.5",

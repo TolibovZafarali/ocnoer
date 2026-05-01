@@ -35,10 +35,10 @@ export const APPENDIX_MARKDOWN = `# Appendix
 
 - his wife, QUEEN MAELIS REGENT, of House Cassivar,
 - their daughter, PRINCESS OCNOER,
-- his brother, KING VAELAN VALAMERE, Lord of Rillford, The King in Valestria,
+- his brother, KING VAELAN VALAMERE, Lord of Rillford, King in Valestria,
     - his wife, QUEEN ZAREEN, of House Saffryn,
     - their children:
-        - PRINCE JORREN, the heir to Valestria,
+        - PRINCE JORREN, heir to Valestria,
         - PRINCE AREN,
 - his small council:
     - LORD PASCAL VARRON, Hand of the King, Lord of Greenbarrow,
@@ -58,7 +58,7 @@ KING AEDRIC VELYR, The King in Mirath,
 
 - his wife, {QUEEN ANYA}, of House Selwynne,
 - their children:
-    - PRINCE LUCAIR VELYR, the heir to Mirath,
+    - PRINCE LUCAIR VELYR, heir to Mirath,
     - PRINCESS NYRA VELYR,
 - his small council:
 - LORD MAREK SELWYNNE, Hand of the King, Lord of Windharbor,
@@ -77,14 +77,14 @@ KING SAHRAN SAFFRYN, The King in Azdara,
 - his wife, QUEEN SAMIRA, of House Namar,
 - their children:
     - PRINCESS ZAREEN SAFFRYN,
-    - PRINCE RAZIN SAFFRYN, the heir to Azdara,
+    - PRINCE RAZIN SAFFRYN, heir to Azdara,
 - his small council:
     - LORD RAYAN MARZAI, Hand of the King, Lord of Cinderport,
     - GRAND MAESTER SAQIR,
     - LORD NASSIR VEZDAN, Lord of Emberrow,
     - LORD FARESH QADIRAN, Lord of Waymeet,
     - LORD JAHIR KHARAZ, master of war,
-        - his son, {SER TAREK KHARAZ}, lost duel to Vaelan Valamere for Princess Zareen,
+        - his son, {SER TAREK KHARAZ}, lost duel to Vaelan Valamere for Princess Zareen
 
 The principal houses sworn to Azdara are Marzai, Vezdan, Qadiran, Kharaz, Namar
 
@@ -95,13 +95,12 @@ KING ALARIC MONTCLERE, The King in Aurelion,
 - his wife, QUEEN SELENE, of House Brineholt,
 - their children:
     - PRINCE CYRAN MONTCLERE, the heir to Aurelion,
-    - PRINCESS ELIORA MONTCLERE,
-    - PRINCE ROMAN MONTCLERE,
+    - PRINCE ELIORA MONTCLERE,
 - his small council:
     - LORD RORAN CASSIVAR, Hand of the King, Lord of Cassivarhold,
         - his sister, QUEEN MAELIS VALAMERE, of Valestria,
     - GRAND MAESTER ELYS,
-    - LORD BERRIK BRINEHOLT, Lord of Stormwind,
+    - LORD BERRIK BRINEHOLT, Lord of Highcairn,
     - LORD CALDRIC THORNEVALE, master of coin,
     - LADY VESPERA TIDEWYNE, master of laws,
 

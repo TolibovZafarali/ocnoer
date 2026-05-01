@@ -5,7 +5,7 @@ import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { SCENE_DRAFT_TEMP_ID_PREFIX } from "@/lib/story/scene-draft";
-import type { SceneDraftPayload } from "@/lib/story/types";
+import type { CharacterDefinition, SceneDraftPayload } from "@/lib/story/types";
 
 const storageData = new Map<string, string>();
 const adminSceneDraftStore = new Map<
@@ -1532,10 +1532,10 @@ describe("non-dialogue commits", () => {
         objectPath.endsWith(".reader.webp")
     );
     const compileInput = compileRuntimeStoryMock.mock.calls.at(-1)?.[0] as
-      | { snapshot: { characters: Array<{ slug: string; emotions: any[] }> } }
+      | { snapshot: { characters: CharacterDefinition[] } }
       | undefined;
     const lucair = compileInput?.snapshot.characters.find(
-      (character: { slug: string }) => character.slug === "lucair"
+      (character) => character.slug === "lucair"
     );
     const emotion = lucair?.emotions[0];
 
@@ -1544,7 +1544,13 @@ describe("non-dialogue commits", () => {
       contentType: "image/webp",
       upsert: true
     });
-    expect(emotion?.imageDerivatives?.[0]).toMatchObject({
+    expect(emotion).toBeDefined();
+
+    if (!emotion) {
+      throw new Error("Expected Lucair default emotion to be compiled.");
+    }
+
+    expect(emotion.imageDerivatives?.[0]).toMatchObject({
       storagePath: `runtime/${derivativeUpload?.[0]}`,
       contentType: "image/webp",
       renderKind: "bitmap",

@@ -69,5 +69,6 @@ Ocnoer is a single Next.js app with:
 - [tech-stack.md](/Users/zafaralitolibov/Documents/ocnoer/docs/tech-stack.md)
 - [game-flow.md](/Users/zafaralitolibov/Documents/ocnoer/docs/game-flow.md)
 - [development-guide.md](/Users/zafaralitolibov/Documents/ocnoer/docs/development-guide.md)
+- [ios-release-prep.md](/Users/zafaralitolibov/Documents/ocnoer/docs/ios-release-prep.md)
 - [roadmap.md](/Users/zafaralitolibov/Documents/ocnoer/docs/roadmap.md)
 - [data-protection.md](/Users/zafaralitolibov/Documents/ocnoer/docs/data-protection.md)

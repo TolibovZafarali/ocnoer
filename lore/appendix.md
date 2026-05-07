@@ -30,7 +30,7 @@ KING AEDRIC VELYR, The King in Mirath,
 - his wife, {QUEEN ANYA}, of House Selwynne,
 - their children:
     - PRINCE LUCAIR VELYR, heir to Mirath,
-    - PRINCESS NYRA VELYR,
+    - PRINCESS LINA VELYR,
 - his small council:
 - LORD MAREK SELWYNNE, Hand of the King, Lord of Windharbor,
 - GRAND MAESTER CALDREN,

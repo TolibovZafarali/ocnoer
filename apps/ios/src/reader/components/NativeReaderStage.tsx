@@ -29,7 +29,10 @@ import {
   usePreloadedReaderImageRef,
   usePreloadedReaderSvgAst
 } from "../imagePreload";
-import { NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND } from "../nativeReaderStageStyle";
+import {
+  NATIVE_READER_CHARACTER_PORTRAIT_EMPTY_STYLE,
+  NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND
+} from "../nativeReaderStageStyle";
 import { resolveNativeReaderPortraitLayout } from "../portraitLayout";
 import { ocnoerTheme, ocnoerWebPlayer } from "../../ui/theme";
 import {
@@ -51,6 +54,7 @@ function NativeCachedImage(props: {
   imageUrl: string;
   imageRef?: ReturnType<typeof usePreloadedReaderImageRef>;
   requireImageRef?: boolean;
+  renderSurface?: "stage-portrait";
   style: StyleProp<ImageStyle>;
 }) {
   const loadedImageRef = usePreloadedReaderImageRef(props.imageUrl);
@@ -62,7 +66,9 @@ function NativeCachedImage(props: {
   const mountedAtRef = useRef(Date.now());
 
   if (!source) {
-    return <View style={[props.style, styles.missingAsset]} />;
+    return (
+      <View style={[props.style as StyleProp<ViewStyle>, styles.missingAsset]} />
+    );
   }
 
   if (props.requireImageRef && !resolvedImageRef) {
@@ -83,7 +89,7 @@ function NativeCachedImage(props: {
     );
   }
 
-  return (
+  const image = (
     <ExpoImage
       accessibilityLabel={props.accessibilityLabel}
       accessible={Boolean(props.accessibilityLabel)}
@@ -117,9 +123,23 @@ function NativeCachedImage(props: {
       priority="high"
       recyclingKey={props.imageUrl}
       source={source}
-      style={props.style}
+      style={
+        props.renderSurface === "stage-portrait"
+          ? styles.cachedImageFill
+          : props.style
+      }
       transition={0}
     />
+  );
+
+  if (props.renderSurface !== "stage-portrait") {
+    return image;
+  }
+
+  return (
+    <View style={props.style as StyleProp<ViewStyle>}>
+      {image}
+    </View>
   );
 }
 
@@ -272,6 +292,7 @@ function CachedPortraitAsset(props: {
             imageRef={props.imageRef}
             imageUrl={props.imageUrl}
             requireImageRef={requireImageRef}
+            renderSurface="stage-portrait"
             style={styles.portraitBitmap}
           />
         </View>
@@ -295,6 +316,7 @@ function CachedPortraitAsset(props: {
             imageRef={props.imageRef}
             imageUrl={props.imageUrl}
             requireImageRef={requireImageRef}
+            renderSurface="stage-portrait"
             style={
               svgWrapper.embeddedImage
                 ? getEmbeddedImageStyle({
@@ -324,6 +346,7 @@ function CachedPortraitAsset(props: {
           imageRef={props.imageRef}
           imageUrl={props.imageUrl}
           requireImageRef={requireImageRef}
+          renderSurface="stage-portrait"
           style={styles.portraitBitmap}
         />
       </View>
@@ -585,7 +608,11 @@ const styles = StyleSheet.create({
     height: "100%",
     width: "100%"
   },
+  cachedImageFill: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND
+  },
   missingAsset: {
-    backgroundColor: "transparent"
+    ...NATIVE_READER_CHARACTER_PORTRAIT_EMPTY_STYLE
   }
 });

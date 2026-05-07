@@ -586,6 +586,146 @@ describe("createNativeReaderPresentation", () => {
     );
   });
 
+  it("maps selected dress state to a valid visible dialogue portrait", () => {
+    const character = createRuntimeCharacter({
+      id: "character_ocnoer",
+      name: "Ocnoer",
+      slug: "ocnoer",
+      imagePath: "runtime/media/ocnoer-default.png",
+      dresses: [
+        {
+          key: "gala",
+          label: "Gala",
+          emotionOverrides: [
+            {
+              emotionKey: "default",
+              imagePath: "runtime/media/ocnoer-gala.png"
+            }
+          ]
+        },
+        {
+          key: "celestial",
+          label: "Celestial",
+          emotionOverrides: [
+            {
+              emotionKey: "default",
+              imagePath: "runtime/media/ocnoer-celestial.png"
+            }
+          ]
+        }
+      ]
+    });
+    const bundle = createBundle({
+      characterPool: [character],
+      entry: createDialogueEntry({
+        speaker: {
+          type: "dress_prompt",
+          characterId: "character_ocnoer",
+          characterName: "Ocnoer",
+          characterSlug: "ocnoer",
+          dressOptions: [
+            {
+              key: BASE_DRESS_OPTION_KEY,
+              label: "Default Dress",
+              previewImagePath: "runtime/media/ocnoer-default.png"
+            },
+            {
+              key: "gala",
+              label: "Gala",
+              previewImagePath: "runtime/media/ocnoer-gala.png"
+            },
+            {
+              key: "celestial",
+              label: "Celestial",
+              previewImagePath: "runtime/media/ocnoer-celestial.png"
+            }
+          ]
+        },
+        stage: {
+          left: null,
+          right: null
+        }
+      }),
+      entries: [
+        createDialogueEntry({
+          speaker: {
+            type: "dress_prompt",
+            characterId: "character_ocnoer",
+            characterName: "Ocnoer",
+            characterSlug: "ocnoer",
+            dressOptions: [
+              {
+                key: BASE_DRESS_OPTION_KEY,
+                label: "Default Dress",
+                previewImagePath: "runtime/media/ocnoer-default.png"
+              },
+              {
+                key: "gala",
+                label: "Gala",
+                previewImagePath: "runtime/media/ocnoer-gala.png"
+              },
+              {
+                key: "celestial",
+                label: "Celestial",
+                previewImagePath: "runtime/media/ocnoer-celestial.png"
+              }
+            ]
+          },
+          stage: {
+            left: null,
+            right: null
+          }
+        }),
+        createDialogueEntry({
+          id: "line_after_dress",
+          speaker: {
+            type: "character",
+            characterId: "character_ocnoer",
+            characterName: "Ocnoer",
+            characterSlug: "ocnoer",
+            emotionKey: "default",
+            emotionLabel: "Default",
+            emotionImagePath: "runtime/media/ocnoer-default.png"
+          },
+          stage: {
+            left: createStageCharacter({
+              characterId: "character_ocnoer",
+              characterName: "Ocnoer",
+              characterSlug: "ocnoer",
+              imagePath: "runtime/media/ocnoer-default.png"
+            }),
+            right: null
+          }
+        })
+      ]
+    });
+    const selectedPresentation = createNativeReaderPresentation({
+      supabaseUrl,
+      bundle,
+      readerState: {
+        ...readerState,
+        dialogueIndex: 1
+      },
+      branchFlags: {
+        [getDressBranchFlagKey("character_ocnoer")]: "celestial"
+      },
+      catName: null
+    });
+
+    expect(selectedPresentation?.status).toBe("supported");
+    expect(selectedPresentation?.leftPortrait?.imageUrl).toBe(
+      publicUrl("runtime/media/ocnoer-celestial.png")
+    );
+    expect(selectedPresentation?.blockingAssetRefs).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          role: "portrait",
+          url: publicUrl("runtime/media/ocnoer-celestial.png")
+        })
+      ])
+    );
+  });
+
   it("keeps an active right-side character visible when an inactive left character is staged", () => {
     const presentation = createNativeReaderPresentation({
       supabaseUrl,

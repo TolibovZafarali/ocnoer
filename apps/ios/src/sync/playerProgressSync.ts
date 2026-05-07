@@ -4,6 +4,7 @@ import {
   type PlayerProgressConflictSource
 } from "@ocnoer/story-core";
 
+import { MobileApiError } from "../api/mobileApiClient";
 import { createPlayerProgressClient } from "../api/playerProgressClient";
 import {
   clearProgressByPlayerId,
@@ -19,6 +20,32 @@ export type SyncedPlayerProgressResult = {
 
 function getErrorMessage(error: unknown, fallback: string) {
   return error instanceof Error ? error.message : fallback;
+}
+
+declare const __DEV__: boolean | undefined;
+
+function isDevelopmentBuild() {
+  return typeof __DEV__ !== "undefined" && __DEV__;
+}
+
+function isTransientMobileApiError(error: unknown) {
+  return error instanceof MobileApiError && error.isTransient;
+}
+
+function logTransientProgressSyncFailure(action: string, error: unknown) {
+  if (!isDevelopmentBuild()) {
+    return;
+  }
+
+  const detail =
+    error instanceof MobileApiError
+      ? (error.technicalMessage ?? error.message)
+      : getErrorMessage(error, "Unknown progress sync failure.");
+
+  console.warn("[progress-sync] transient backend sync failed", {
+    action,
+    detail
+  });
 }
 
 export async function loadSyncedPlayerProgress(input: {
@@ -57,6 +84,15 @@ export async function loadSyncedPlayerProgress(input: {
     try {
       await client.saveProgress(input.token, resolved.progress);
     } catch (error) {
+      if (isTransientMobileApiError(error)) {
+        logTransientProgressSyncFailure("upload-local-progress", error);
+        return {
+          progress: resolved.progress,
+          source: resolved.source,
+          warning: null
+        };
+      }
+
       return {
         progress: resolved.progress,
         source: resolved.source,
@@ -96,6 +132,13 @@ export async function saveSyncedPlayerProgress(input: {
       warning: null
     };
   } catch (error) {
+    if (isTransientMobileApiError(error)) {
+      logTransientProgressSyncFailure("save-progress", error);
+      return {
+        warning: null
+      };
+    }
+
     return {
       warning: getErrorMessage(
         error,

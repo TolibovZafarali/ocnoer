@@ -24,8 +24,16 @@ import {
   isReaderPerfDiagnosticsEnabled,
   setReaderDecodeSchedulerInteractionState,
   usePreloadedReaderImageRef,
-  usePreloadedReaderSvgAst
+  usePreloadedReaderSvgAst,
+  warmNextSceneAssets
 } from "../imagePreload";
+import {
+  createNativeReaderDressOptionImageKey,
+  getNativeReaderDressOptionAtIndex,
+  getNativeReaderDressOptionPreviewImageUrl,
+  isNativeReaderDressPreviewReady,
+  isResolvedNativeReaderDressOption
+} from "../dressChoice";
 import {
   createNativeReaderDialogueAnimationKey,
   getNativeReaderTextUpdateCadenceMs,
@@ -36,7 +44,11 @@ import {
   shouldStartDeferredNativeReaderTextReveal,
   type NativeReaderForceCompleteRequest
 } from "../nativeReaderDialogueMotion";
-import { NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND } from "../nativeReaderStageStyle";
+import {
+  NATIVE_READER_DRESS_PREVIEW_FALLBACK_BACKGROUND,
+  NATIVE_READER_DRESS_PREVIEW_LOADING_OVERLAY_BACKGROUND,
+  NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND
+} from "../nativeReaderStageStyle";
 import { LoadingSpinner } from "../../ui/LoadingSpinner";
 import { OcnoerTextInput } from "../../ui/primitives";
 import { ocnoerTheme, ocnoerWebPlayer } from "../../ui/theme";
@@ -555,36 +567,199 @@ const BatchedTypedDialogueText = memo(function BatchedTypedDialogueText(props: {
 
 function DressOptionCard(props: {
   option: NativeReaderDressOption;
+  disabled: boolean;
   onPress: () => void;
+  warmupVersion: number;
 }) {
-  const renderMode = props.option.previewImageUrl
-    ? getAssetRenderMode(props.option.previewImageUrl)
-    : "unknown";
-  const svgAst = usePreloadedReaderSvgAst(
-    renderMode === "original-svg" || renderMode === "true-vector-svg"
-      ? props.option.previewImageUrl
-      : null
+  const selectedPreviewKey = createNativeReaderDressOptionImageKey(
+    props.option
   );
-  const previewImageRef = usePreloadedReaderImageRef(
-    props.option.previewImageUrl
+  const [visibleOption, setVisibleOption] =
+    useState<NativeReaderDressOption | null>(null);
+  const [failedPreviewKey, setFailedPreviewKey] = useState<string | null>(null);
+  const visiblePreviewKey =
+    createNativeReaderDressOptionImageKey(visibleOption);
+  const selectedPreviewFailed =
+    Boolean(selectedPreviewKey) && failedPreviewKey === selectedPreviewKey;
+  const isSelectedPreviewReady = isNativeReaderDressPreviewReady({
+    option: props.option,
+    visibleOption,
+    failedPreviewKey
+  });
+  const pendingOption =
+    selectedPreviewKey &&
+    selectedPreviewKey !== visiblePreviewKey &&
+    !selectedPreviewFailed
+      ? props.option
+      : null;
+  const showLoadingFallback = Boolean(pendingOption);
+  const showUnavailableFallback =
+    selectedPreviewFailed ||
+    (!isResolvedNativeReaderDressOption(props.option) && !visibleOption);
+  const isPressDisabled =
+    props.disabled || showUnavailableFallback || !isSelectedPreviewReady;
+
+  useEffect(() => {
+    setFailedPreviewKey(null);
+
+    if (!selectedPreviewKey) {
+      setVisibleOption(null);
+    }
+  }, [props.warmupVersion, selectedPreviewKey]);
+
+  const handleLayerReady = useCallback(
+    (readyKey: string) => {
+      if (readyKey !== selectedPreviewKey) {
+        return;
+      }
+
+      setVisibleOption(props.option);
+      setFailedPreviewKey(null);
+    },
+    [props.option, selectedPreviewKey]
   );
-  const previewImageSource = props.option.previewImageUrl
-    ? createCachedReaderImageSource(props.option.previewImageUrl)
-    : null;
+  const handleLayerError = useCallback(
+    (failedKey: string) => {
+      if (failedKey !== selectedPreviewKey) {
+        return;
+      }
+
+      setFailedPreviewKey(failedKey);
+      if (!visibleOption) {
+        setVisibleOption(null);
+      }
+    },
+    [selectedPreviewKey, visibleOption]
+  );
 
   return (
     <Pressable
       accessibilityLabel={`Choose ${props.option.label}`}
       accessibilityRole="button"
+      disabled={isPressDisabled}
       onPress={props.onPress}
       style={({ pressed }) => [
         styles.dressPreviewButton,
-        pressed ? styles.pressed : null
+        isPressDisabled ? styles.disabled : null,
+        pressed && !isPressDisabled ? styles.pressed : null
       ]}
     >
-      {props.option.previewImageUrl &&
-      (renderMode === "original-svg" || renderMode === "true-vector-svg") ? (
-        <View pointerEvents="none" style={styles.dressPreviewSvg}>
+      <View pointerEvents="none" style={styles.dressPreviewMedia}>
+        {!visibleOption ? (
+          <DressPreviewFallback
+            label={showUnavailableFallback ? "unavailable" : "loading"}
+            loading={showLoadingFallback && !showUnavailableFallback}
+          />
+        ) : null}
+        {visibleOption ? (
+          <DressPreviewImageLayer
+            key={`visible:${visiblePreviewKey}`}
+            isVisible
+            option={visibleOption}
+            warmupVersion={props.warmupVersion}
+            onError={handleLayerError}
+            onReady={handleLayerReady}
+          />
+        ) : null}
+        {pendingOption ? (
+          <DressPreviewImageLayer
+            key={`pending:${selectedPreviewKey}`}
+            isVisible={false}
+            option={pendingOption}
+            warmupVersion={props.warmupVersion}
+            onError={handleLayerError}
+            onReady={handleLayerReady}
+          />
+        ) : null}
+        {showLoadingFallback && visibleOption ? (
+          <DressPreviewLoadingOverlay />
+        ) : null}
+        {showUnavailableFallback && visibleOption ? (
+          <DressPreviewFallback label="unavailable" loading={false} />
+        ) : null}
+      </View>
+    </Pressable>
+  );
+}
+
+function DressPreviewImageLayer(props: {
+  isVisible: boolean;
+  option: NativeReaderDressOption;
+  warmupVersion: number;
+  onError: (previewKey: string) => void;
+  onReady: (previewKey: string) => void;
+}) {
+  const { onError, onReady } = props;
+  const previewImageUrl = getNativeReaderDressOptionPreviewImageUrl(
+    props.option
+  );
+  const previewKey = createNativeReaderDressOptionImageKey(props.option);
+  const renderMode = previewImageUrl
+    ? getAssetRenderMode(previewImageUrl)
+    : "unknown";
+  const isSvgRenderMode =
+    renderMode === "original-svg" || renderMode === "true-vector-svg";
+  const svgAst = usePreloadedReaderSvgAst(
+    isSvgRenderMode ? previewImageUrl : null
+  );
+  const previewImageRef = usePreloadedReaderImageRef(previewImageUrl);
+  const previewImageSource = useMemo(
+    () =>
+      previewImageUrl ? createCachedReaderImageSource(previewImageUrl) : null,
+    [previewImageUrl, props.warmupVersion]
+  );
+  const resolvedPreviewImageSource = previewImageRef ?? previewImageSource;
+  const layerStyle = [
+    styles.dressPreviewLayer,
+    props.isVisible ? null : styles.dressPreviewPendingLayer
+  ];
+
+  useEffect(() => {
+    if (!previewKey) {
+      return;
+    }
+
+    if (!previewImageUrl) {
+      onError(previewKey);
+      return;
+    }
+
+    if (isSvgRenderMode && svgAst) {
+      onReady(previewKey);
+      return;
+    }
+
+    if (!isSvgRenderMode && previewImageRef) {
+      onReady(previewKey);
+      return;
+    }
+
+    if (props.warmupVersion > 0) {
+      if (isSvgRenderMode || !resolvedPreviewImageSource) {
+        onError(previewKey);
+      }
+    }
+  }, [
+    isSvgRenderMode,
+    onError,
+    onReady,
+    previewImageRef,
+    previewImageSource,
+    previewImageUrl,
+    previewKey,
+    props.warmupVersion,
+    resolvedPreviewImageSource,
+    svgAst
+  ]);
+
+  if (!previewImageUrl || !previewKey) {
+    return null;
+  }
+
+  if (isSvgRenderMode) {
+    return (
+      <View pointerEvents="none" style={layerStyle}>
+        <View style={styles.dressPreviewSvg}>
           {svgAst ? (
             <SvgAst
               ast={svgAst}
@@ -596,22 +771,62 @@ function DressOptionCard(props: {
             />
           ) : null}
         </View>
-      ) : props.option.previewImageUrl && previewImageSource ? (
-        <ExpoImage
-          cachePolicy="memory-disk"
-          contentFit="contain"
-          priority="high"
-          recyclingKey={props.option.previewImageUrl}
-          source={previewImageRef ?? previewImageSource}
-          style={styles.dressPreviewImage}
-          transition={0}
+      </View>
+    );
+  }
+
+  if (!resolvedPreviewImageSource) {
+    return null;
+  }
+
+  return (
+    <View pointerEvents="none" style={layerStyle}>
+      <ExpoImage
+        cachePolicy="memory-disk"
+        contentFit="contain"
+        onDisplay={() => onReady(previewKey)}
+        onError={() => onError(previewKey)}
+        onLoad={() => onReady(previewKey)}
+        priority="high"
+        recyclingKey={previewKey}
+        source={resolvedPreviewImageSource}
+        style={styles.dressPreviewImage}
+        transition={0}
+      />
+    </View>
+  );
+}
+
+function DressPreviewFallback(props: {
+  label: "loading" | "unavailable";
+  loading: boolean;
+}) {
+  return (
+    <View style={styles.dressPreviewFallback}>
+      {props.loading ? (
+        <LoadingSpinner
+          accessibilityLabel="Loading dress preview"
+          size={18}
+          tintColor={ocnoerTheme.colors.textSubtle}
         />
       ) : (
-        <View style={styles.emptyDressPreview}>
-          <Text style={styles.emptyDressPreviewText}>No preview</Text>
-        </View>
+        <Text style={styles.emptyDressPreviewText}>
+          {props.label === "unavailable" ? "Preview unavailable" : " "}
+        </Text>
       )}
-    </Pressable>
+    </View>
+  );
+}
+
+function DressPreviewLoadingOverlay() {
+  return (
+    <View style={styles.dressPreviewLoadingOverlay}>
+      <LoadingSpinner
+        accessibilityLabel="Loading dress preview"
+        size={18}
+        tintColor={ocnoerTheme.colors.text}
+      />
+    </View>
   );
 }
 
@@ -710,6 +925,7 @@ export const NativeReaderDialogue = memo(function NativeReaderDialogue(
     [textCharacters]
   );
   const [dressIndex, setDressIndex] = useState(0);
+  const [dressAssetWarmupVersion, setDressAssetWarmupVersion] = useState(0);
   const isImmediatelyComplete =
     props.presentation.status !== "supported" || dialogueText.length === 0;
   const [forceCompleteRequest, setForceCompleteRequest] =
@@ -727,17 +943,56 @@ export const NativeReaderDialogue = memo(function NativeReaderDialogue(
     [props.presentation.stageCharacters]
   );
   const characterPortraitCount = props.presentation.stageCharacters.length;
-  const selectedDressOption = useMemo(() => {
-    if (props.presentation.status !== "supported") {
-      return null;
+  const dressPromptAssetRefs = useMemo(
+    () =>
+      props.presentation.entryType === "dress_prompt"
+        ? props.presentation.blockingAssetRefs.filter(
+            (assetRef) => assetRef.role === "dress-preview"
+          )
+        : [],
+    [props.presentation]
+  );
+  useEffect(() => {
+    if (dressPromptAssetRefs.length === 0) {
+      return;
     }
 
-    return (
-      props.presentation.dressOptions[
-        Math.min(dressIndex, props.presentation.dressOptions.length - 1)
-      ] ?? null
+    let cancelled = false;
+
+    void warmNextSceneAssets(
+      props.presentation.dialogueEntryId,
+      dressPromptAssetRefs,
+      "high"
+    ).finally(() => {
+      if (!cancelled) {
+        setDressAssetWarmupVersion((currentVersion) => currentVersion + 1);
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [dressPromptAssetRefs, props.presentation.dialogueEntryId]);
+  const dressChoice = useMemo(() => {
+    if (props.presentation.status !== "supported") {
+      return {
+        index: -1,
+        option: null
+      };
+    }
+
+    return getNativeReaderDressOptionAtIndex(
+      props.presentation.dressOptions,
+      dressIndex
     );
   }, [dressIndex, props.presentation]);
+  const selectedDressOption = dressChoice.option;
+  const selectedDressIndex = dressChoice.index;
+  const supportedDressOptions =
+    props.presentation.status === "supported"
+      ? props.presentation.dressOptions
+      : [];
+  const supportedDressOptionCount = supportedDressOptions.length;
 
   dialogueRenderCountRef.current += 1;
 
@@ -767,6 +1022,25 @@ export const NativeReaderDialogue = memo(function NativeReaderDialogue(
   useEffect(() => {
     setDressIndex(0);
   }, [props.presentation.dialogueEntryId]);
+
+  useEffect(() => {
+    if (props.presentation.status !== "supported") {
+      return;
+    }
+
+    setDressIndex((currentIndex) => {
+      const normalizedIndex = getNativeReaderDressOptionAtIndex(
+        supportedDressOptions,
+        currentIndex
+      ).index;
+
+      return normalizedIndex >= 0 ? normalizedIndex : 0;
+    });
+  }, [
+    props.presentation.status,
+    supportedDressOptionCount,
+    supportedDressOptions
+  ]);
 
   useEffect(() => {
     setTextCompletionState({
@@ -964,13 +1238,24 @@ export const NativeReaderDialogue = memo(function NativeReaderDialogue(
 
                 <View style={styles.dressPreviewWrap}>
                   <DressOptionCard
-                    option={selectedDressOption}
-                    onPress={() =>
-                      props.onSelectDressOption(selectedDressOption.key)
+                    disabled={
+                      props.isMoving ||
+                      !isResolvedNativeReaderDressOption(selectedDressOption)
                     }
+                    option={selectedDressOption}
+                    warmupVersion={dressAssetWarmupVersion}
+                    onPress={() => {
+                      if (
+                        !isResolvedNativeReaderDressOption(selectedDressOption)
+                      ) {
+                        return;
+                      }
+
+                      props.onSelectDressOption(selectedDressOption.key);
+                    }}
                   />
                   <Text style={styles.dressCounter}>
-                    {dressIndex + 1} of{" "}
+                    {selectedDressIndex + 1} of{" "}
                     {supportedPresentation.dressOptions.length}
                   </Text>
                 </View>
@@ -1149,6 +1434,35 @@ const styles = StyleSheet.create({
     backgroundColor: NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND,
     height: "100%",
     width: "100%"
+  },
+  dressPreviewMedia: {
+    alignItems: "center",
+    backgroundColor: NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND,
+    height: "100%",
+    justifyContent: "center",
+    overflow: "hidden",
+    position: "relative",
+    width: "100%"
+  },
+  dressPreviewLayer: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  dressPreviewPendingLayer: {
+    opacity: 0
+  },
+  dressPreviewFallback: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    backgroundColor: NATIVE_READER_DRESS_PREVIEW_FALLBACK_BACKGROUND,
+    justifyContent: "center"
+  },
+  dressPreviewLoadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: "center",
+    backgroundColor: NATIVE_READER_DRESS_PREVIEW_LOADING_OVERLAY_BACKGROUND,
+    justifyContent: "center"
   },
   dressPreviewSvg: {
     backgroundColor: NATIVE_READER_TRANSPARENT_PORTRAIT_BACKGROUND,

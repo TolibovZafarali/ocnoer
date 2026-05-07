@@ -17,6 +17,10 @@ import {
   shouldDeferNativeReaderTextReveal,
   shouldStartDeferredNativeReaderTextReveal
 } from "../nativeReaderDialogueMotion";
+import {
+  NATIVE_READER_DRESS_PREVIEW_FALLBACK_BACKGROUND,
+  NATIVE_READER_DRESS_PREVIEW_LOADING_OVERLAY_BACKGROUND
+} from "../nativeReaderStageStyle";
 
 describe("NativeReaderDialogue motion", () => {
   it("uses a relaxed iOS typewriter cadence", () => {
@@ -39,6 +43,15 @@ describe("NativeReaderDialogue motion", () => {
       createNativeReaderDialogueAnimationKey({
         ...basePresentation
       })
+    );
+  });
+
+  it("keeps dress preview fallback visible inside the dress prompt", () => {
+    expect(NATIVE_READER_DRESS_PREVIEW_FALLBACK_BACKGROUND).toBe(
+      "rgba(255, 255, 255, 0.04)"
+    );
+    expect(NATIVE_READER_DRESS_PREVIEW_LOADING_OVERLAY_BACKGROUND).toBe(
+      "rgba(0, 0, 0, 0.18)"
     );
   });
 

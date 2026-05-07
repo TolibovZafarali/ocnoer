@@ -10,14 +10,20 @@ export const MOBILE_RUNTIME_ENV_VARS = [
 
 type MobileRuntimeEnvVar = (typeof MOBILE_RUNTIME_ENV_VARS)[number];
 
-type PublicEnv = Partial<Record<MobileRuntimeEnvVar, string>>;
+type PublicEnv = {
+  EXPO_PUBLIC_OCNOER_SUPABASE_URL?: string;
+  EXPO_PUBLIC_OCNOER_RUNTIME_MANIFEST_PATH?: string;
+};
 
 declare const process: {
   env: PublicEnv;
 };
 
-function readPublicEnvVar(name: MobileRuntimeEnvVar) {
-  const value = process.env[name]?.trim();
+function readPublicEnvVar(
+  name: MobileRuntimeEnvVar,
+  rawValue: string | undefined
+) {
+  const value = rawValue?.trim();
 
   if (!value) {
     throw new Error(
@@ -33,10 +39,18 @@ function normalizeSupabaseUrl(value: string) {
 }
 
 export function getMobileRuntimeConfig(): MobileRuntimeConfig {
+  // Expo statically inlines EXPO_PUBLIC_* values only for dot-notation access.
+  const supabaseUrl = readPublicEnvVar(
+    "EXPO_PUBLIC_OCNOER_SUPABASE_URL",
+    process.env.EXPO_PUBLIC_OCNOER_SUPABASE_URL
+  );
+  const manifestPath = readPublicEnvVar(
+    "EXPO_PUBLIC_OCNOER_RUNTIME_MANIFEST_PATH",
+    process.env.EXPO_PUBLIC_OCNOER_RUNTIME_MANIFEST_PATH
+  );
+
   return {
-    supabaseUrl: normalizeSupabaseUrl(
-      readPublicEnvVar("EXPO_PUBLIC_OCNOER_SUPABASE_URL")
-    ),
-    manifestPath: readPublicEnvVar("EXPO_PUBLIC_OCNOER_RUNTIME_MANIFEST_PATH")
+    supabaseUrl: normalizeSupabaseUrl(supabaseUrl),
+    manifestPath
   };
 }

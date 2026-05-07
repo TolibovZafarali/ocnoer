@@ -31,3 +31,4 @@ prisma/dev.db-journal
 
 # local backups
 /backups
+.vercel

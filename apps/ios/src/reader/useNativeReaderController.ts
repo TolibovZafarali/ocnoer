@@ -46,6 +46,7 @@ import {
   warmNextSceneAssets
 } from "./imagePreload";
 import { NATIVE_READER_DIALOGUE_ADVANCE_COMMIT_DELAY_MS } from "./nativeReaderDialogueMotion";
+import { isSelectableRuntimeDressOptionKey } from "./dressChoice";
 import {
   createNativeReaderPresentation,
   getNativeReaderChapterPortraitAuditEntries,
@@ -1996,6 +1997,11 @@ export function useNativeReaderController(
       const speaker = entry?.speaker;
 
       if (!speaker || speaker.type !== "dress_prompt") {
+        return;
+      }
+
+      if (!isSelectableRuntimeDressOptionKey(speaker, optionKey)) {
+        setActionError("Choose a visible outfit before continuing.");
         return;
       }
 

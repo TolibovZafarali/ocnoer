@@ -8,14 +8,16 @@ export const MOBILE_API_ENV_VARS = ["EXPO_PUBLIC_OCNOER_API_BASE_URL"] as const;
 
 type MobileApiEnvVar = (typeof MOBILE_API_ENV_VARS)[number];
 
-type PublicEnv = Partial<Record<MobileApiEnvVar, string>>;
+type PublicEnv = {
+  EXPO_PUBLIC_OCNOER_API_BASE_URL?: string;
+};
 
 declare const process: {
   env: PublicEnv;
 };
 
-function readPublicEnvVar(name: MobileApiEnvVar) {
-  const value = process.env[name]?.trim();
+function readPublicEnvVar(name: MobileApiEnvVar, rawValue: string | undefined) {
+  const value = rawValue?.trim();
 
   if (!value) {
     throw new Error(
@@ -75,9 +77,13 @@ function normalizeBaseUrl(value: string) {
 }
 
 export function getMobileApiConfig(): MobileApiConfig {
+  // Expo statically inlines EXPO_PUBLIC_* values only for dot-notation access.
+  const baseUrl = readPublicEnvVar(
+    "EXPO_PUBLIC_OCNOER_API_BASE_URL",
+    process.env.EXPO_PUBLIC_OCNOER_API_BASE_URL
+  );
+
   return {
-    baseUrl: normalizeBaseUrl(
-      readPublicEnvVar("EXPO_PUBLIC_OCNOER_API_BASE_URL")
-    )
+    baseUrl: normalizeBaseUrl(baseUrl)
   };
 }

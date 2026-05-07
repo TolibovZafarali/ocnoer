@@ -3,20 +3,25 @@
     "name": "Ocnoer",
     "slug": "ocnoer-ios",
     "scheme": "ocnoer",
-    "version": "0.1.0",
+    "version": "1.0",
     "orientation": "portrait",
-    "platforms": ["ios"],
+    "platforms": [
+      "ios"
+    ],
     "userInterfaceStyle": "dark",
     "icon": "./assets/icon.png",
     "ios": {
       "bundleIdentifier": "com.ocnoer.player",
-      "buildNumber": "1",
+      "buildNumber": "5",
       "supportsTablet": false,
       "requireFullScreen": true,
       "userInterfaceStyle": "dark",
       "icon": "./assets/icon.png",
       "infoPlist": {
-        "ITSAppUsesNonExemptEncryption": false
+        "ITSAppUsesNonExemptEncryption": false,
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": false
+        }
       }
     },
     "plugins": [
@@ -32,7 +37,11 @@
       ]
     ],
     "extra": {
-      "portStage": "mobile-session-bootstrap"
-    }
+      "portStage": "mobile-session-bootstrap",
+      "eas": {
+        "projectId": "dc2ba98e-7368-48df-8bad-9fb7c37912d6"
+      }
+    },
+    "owner": "sw.crxs"
   }
 }

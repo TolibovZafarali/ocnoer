@@ -3,7 +3,7 @@
     "name": "Ocnoer",
     "slug": "ocnoer-ios",
     "scheme": "ocnoer",
-    "version": "1.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "platforms": [
       "ios"
@@ -12,7 +12,7 @@
     "icon": "./assets/icon.png",
     "ios": {
       "bundleIdentifier": "com.ocnoer.player",
-      "buildNumber": "5",
+      "buildNumber": "6",
       "supportsTablet": false,
       "requireFullScreen": true,
       "userInterfaceStyle": "dark",

@@ -157,6 +157,9 @@ type InFlightCatNameCommit = {
   promise: Promise<MobilePlayer>;
 };
 
+export const NATIVE_CAT_NAME_SAVE_ERROR_MESSAGE =
+  "We couldn't save your cat name. Please check your connection and try again.";
+
 const PRESENTATION_READY_CACHE_LIMIT = 6;
 const PRESENTATION_LOOKAHEAD_DEPTH = 2;
 export const NATIVE_SCENE_TRANSITION_COVER_MS = 900;
@@ -403,10 +406,46 @@ export function getNativeReaderProgressBranchFlags(input: {
   return nextBranchFlags;
 }
 
-function shouldPersistPendingCatNameForAdvanceResult(
+export function shouldPersistPendingCatNameForAdvanceResult(
   result: RuntimeAdvanceResult
 ) {
-  return result.type === "chapter-break" || result.type === "story-finished";
+  return (
+    result.type === "scene-transition" ||
+    result.type === "chapter-break" ||
+    result.type === "story-finished"
+  );
+}
+
+export async function saveSubmittedNativeCatName(input: {
+  branchFlags: PlayerProgress["branchFlags"];
+  catName: string;
+  onUpdateCatName: (catName: string) => Promise<MobilePlayer>;
+}) {
+  let savedPlayer: MobilePlayer;
+
+  try {
+    savedPlayer = await input.onUpdateCatName(input.catName);
+  } catch {
+    throw new Error(NATIVE_CAT_NAME_SAVE_ERROR_MESSAGE);
+  }
+
+  const savedCatNameState = resolveInitialCatNameState({
+    catName: savedPlayer.catName,
+    catNameLocked: savedPlayer.catNameLocked
+  });
+
+  if (!savedCatNameState.catName || !savedCatNameState.catNameLocked) {
+    throw new Error(NATIVE_CAT_NAME_SAVE_ERROR_MESSAGE);
+  }
+
+  return {
+    catName: savedCatNameState.catName,
+    branchFlags: reconcileCatNameBranchFlags({
+      branchFlags: input.branchFlags,
+      catName: savedCatNameState.catName,
+      catNameLocked: true
+    })
+  };
 }
 
 export async function commitNativeReaderAdvanceAfterPresentationGate(input: {
@@ -1731,7 +1770,7 @@ export function useNativeReaderController(
         });
 
         if (!savedCatNameState.catName || !savedCatNameState.catNameLocked) {
-          throw new Error("Unable to confirm the saved cat name.");
+          throw new Error(NATIVE_CAT_NAME_SAVE_ERROR_MESSAGE);
         }
 
         const nextBranchFlags = reconcileCatNameBranchFlags({
@@ -2029,6 +2068,10 @@ export function useNativeReaderController(
   );
 
   const submitCatName = useCallback(async () => {
+    if (isSavingCatName) {
+      return;
+    }
+
     const validationMessage = validateCatNameInput(catNameInputValue);
 
     if (validationMessage) {
@@ -2040,23 +2083,30 @@ export function useNativeReaderController(
 
     setCatNameInputError(null);
     setActionError(null);
+    setIsSavingCatName(true);
+
+    let savedCatNameState: Awaited<ReturnType<typeof saveSubmittedNativeCatName>>;
 
     try {
-      const nextBranchFlags = reconcileCatNameBranchFlags({
+      savedCatNameState = await saveSubmittedNativeCatName({
         branchFlags,
         catName: normalizedCatName,
-        catNameLocked: true
+        onUpdateCatName
       });
+    } catch {
+      setCatNameInputError(NATIVE_CAT_NAME_SAVE_ERROR_MESSAGE);
+      return;
+    } finally {
+      setIsSavingCatName(false);
+    }
 
-      setCatName(normalizedCatName);
-      setCatNameInputValue(normalizedCatName);
-      setPendingCatNameCommit(
-        normalizedCatName === persistedCatNameRef.current
-          ? null
-          : normalizedCatName
-      );
-      setBranchFlags(nextBranchFlags);
+    persistedCatNameRef.current = savedCatNameState.catName;
+    setCatName(savedCatNameState.catName);
+    setCatNameInputValue(savedCatNameState.catName);
+    setPendingCatNameCommit(null);
+    setBranchFlags(savedCatNameState.branchFlags);
 
+    try {
       if (
         runtimeState.status === "ready" ||
         runtimeState.status === "finished"
@@ -2064,14 +2114,12 @@ export function useNativeReaderController(
         setIsMoving(true);
         await advanceFromRuntimeState(runtimeState, {
           allowUnreadyTargetWait: true,
-          branchFlags: nextBranchFlags,
-          catName: normalizedCatName
+          branchFlags: savedCatNameState.branchFlags,
+          catName: savedCatNameState.catName
         });
       }
     } catch (error) {
-      setCatNameInputError(
-        getErrorMessage(error, "Unable to continue with that cat name.")
-      );
+      setActionError(getErrorMessage(error, "Unable to continue the story."));
     } finally {
       setIsMoving(false);
     }
@@ -2079,6 +2127,8 @@ export function useNativeReaderController(
     advanceFromRuntimeState,
     branchFlags,
     catNameInputValue,
+    isSavingCatName,
+    onUpdateCatName,
     runtimeState,
     setPendingCatNameCommit
   ]);

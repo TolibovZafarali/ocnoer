@@ -89,9 +89,13 @@ import {
   ensureNativeReaderPresentationRenderReady,
   getNativeReaderOpeningBoundaryForRetreat,
   getNativeReaderProgressBranchFlags,
+  NATIVE_CAT_NAME_SAVE_ERROR_MESSAGE,
   resolveNativeReaderAdvanceCommitPlan,
-  runNativeReaderSceneTransition
+  runNativeReaderSceneTransition,
+  saveSubmittedNativeCatName,
+  shouldPersistPendingCatNameForAdvanceResult
 } from "./useNativeReaderController";
+import { createNativeReaderPresentation } from "./readerPresentation";
 
 const supabaseUrl = "https://example.supabase.co";
 const ensureSceneAssetsReadyMock = vi.mocked(ensureSceneAssetsReady);
@@ -1097,6 +1101,107 @@ describe("native advance readiness", () => {
 });
 
 describe("native cat-name progress persistence", () => {
+  it("saves the canonical cat name before the caller advances", async () => {
+    const onUpdateCatName = vi.fn(async (catName: string) => ({
+      id: "player_1",
+      firstName: "Lina",
+      catName,
+      catNameLocked: true
+    }));
+    const advance = vi.fn();
+
+    const savedCatNameState = await saveSubmittedNativeCatName({
+      branchFlags: {
+        "dress:ocnoer": "gala"
+      },
+      catName: "Miso",
+      onUpdateCatName
+    });
+
+    advance(savedCatNameState);
+
+    expect(onUpdateCatName).toHaveBeenCalledWith("Miso");
+    expect(advance).toHaveBeenCalledWith({
+      catName: "Miso",
+      branchFlags: {
+        "dress:ocnoer": "gala",
+        cat_name: "Miso",
+        cat_name_locked: true
+      }
+    });
+  });
+
+  it("uses the saved canonical cat name for later placeholders", async () => {
+    const savedCatNameState = await saveSubmittedNativeCatName({
+      branchFlags: {},
+      catName: "Miso",
+      onUpdateCatName: vi.fn(async () => ({
+        id: "player_1",
+        firstName: "Lina",
+        catName: "Miso",
+        catNameLocked: true
+      }))
+    });
+    const bundle = createBundle([
+      createEntry({
+        id: "line_after_cat_name",
+        text: "Stay close, {{ cat_name }}.",
+        speaker: {
+          type: "narrator"
+        },
+        stage: {
+          left: null,
+          right: null
+        }
+      })
+    ]);
+    const presentation = createNativeReaderPresentation({
+      supabaseUrl,
+      bundle,
+      readerState: {
+        sceneIndex: 0,
+        dialogueIndex: 0,
+        isChapterComplete: false
+      },
+      branchFlags: savedCatNameState.branchFlags,
+      catName: savedCatNameState.catName
+    });
+
+    expect(presentation?.status).toBe("supported");
+    expect(
+      presentation?.status === "supported" ? presentation.dialogueText : null
+    ).toBe("Stay close, Miso.");
+  });
+
+  it("blocks advance with a retryable error when canonical cat-name save fails", async () => {
+    const advance = vi.fn();
+
+    await expect(
+      saveSubmittedNativeCatName({
+        branchFlags: {},
+        catName: "Miso",
+        onUpdateCatName: vi.fn(async () => {
+          throw new Error("HTTP 500");
+        })
+      })
+    ).rejects.toThrow(NATIVE_CAT_NAME_SAVE_ERROR_MESSAGE);
+
+    expect(advance).not.toHaveBeenCalled();
+  });
+
+  it("keeps pending cat-name commits flushable across normal scene transitions", () => {
+    expect(
+      shouldPersistPendingCatNameForAdvanceResult({
+        type: "scene-transition",
+        state: {
+          sceneIndex: 1,
+          dialogueIndex: 0,
+          isChapterComplete: false
+        }
+      })
+    ).toBe(true);
+  });
+
   it("strips pending cat-name flags from progress sync until boundary save", () => {
     expect(
       getNativeReaderProgressBranchFlags({

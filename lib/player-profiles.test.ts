@@ -211,6 +211,34 @@ describe("player profile helpers", () => {
     });
   });
 
+  it("writes player-submitted cat names to canonical PlayerProfile fields", async () => {
+    updateManyMock.mockResolvedValueOnce({ count: 1 });
+
+    await setPlayerProfileCatNameOnce({
+      playerId: "player_1",
+      catName: " Miso "
+    });
+
+    expect(updateManyMock).toHaveBeenCalledWith({
+      where: {
+        id: "player_1",
+        OR: [
+          {
+            catNameLocked: false
+          },
+          {
+            catName: null
+          }
+        ],
+        status: PlayerStatus.ACTIVE
+      },
+      data: {
+        catName: "Miso",
+        catNameLocked: true
+      }
+    });
+  });
+
   it("touches player presence only when the stored timestamp is stale", async () => {
     const now = new Date("2026-05-01T12:00:00.000Z");
     updateManyMock.mockResolvedValueOnce({ count: 1 });

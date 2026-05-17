@@ -5,6 +5,7 @@ const createChapterMock = vi.fn();
 const createCharacterMock = vi.fn();
 const createDialogueEntryMock = vi.fn();
 const deleteCharacterMock = vi.fn();
+const deletePlayerProfileMock = vi.fn();
 const discardSceneDraftMock = vi.fn();
 const getAdminStoryDataMock = vi.fn();
 const isSceneDraftStorageUnavailableErrorMock = vi.fn();
@@ -28,6 +29,14 @@ vi.mock("next/navigation", () => ({
 
 vi.mock("@/lib/auth/admin", () => ({
   requireAdminSession: requireAdminSessionMock
+}));
+
+vi.mock("@/lib/player-profiles", () => ({
+  PlayerProfileError: class PlayerProfileError extends Error {},
+  createPlayerProfile: vi.fn(),
+  deletePlayerProfile: deletePlayerProfileMock,
+  updatePlayerProfile: vi.fn(),
+  updatePlayerProfileStatus: vi.fn()
 }));
 
 vi.mock("@/lib/story/repository", () => ({
@@ -68,6 +77,7 @@ const {
   createChapterAction,
   createDialogueEntryAction,
   deleteCharacterAction,
+  deletePlayerProfileAction,
   discardSceneDraftAction,
   reorderDialogueEntryAction,
   saveSceneDraftAction,
@@ -159,6 +169,61 @@ describe("deleteCharacterAction", () => {
     expect(revalidatePathMock).toHaveBeenCalledWith("/admin/characters");
     expect(redirectMock).toHaveBeenCalledWith(
       "/admin/characters?status=success&message=Character+deleted."
+    );
+  });
+});
+
+describe("deletePlayerProfileAction", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    requireAdminSessionMock.mockResolvedValue(undefined);
+    deletePlayerProfileMock.mockResolvedValue(undefined);
+    unstableRethrowMock.mockImplementation(() => {});
+  });
+
+  it("requires an admin session before deleting", async () => {
+    requireAdminSessionMock.mockRejectedValueOnce(new Error("unauthorized"));
+
+    const formData = new FormData();
+    formData.set("playerId", "player_123");
+    formData.set("confirmDelete", "yes");
+
+    await expect(deletePlayerProfileAction(formData)).rejects.toThrow(
+      "unauthorized"
+    );
+
+    expect(deletePlayerProfileMock).not.toHaveBeenCalled();
+  });
+
+  it("deletes a player and redirects to the player index", async () => {
+    const formData = new FormData();
+    formData.set("playerId", "player_123");
+    formData.set("returnTo", "/admin/players");
+    formData.set("confirmDelete", "yes");
+
+    await expect(deletePlayerProfileAction(formData)).rejects.toThrow(
+      "REDIRECT:/admin/players?status=success&message=Player+deleted."
+    );
+
+    expect(deletePlayerProfileMock).toHaveBeenCalledWith("player_123");
+    expect(revalidatePathMock).toHaveBeenCalledWith("/admin/players");
+    expect(redirectMock).toHaveBeenCalledWith(
+      "/admin/players?status=success&message=Player+deleted."
+    );
+  });
+
+  it("redirects with an error when deletion is not confirmed", async () => {
+    const formData = new FormData();
+    formData.set("playerId", "player_123");
+    formData.set("returnTo", "/admin/players");
+
+    await expect(deletePlayerProfileAction(formData)).rejects.toThrow(
+      "REDIRECT:/admin/players?status=error&message=Confirm+deletion+before+deleting+this+player."
+    );
+
+    expect(deletePlayerProfileMock).not.toHaveBeenCalled();
+    expect(redirectMock).toHaveBeenCalledWith(
+      "/admin/players?status=error&message=Confirm+deletion+before+deleting+this+player."
     );
   });
 });

@@ -4,6 +4,7 @@ const findManyMock = vi.fn();
 const createMock = vi.fn();
 const updateMock = vi.fn();
 const updateManyMock = vi.fn();
+const deleteMock = vi.fn();
 const findUniqueMock = vi.fn();
 
 vi.mock("@/lib/prisma", () => ({
@@ -13,6 +14,7 @@ vi.mock("@/lib/prisma", () => ({
       create: createMock,
       update: updateMock,
       updateMany: updateManyMock,
+      delete: deleteMock,
       findUnique: findUniqueMock
     }
   }
@@ -21,6 +23,7 @@ vi.mock("@/lib/prisma", () => ({
 const {
   PlayerProfileError,
   createPlayerProfile,
+  deletePlayerProfile,
   isPlayerOnline,
   normalizePlayerUsername,
   setPlayerProfileCatNameOnce,
@@ -263,5 +266,27 @@ describe("player profile helpers", () => {
         lastSeenAt: now
       }
     });
+  });
+
+  it("deletes a player profile by id", async () => {
+    deleteMock.mockResolvedValueOnce({ id: "player_1" });
+
+    await deletePlayerProfile("player_1");
+
+    expect(deleteMock).toHaveBeenCalledWith({
+      where: {
+        id: "player_1"
+      }
+    });
+  });
+
+  it("maps missing player deletes to a profile error", async () => {
+    deleteMock.mockRejectedValueOnce({
+      code: "P2025"
+    });
+
+    await expect(deletePlayerProfile("missing_player")).rejects.toBeInstanceOf(
+      PlayerProfileError
+    );
   });
 });

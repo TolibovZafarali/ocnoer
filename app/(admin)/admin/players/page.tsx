@@ -2,6 +2,7 @@ import { PlayerStatus } from "@prisma/client";
 
 import {
   createPlayerProfileAction,
+  deletePlayerProfileAction,
   updatePlayerProfileAction,
   updatePlayerProfileStatusAction
 } from "@/app/(admin)/admin/actions";
@@ -368,6 +369,51 @@ export default async function PlayersPage({ searchParams }: PlayersPageProps) {
 
                           <div className="flex justify-end">
                             <Button type="submit">Save Player</Button>
+                          </div>
+                        </form>
+                      </details>
+
+                      <details className="rounded-xl border border-rose-200 bg-rose-50 p-3">
+                        <summary className="cursor-pointer text-sm font-medium text-rose-900">
+                          Delete player
+                        </summary>
+
+                        <form
+                          action={deletePlayerProfileAction}
+                          className="mt-3 space-y-3"
+                        >
+                          <input
+                            type="hidden"
+                            name="playerId"
+                            value={player.id}
+                          />
+                          <input
+                            type="hidden"
+                            name="returnTo"
+                            value="/admin/players"
+                          />
+                          <label className="flex items-start gap-3 rounded-xl border border-rose-200 bg-white/70 px-4 py-3 text-sm text-rose-900">
+                            <input
+                              type="checkbox"
+                              name="confirmDelete"
+                              value="yes"
+                              required
+                              className="mt-0.5 h-4 w-4 rounded border-rose-300 text-rose-700"
+                            />
+                            <span>
+                              I understand that deleting this player permanently
+                              removes the profile and saved progress.
+                            </span>
+                          </label>
+
+                          <div className="flex justify-end">
+                            <Button
+                              type="submit"
+                              size="sm"
+                              variant="destructive"
+                            >
+                              Delete Player
+                            </Button>
                           </div>
                         </form>
                       </details>

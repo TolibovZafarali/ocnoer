@@ -8,6 +8,7 @@ import { requireAdminSession } from "@/lib/auth/admin";
 import {
   PlayerProfileError,
   createPlayerProfile,
+  deletePlayerProfile,
   updatePlayerProfile,
   updatePlayerProfileStatus
 } from "@/lib/player-profiles";
@@ -244,6 +245,14 @@ function getPlayerStatus(formData: FormData) {
   }
 
   return statusValue;
+}
+
+function requirePlayerDeleteConfirmation(formData: FormData) {
+  if (getOptionalString(formData, "confirmDelete") !== "yes") {
+    throw new PlayerProfileError(
+      "Confirm deletion before deleting this player."
+    );
+  }
 }
 
 export type AdminRedirectActionState = {
@@ -1371,6 +1380,23 @@ export async function updatePlayerProfileStatusAction(formData: FormData) {
         playerId: getRequiredString(formData, "playerId", "Player id"),
         status: getPlayerStatus(formData)
       });
+    }
+  });
+}
+
+export async function deletePlayerProfileAction(formData: FormData) {
+  await runAdminAction({
+    formData,
+    fallbackPath: "/admin/players",
+    successMessage: "Player deleted.",
+    action: async () => {
+      requirePlayerDeleteConfirmation(formData);
+
+      await deletePlayerProfile(
+        getRequiredString(formData, "playerId", "Player id")
+      );
+
+      return withStatus("/admin/players", "success", "Player deleted.");
     }
   });
 }

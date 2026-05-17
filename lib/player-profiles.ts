@@ -265,6 +265,22 @@ export async function updatePlayerProfileStatus(input: {
   }
 }
 
+export async function deletePlayerProfile(playerId: string) {
+  try {
+    return await prisma.playerProfile.delete({
+      where: {
+        id: playerId
+      }
+    });
+  } catch (error) {
+    if (getPrismaErrorCode(error) === "P2025") {
+      throw new PlayerProfileError("Player profile not found.");
+    }
+
+    throw error;
+  }
+}
+
 export async function findPlayerProfileForSecret(input: { secret: string }) {
   const normalizedSecret = normalizePlayerUsername(input.secret);
 

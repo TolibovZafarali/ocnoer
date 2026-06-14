@@ -12,182 +12,78 @@ body {
   color: rgb(15 23 42);
 }
 
-.landing {
+.landing-background {
   position: relative;
   isolation: isolate;
+  min-height: 100svh;
+  overflow: hidden;
   color-scheme: dark;
+  background: #050509;
+}
+
+.landing-background::before {
+  position: absolute;
+  inset: -28%;
+  z-index: 0;
+  content: "";
   background:
     radial-gradient(
-      ellipse 80% 60% at 20% 0%,
-      rgb(48 27 92 / 75%) 0%,
-      transparent 60%
+      circle at 18% 22%,
+      rgb(255 76 118 / 0.34) 0%,
+      rgb(255 76 118 / 0.18) 18%,
+      transparent 38%
     ),
     radial-gradient(
-      ellipse 70% 60% at 80% 100%,
-      rgb(14 30 86 / 70%) 0%,
-      transparent 60%
+      circle at 82% 18%,
+      rgb(99 102 241 / 0.36) 0%,
+      rgb(99 102 241 / 0.17) 20%,
+      transparent 42%
     ),
     radial-gradient(
-      ellipse 60% 50% at 50% 50%,
-      rgb(20 12 40 / 60%) 0%,
-      transparent 70%
+      circle at 54% 88%,
+      rgb(20 184 166 / 0.24) 0%,
+      rgb(20 184 166 / 0.1) 24%,
+      transparent 48%
     ),
-    linear-gradient(180deg, #050309 0%, #07060f 50%, #030208 100%);
-}
-
-.landing-aurora {
-  position: absolute;
-  border-radius: 9999px;
-  filter: blur(110px);
+    radial-gradient(
+      circle at 46% 42%,
+      rgb(250 204 21 / 0.12) 0%,
+      transparent 32%
+    ),
+    conic-gradient(
+      from 210deg at 50% 50%,
+      rgb(255 76 118 / 0.1),
+      rgb(99 102 241 / 0.18),
+      rgb(20 184 166 / 0.12),
+      rgb(250 204 21 / 0.08),
+      rgb(255 76 118 / 0.1)
+    );
+  filter: blur(72px) saturate(1.28);
+  opacity: 0.92;
   pointer-events: none;
-  will-change: transform, opacity;
-  mix-blend-mode: screen;
+  transform: translate3d(0, 0, 0);
 }
 
-.landing-aurora-one {
-  top: -14rem;
-  left: -10rem;
-  height: 38rem;
-  width: 38rem;
-  background: radial-gradient(
-    circle,
-    rgb(139 92 246 / 55%) 0%,
-    rgb(99 102 241 / 22%) 45%,
-    transparent 72%
-  );
-  animation: landing-drift-one 22s ease-in-out infinite alternate;
-}
-
-.landing-aurora-two {
-  right: -12rem;
-  top: 6%;
-  height: 34rem;
-  width: 34rem;
-  background: radial-gradient(
-    circle,
-    rgb(56 189 248 / 45%) 0%,
-    rgb(59 130 246 / 18%) 50%,
-    transparent 75%
-  );
-  animation: landing-drift-two 26s ease-in-out infinite alternate;
-}
-
-.landing-aurora-three {
-  bottom: -16rem;
-  left: 45%;
-  height: 36rem;
-  width: 40rem;
-  transform: translateX(-50%);
-  background: radial-gradient(
-    circle,
-    rgb(236 72 153 / 32%) 0%,
-    rgb(168 85 247 / 16%) 45%,
-    transparent 76%
-  );
-  animation: landing-drift-three 28s ease-in-out infinite alternate;
-}
-
-.landing-grain {
+.landing-background::after {
   position: absolute;
   inset: 0;
-  opacity: 0.06;
-  pointer-events: none;
-  background-image: url("data:image/svg+xml;utf8,<svg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 0.6 0'/></filter><rect width='100%25' height='100%25' filter='url(%23n)'/></svg>");
-  mix-blend-mode: overlay;
-}
-
-.landing-vignette {
-  position: absolute;
-  inset: 0;
-  pointer-events: none;
-  background: radial-gradient(
-    ellipse at center,
-    transparent 40%,
-    rgb(0 0 0 / 55%) 100%
-  );
-}
-
-.landing-icon-wrap {
-  position: relative;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.landing-icon-glow {
-  position: absolute;
-  inset: -2.5rem;
-  border-radius: 9999px;
-  background: radial-gradient(
-    circle,
-    rgb(167 139 250 / 35%) 0%,
-    rgb(56 189 248 / 12%) 45%,
-    transparent 72%
-  );
-  filter: blur(28px);
-  z-index: 0;
-}
-
-.landing-icon {
-  position: relative;
   z-index: 1;
-  border-radius: 2rem;
-  box-shadow:
-    0 30px 80px -20px rgb(0 0 0 / 80%),
-    0 0 0 1px rgb(255 255 255 / 8%) inset;
-}
-
-.landing-cta {
-  position: relative;
-  font-feature-settings: "ss01";
-}
-
-@keyframes landing-drift-one {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1);
-    opacity: 0.6;
-  }
-
-  100% {
-    transform: translate3d(6rem, 4rem, 0) scale(1.18);
-    opacity: 0.85;
-  }
-}
-
-@keyframes landing-drift-two {
-  0% {
-    transform: translate3d(0, 0, 0) scale(1);
-    opacity: 0.5;
-  }
-
-  100% {
-    transform: translate3d(-5rem, -3.5rem, 0) scale(1.16);
-    opacity: 0.75;
-  }
-}
-
-@keyframes landing-drift-three {
-  0% {
-    transform: translateX(-50%) translateY(0) scale(1);
-    opacity: 0.4;
-  }
-
-  100% {
-    transform: translateX(-50%) translateY(-4rem) scale(1.12);
-    opacity: 0.65;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .landing-aurora-one,
-  .landing-aurora-two,
-  .landing-aurora-three {
-    animation: none;
-  }
-
-  .landing-aurora {
-    opacity: 0.55;
-  }
+  content: "";
+  background:
+    radial-gradient(
+      ellipse at center,
+      transparent 0%,
+      transparent 44%,
+      rgb(0 0 0 / 0.7) 100%
+    ),
+    linear-gradient(
+      180deg,
+      rgb(255 255 255 / 0.08) 0%,
+      transparent 22%,
+      transparent 76%,
+      rgb(0 0 0 / 0.64) 100%
+    );
+  pointer-events: none;
 }
 
 .admin-area-theme {

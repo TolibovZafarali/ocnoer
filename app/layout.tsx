@@ -38,7 +38,7 @@ const chapterCardFont = Bad_Script({
 
 export const metadata: Metadata = {
   title: "Ocnoer",
-  description: "Private interactive story platform"
+  description: "A cinematic medieval fantasy interactive story."
 };
 
 type RootLayoutProps = {

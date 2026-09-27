@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy | Ocnoer: In Another Life",
-  description: "Privacy policy for Ocnoer: In Another Life."
+  title: "Privacy Policy | Ocnoer",
+  description: "Privacy policy for Ocnoer."
 };
 
 export default function PrivacyPage() {
@@ -11,7 +11,7 @@ export default function PrivacyPage() {
     <main className="min-h-screen bg-slate-50 px-6 py-12 text-slate-900 sm:py-16">
       <article className="mx-auto max-w-3xl rounded-lg border border-slate-200 bg-white px-6 py-8 shadow-sm sm:px-10 sm:py-10">
         <p className="text-sm font-medium uppercase tracking-[0.18em] text-slate-500">
-          Ocnoer: In Another Life
+          Ocnoer
         </p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
           Privacy Policy
@@ -22,9 +22,9 @@ export default function PrivacyPage() {
           <section>
             <h2 className="text-xl font-semibold text-slate-950">Overview</h2>
             <p className="mt-3">
-              Ocnoer: In Another Life is an interactive story and visual novel.
-              This policy explains the information the app may use so players can
-              access the story and continue from where they left off.
+              Ocnoer is a cinematic fantasy interactive story. This policy
+              explains the information the app may use so players can access the
+              story and continue from where they left off.
             </p>
           </section>
 
@@ -34,10 +34,10 @@ export default function PrivacyPage() {
             </h2>
             <p className="mt-3">
               The app may use login and session information to let a player sign
-              in, restore access, and open the story. The app may also save story
-              progress, story choices, a cat name if the player enters one, and
-              basic activity or progress sync information needed to keep the
-              experience consistent across supported surfaces.
+              in, restore access, and open the story. The app may also save
+              story progress, story choices, a cat name if the player enters
+              one, and basic activity or progress sync information needed to
+              keep the experience consistent across supported surfaces.
             </p>
           </section>
 

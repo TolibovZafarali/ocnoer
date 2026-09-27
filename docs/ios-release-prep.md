@@ -11,8 +11,8 @@ Configured in `apps/ios/app.json`:
 - Expo slug: `ocnoer-ios`
 - URL scheme: `ocnoer`
 - iOS bundle identifier: `com.ocnoer.player`
-- Version: `0.1.0`
-- iOS build number: `1`
+- Version: `1.0.1`
+- iOS build number: `6`
 - Orientation: portrait
 - Platforms: iOS only
 - Tablet support: disabled
@@ -240,10 +240,15 @@ Do these manually:
 ## App Store Submission Prep
 
 - App name: confirm final public name. Current binary display name is `Ocnoer`.
-- Subtitle: placeholder needed.
-- Description: placeholder needed; should describe the private story/player
-  experience without overpromising features not in the app.
-- Keywords: placeholder needed.
+- Subtitle: `A Cinematic Fantasy Tale`
+- Description:
+  Ocnoer is a cinematic medieval fantasy story built around atmosphere, choices,
+  and discovery. Step into a quiet world of castles, secrets, journeys, and
+  characters shaped by fate. Read through immersive scenes, follow the unfolding
+  mystery, and experience a polished storybook rhythm with an elegant visual
+  style.
+- Keywords:
+  `fantasy,story,interactive,medieval,cinematic,narrative,mystery,adventure,castle`
 - Support URL: required; use a public HTTPS page or support email landing page.
 - Privacy policy URL: required; use a public HTTPS privacy policy covering the
   web app, mobile app, Supabase/backend processing, media loading, and progress
@@ -254,10 +259,10 @@ Do these manually:
   specifications when generating final sizes.
 - Category recommendation: `Games` if you want the story reader positioned as an
   interactive game; otherwise `Entertainment` is the conservative fallback for a
-  private interactive story app.
+  cinematic interactive story app.
 - Age rating notes: complete Apple's questionnaire based on actual story
-  content. Consider fantasy themes, romance, conflict, fear, violence,
-  profanity, medical content, gambling, web access, and user-generated content
+  content. Consider fantasy themes, conflict, fear, violence, profanity,
+  medical content, gambling, web access, and user-generated content
   honestly. The current app has no open user-generated public feed.
 - Export compliance: the app uses standard platform/network encryption only
   based on the current code. `ITSAppUsesNonExemptEncryption` is set to `false`,

@@ -4,8 +4,8 @@ import Link from "next/link";
 const supportEmail = "support@ocnoer.com";
 
 export const metadata: Metadata = {
-  title: "Support | Ocnoer: In Another Life",
-  description: "Support information for Ocnoer: In Another Life."
+  title: "Support | Ocnoer",
+  description: "Support information for Ocnoer."
 };
 
 export default function SupportPage() {
@@ -13,15 +13,15 @@ export default function SupportPage() {
     <main className="min-h-screen bg-slate-50 px-6 py-12 text-slate-900 sm:py-16">
       <article className="mx-auto max-w-3xl rounded-lg border border-slate-200 bg-white px-6 py-8 shadow-sm sm:px-10 sm:py-10">
         <p className="text-sm font-medium uppercase tracking-[0.18em] text-slate-500">
-          Ocnoer: In Another Life
+          Ocnoer
         </p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight text-slate-950 sm:text-4xl">
           Support
         </h1>
         <p className="mt-5 text-base leading-7 text-slate-700">
-          Need help with Ocnoer: In Another Life? Send a message and include a
-          short description of what happened, including whether the issue affects
-          login, story loading, or saved progress.
+          Need help with Ocnoer? Send a message and include a short description
+          of what happened, including whether the issue affects login, story
+          loading, or saved progress.
         </p>
 
         <div className="mt-8 rounded-lg border border-slate-200 bg-slate-50 p-5">

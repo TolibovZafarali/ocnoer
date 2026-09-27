@@ -1,5 +1,16 @@
 # Ocnoer
 
+The website currently serves only a text-free, interactive nebula at `/`.
+All other page URLs redirect home. Story APIs and server-action requests return
+an empty 404 response. The previous story and authoring source is preserved but
+disabled by the site-wide gate in `middleware.ts`.
+
+Drag or use the arrow keys to rotate the nebula. Space pauses the motion, and
+Home resets the view. The two icon controls also pause and reset. Reduced-motion
+preferences disable automatic rotation and inertia.
+
+## Preserved Story Application
+
 Ocnoer is a single Next.js app with:
 
 - a password-gated admin authoring area at `/admin`

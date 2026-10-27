@@ -6,6 +6,7 @@ import {
 
 import { MobileApiError } from "../api/mobileApiClient";
 import { createPlayerProgressClient } from "../api/playerProgressClient";
+import { isOfflineMode } from "../config/contentMode";
 import {
   clearProgressByPlayerId,
   loadProgressByPlayerId,
@@ -53,6 +54,15 @@ export async function loadSyncedPlayerProgress(input: {
   token: string;
 }): Promise<SyncedPlayerProgressResult> {
   const localProgress = await loadProgressByPlayerId(input.playerId);
+
+  if (isOfflineMode()) {
+    return {
+      progress: localProgress,
+      source: localProgress ? "local-cache" : "none",
+      warning: null
+    };
+  }
+
   const client = createPlayerProgressClient();
   let serverProgress: PlayerProgress | null = null;
 
@@ -118,6 +128,10 @@ export async function saveSyncedPlayerProgress(input: {
 }) {
   await saveProgressByPlayerId(input.playerId, input.progress);
 
+  if (isOfflineMode()) {
+    return { warning: null };
+  }
+
   try {
     const result = await createPlayerProgressClient().saveProgress(
       input.token,
@@ -152,6 +166,9 @@ export async function clearSyncedPlayerProgress(input: {
   playerId: string;
   token: string;
 }) {
-  await createPlayerProgressClient().clearProgress(input.token);
+  if (!isOfflineMode()) {
+    await createPlayerProgressClient().clearProgress(input.token);
+  }
+
   await clearProgressByPlayerId(input.playerId);
 }

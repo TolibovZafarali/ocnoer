@@ -1,55 +1,98 @@
+import { unstable_doesMiddlewareMatch } from "next/experimental/testing/server";
 import { NextRequest } from "next/server";
 import { describe, expect, it } from "vitest";
 
-import { middleware } from "./middleware";
+import { config, middleware } from "./middleware";
+import nextConfig from "./next.config";
 
-describe("homepage-only access", () => {
-  it.each([
-    "/play",
-    "/play?chapter=old-chapter",
-    "/admin",
-    "/admin/login",
-    "/admin/chapters/chapter/scenes/scene",
-    "/sign-in",
-    "/privacy",
-    "/support",
-    "/unknown/page",
-    "/story.json"
-  ])("returns page %s to the homepage without retaining its query", (path) => {
-    const response = middleware(new NextRequest(`https://example.com${path}`));
+const disabledPaths = [
+  "/",
+  "/?chapter=old-chapter",
+  "/play",
+  "/play/",
+  "/admin",
+  "/admin/login",
+  "/admin/chapters/chapter/scenes/scene",
+  "/sign-in",
+  "/privacy",
+  "/support",
+  "/api",
+  "/api/player/progress",
+  "/api/mobile/player/session",
+  "/api/player/cat-name",
+  "/_next/static/chunks/main.js",
+  "/_next/image?url=%2Ficon.png&w=640&q=75",
+  "/_next/data/build-id/index.json",
+  "/_next/data/build-id/play.json",
+  "/icon.png",
+  "/favicon.ico",
+  "/nebula.svg",
+  "/robots.txt",
+  "/sitemap.xml",
+  "/unknown/page",
+  "/story.json",
+  "/%61dmin",
+  "/api%2Fplayer%2Fprogress"
+];
 
-    expect(response.status).toBe(307);
-    expect(response.headers.get("location")).toBe("https://example.com/");
-    expect(response.headers.get("cache-control")).toBe("no-store");
-  });
+const internalHeaders: Record<string, string>[] = [
+  { rsc: "1", "next-router-prefetch": "1" },
+  { "next-action": "previous-action-id" },
+  { "x-nextjs-data": "1" },
+  {
+    "x-middleware-subrequest":
+      "middleware:middleware:middleware:middleware:middleware"
+  }
+];
 
-  it.each(["/", "/_next/static/chunks/main.js", "/icon.png", "/nebula.svg"])(
-    "allows the homepage and required asset %s",
+describe("deactivated website", () => {
+  it.each(disabledPaths)(
+    "matches %s without an asset or route exception",
     (path) => {
-      const response = middleware(
-        new NextRequest(`https://example.com${path}`)
-      );
-
-      expect(response.headers.get("x-middleware-next")).toBe("1");
+      expect(
+        unstable_doesMiddlewareMatch({
+          config,
+          nextConfig,
+          url: `https://example.com${path}`
+        })
+      ).toBe(true);
     }
   );
 
-  it.each([
-    ["/api/player/progress", "GET"],
-    ["/api/mobile/player/session", "POST"],
-    ["/api", "GET"],
-    ["/", "POST"],
-    ["/admin/chapters", "POST"],
-    ["/play", "POST"],
-    ["/api/player/cat-name", "PATCH"],
-    ["/api/mobile/player/session", "DELETE"]
-  ])("blocks disabled endpoints and mutations: %s %s", async (path, method) => {
-    const response = middleware(
-      new NextRequest(`https://example.com${path}`, { method })
-    );
+  it("returns an empty uncached 410 without forwarding to an application handler", async () => {
+    const response = middleware();
 
-    expect(response.status).toBe(404);
+    expect(response.status).toBe(410);
+    expect(response.headers.get("cache-control")).toBe("no-store");
+    expect(response.headers.get("x-robots-tag")).toBe(
+      "noindex, nofollow, noarchive"
+    );
+    expect(response.headers.get("x-middleware-next")).toBeNull();
+    expect(response.headers.get("x-middleware-rewrite")).toBeNull();
     expect(response.headers.get("location")).toBeNull();
+    expect(response.headers.get("set-cookie")).toBeNull();
     expect(await response.text()).toBe("");
+  });
+
+  it.each(internalHeaders)(
+    "does not exempt internal-looking request headers: %j",
+    (headers) => {
+      const request = new NextRequest("https://example.com/play", { headers });
+
+      expect(
+        unstable_doesMiddlewareMatch({
+          config,
+          nextConfig,
+          url: request.url,
+          headers
+        })
+      ).toBe(true);
+      expect(middleware().status).toBe(410);
+    }
+  );
+
+  it("allows the shutdown response to handle slash and data URLs directly", () => {
+    expect(nextConfig.skipTrailingSlashRedirect).toBe(true);
+    expect(nextConfig.skipMiddlewareUrlNormalize).toBe(true);
   });
 });

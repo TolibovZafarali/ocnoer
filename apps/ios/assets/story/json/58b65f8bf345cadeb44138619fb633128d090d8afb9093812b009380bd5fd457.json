@@ -1,0 +1,195 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-04-28T01:09:47.075Z",
+  "backgroundImages": [
+    {
+      "id": "bg_b2e9cf64e46e4a6bb3a7a52b669cbfb4",
+      "label": "Balcony - Valestria",
+      "slug": "balcony-valestria",
+      "altText": "Golden sunset over Valestria's stone city",
+      "filePath": "runtime/media/background-images/bg_b2e9cf64e46e4a6bb3a7a52b669cbfb4"
+    },
+    {
+      "id": "bg_46af3faca7ea414badea0836299a2c58",
+      "label": "Black Background",
+      "slug": "black-background",
+      "altText": null,
+      "filePath": "runtime/media/background-images/bg_46af3faca7ea414badea0836299a2c58"
+    },
+    {
+      "id": "bg_37a71b8fbd3d4db1bbbb88f3fa7264f6",
+      "label": "Forest",
+      "slug": "forest",
+      "altText": "Misty forest path at midday",
+      "filePath": "runtime/media/background-images/bg_37a71b8fbd3d4db1bbbb88f3fa7264f6"
+    },
+    {
+      "id": "bg_28a6dcc226784815807170109ef58a84",
+      "label": "Garden - Valestria",
+      "slug": "garden-valestria",
+      "altText": "Serene garden with horses at dawn",
+      "filePath": "runtime/media/background-images/bg_28a6dcc226784815807170109ef58a84"
+    },
+    {
+      "id": "bg_87275e709a044aceb4be24122fb56944",
+      "label": "Grand Hall - Valestria",
+      "slug": "grand-hall-valestria",
+      "altText": "Twilight feast in a grand hall",
+      "filePath": "runtime/media/background-images/bg_87275e709a044aceb4be24122fb56944"
+    },
+    {
+      "id": "bg_cdd22a14744644089a1b570c4ded1f8f",
+      "label": "Hollowpine - Village - Day",
+      "slug": "hollowpine-village-day",
+      "altText": null,
+      "filePath": "runtime/media/background-images/bg_cdd22a14744644089a1b570c4ded1f8f"
+    },
+    {
+      "id": "bg_f9bb1e49ce254807afd61562179f1646",
+      "label": "King's Bedchamber",
+      "slug": "king-s-bedchamber",
+      "altText": "Royal bedchamber in dim light",
+      "filePath": "runtime/media/background-images/bg_f9bb1e49ce254807afd61562179f1646"
+    },
+    {
+      "id": "bg_a4a58f7f2a3f4114a5f0a45dd2e8229b",
+      "label": "Misty Hill - Funeral",
+      "slug": "misty-hill-funeral",
+      "altText": "Funeral on a misty hill",
+      "filePath": "runtime/media/background-images/bg_a4a58f7f2a3f4114a5f0a45dd2e8229b"
+    },
+    {
+      "id": "bg_6aef5e6bac194276990224f73922cd40",
+      "label": "Ocnoer's chamber - Serene",
+      "slug": "ocnoer-s-chamber-serene",
+      "altText": "Luxurious bedchamber in a tower",
+      "filePath": "runtime/media/background-images/bg_6aef5e6bac194276990224f73922cd40"
+    },
+    {
+      "id": "bg_43e8296308394793953be127b1cca4e4",
+      "label": "Ocnoer's Chamber - Storm",
+      "slug": "ocnoer-s-chamber-storm",
+      "altText": "A dark medieval tower chamber with a large arched window overlooking a rainy castle courtyard at night",
+      "filePath": "runtime/media/background-images/bg_43e8296308394793953be127b1cca4e4/file_872954b40aa94005973d5c3fccff3c4a"
+    },
+    {
+      "id": "bg_ce918b453b5241babd3cfef814cc4685",
+      "label": "River",
+      "slug": "river",
+      "altText": "river",
+      "filePath": "runtime/media/background-images/bg_ce918b453b5241babd3cfef814cc4685"
+    },
+    {
+      "id": "bg_0beed12ed3504a1c87bf9de515dce8b3",
+      "label": "Valestria's Corridor",
+      "slug": "valestria-s-corridor",
+      "altText": "Dim corridor with warm doorway glow",
+      "filePath": "runtime/media/background-images/bg_0beed12ed3504a1c87bf9de515dce8b3"
+    },
+    {
+      "id": "bg_98daf79eca544121a3bbfdc582f8761e",
+      "label": "Valestria's Street - Funeral",
+      "slug": "valestria-s-street-funeral",
+      "altText": "Funeral procession through misty town",
+      "filePath": "runtime/media/background-images/bg_98daf79eca544121a3bbfdc582f8761e"
+    }
+  ],
+  "backgroundMusicTracks": [
+    {
+      "id": "music_987c5f26d5ff4bad880674cd87d4eb9b",
+      "label": "A Deal with Chaos",
+      "slug": "a-deal-with-chaos",
+      "filePath": "runtime/media/background-music/music_987c5f26d5ff4bad880674cd87d4eb9b"
+    },
+    {
+      "id": "music_5e6486449761417b98475d2a228f5d45",
+      "label": "Brahms",
+      "slug": "brahms",
+      "filePath": "runtime/media/background-music/music_5e6486449761417b98475d2a228f5d45"
+    },
+    {
+      "id": "music_9a2170588c2f40e08263234a5cffaed3",
+      "label": "Eld",
+      "slug": "eld",
+      "filePath": "runtime/media/background-music/music_9a2170588c2f40e08263234a5cffaed3"
+    },
+    {
+      "id": "music_ecd1c16cd79a41a3b4e7fbae2e60f7e7",
+      "label": "Elwynn Forest",
+      "slug": "elwynn-forest",
+      "filePath": "runtime/media/background-music/music_ecd1c16cd79a41a3b4e7fbae2e60f7e7"
+    },
+    {
+      "id": "music_2aacf72582094c9b8597ea32e527fe2f",
+      "label": "Morning Rose",
+      "slug": "morning-rose",
+      "filePath": "runtime/media/background-music/music_2aacf72582094c9b8597ea32e527fe2f"
+    },
+    {
+      "id": "music_7b08ba78cfad42cda06fc565f5bc1409",
+      "label": "Piano Quartet in E-Flat",
+      "slug": "piano-quartet-in-e-flat",
+      "filePath": "runtime/media/background-music/music_7b08ba78cfad42cda06fc565f5bc1409"
+    },
+    {
+      "id": "music_6bd8817bb46e44d68cccab19a14ebd6b",
+      "label": "Rain outside my window",
+      "slug": "rain-outside-my-window",
+      "filePath": "runtime/media/background-music/music_6bd8817bb46e44d68cccab19a14ebd6b"
+    },
+    {
+      "id": "music_35c75372af9d4da6925c2ef4505da366",
+      "label": "Reverence",
+      "slug": "reverence",
+      "filePath": "runtime/media/background-music/music_35c75372af9d4da6925c2ef4505da366"
+    },
+    {
+      "id": "music_c54718a5693a4afe909f322aaae59273",
+      "label": "Sometimes",
+      "slug": "sometimes",
+      "filePath": "runtime/media/background-music/music_c54718a5693a4afe909f322aaae59273"
+    },
+    {
+      "id": "music_cf322a7437024406a7b2956175b9c7f5",
+      "label": "Stonefire",
+      "slug": "stonefire",
+      "filePath": "runtime/media/background-music/music_cf322a7437024406a7b2956175b9c7f5"
+    },
+    {
+      "id": "music_ba3830a040d142d6bf2bc8c78a6e201a",
+      "label": "Take a moment to breathe",
+      "slug": "take-a-moment-to-breathe",
+      "filePath": "runtime/media/background-music/music_ba3830a040d142d6bf2bc8c78a6e201a"
+    },
+    {
+      "id": "music_ecb67ffbba0e4192b7f12997a872bbbb",
+      "label": "The mercy of the wind",
+      "slug": "the-mercy-of-the-wind",
+      "filePath": "runtime/media/background-music/music_ecb67ffbba0e4192b7f12997a872bbbb"
+    },
+    {
+      "id": "music_c421c2c48fd64b84b2b5db1c628851f4",
+      "label": "The night we met",
+      "slug": "the-night-we-met",
+      "filePath": "runtime/media/background-music/music_c421c2c48fd64b84b2b5db1c628851f4"
+    },
+    {
+      "id": "music_663d829f16e149c88e09cd1db558d645",
+      "label": "Vamoose",
+      "slug": "vamoose",
+      "filePath": "runtime/media/background-music/music_663d829f16e149c88e09cd1db558d645"
+    },
+    {
+      "id": "music_77bb2d0fd7614f7d9df698188c2c20ab",
+      "label": "Van Gogh",
+      "slug": "van-gogh",
+      "filePath": "runtime/media/background-music/music_77bb2d0fd7614f7d9df698188c2c20ab"
+    },
+    {
+      "id": "music_2c1c70c0b23847288f0fe12555776db6",
+      "label": "Будь моим смыслом",
+      "slug": "untitled",
+      "filePath": "runtime/media/background-music/music_2c1c70c0b23847288f0fe12555776db6"
+    }
+  ]
+}

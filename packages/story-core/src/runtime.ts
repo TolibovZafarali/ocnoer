@@ -529,7 +529,10 @@ export function toPublicStorageUrl(
     return null;
   }
 
-  if (/^https?:\/\//i.test(storagePath) || storagePath.startsWith("/")) {
+  if (
+    /^(?:https?|file):\/\//i.test(storagePath) ||
+    storagePath.startsWith("/")
+  ) {
     return storagePath;
   }
 

@@ -1,3 +1,7 @@
+import { isOfflineMode } from "./contentMode";
+import { BUNDLED_RUNTIME_ORIGIN } from "../runtime/bundledRuntime";
+import storyManifest from "../runtime/generated/storyManifest.json";
+
 export type MobileRuntimeConfig = {
   supabaseUrl: string;
   manifestPath: string;
@@ -39,6 +43,13 @@ function normalizeSupabaseUrl(value: string) {
 }
 
 export function getMobileRuntimeConfig(): MobileRuntimeConfig {
+  if (isOfflineMode()) {
+    return {
+      supabaseUrl: BUNDLED_RUNTIME_ORIGIN,
+      manifestPath: storyManifest.manifestPath
+    };
+  }
+
   // Expo statically inlines EXPO_PUBLIC_* values only for dot-notation access.
   const supabaseUrl = readPublicEnvVar(
     "EXPO_PUBLIC_OCNOER_SUPABASE_URL",

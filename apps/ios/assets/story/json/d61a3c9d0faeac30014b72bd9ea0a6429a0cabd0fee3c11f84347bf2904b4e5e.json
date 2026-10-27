@@ -1,0 +1,1200 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-04-28T01:09:47.075Z",
+  "characters": [
+    {
+      "id": "character_ddc701d0f74e4455a59796c1fe8d2db7",
+      "name": "{{ cat_name }}",
+      "slug": "cat-name",
+      "bio": "Ocnoer's cat.",
+      "defaultEmotionKey": "default",
+      "defaultEmotionImagePath": "runtime/media/characters/character_ddc701d0f74e4455a59796c1fe8d2db7/emotion_f21b74d306f241859ba7941a716f72f8",
+      "emotions": [
+        {
+          "key": "default",
+          "label": "Default",
+          "imagePath": "runtime/media/characters/character_ddc701d0f74e4455a59796c1fe8d2db7/emotion_f21b74d306f241859ba7941a716f72f8",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_f21b74d306f241859ba7941a716f72f8/e8da0bd72d72e653.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "648d9c1baf652a9e169c62408b61d09b18e7bffba27852ce9578a727431b8895",
+              "sourceHash": "e8da0bd72d72e6538ebfb87b6595b067a2c424248d8859e6508653b0203853af",
+              "sourceAssetId": "emotion_f21b74d306f241859ba7941a716f72f8",
+              "sourceStoragePath": "runtime/media/characters/character_ddc701d0f74e4455a59796c1fe8d2db7/emotion_f21b74d306f241859ba7941a716f72f8",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_ddc701d0f74e4455a59796c1fe8d2db7/emotion_f21b74d306f241859ba7941a716f72f8"
+            }
+          ]
+        }
+      ],
+      "dresses": []
+    },
+    {
+      "id": "character_83a607819dc341f39857de803ced66ba",
+      "name": "Alvyn",
+      "slug": "alvyn",
+      "bio": null,
+      "defaultEmotionKey": "default",
+      "defaultEmotionImagePath": "runtime/media/characters/character_83a607819dc341f39857de803ced66ba/emotion_5dcfe83009054d6c9d53d4cd1d4240ad",
+      "emotions": [
+        {
+          "key": "default",
+          "label": "Default",
+          "imagePath": "runtime/media/characters/character_83a607819dc341f39857de803ced66ba/emotion_5dcfe83009054d6c9d53d4cd1d4240ad",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_5dcfe83009054d6c9d53d4cd1d4240ad/0aa5ffe9af17b60e.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 912,
+              "height": 1369,
+              "hash": "766fab147440e9484dc9c306430f7ce25abe12edc146fbb427da899c43fd4b19",
+              "sourceHash": "0aa5ffe9af17b60ee143085af077cc4ea57e73c52d925a3f1f3d556460ba37f1",
+              "sourceAssetId": "emotion_5dcfe83009054d6c9d53d4cd1d4240ad",
+              "sourceStoragePath": "runtime/media/characters/character_83a607819dc341f39857de803ced66ba/emotion_5dcfe83009054d6c9d53d4cd1d4240ad",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_83a607819dc341f39857de803ced66ba/emotion_5dcfe83009054d6c9d53d4cd1d4240ad"
+            }
+          ]
+        },
+        {
+          "key": "smiling",
+          "label": "smiling",
+          "imagePath": "runtime/media/characters/character_83a607819dc341f39857de803ced66ba/emotion_834225cfc4954c8e96608467af5fab75",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_834225cfc4954c8e96608467af5fab75/6b354be9dbedd296.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 931,
+              "height": 1397,
+              "hash": "399de3f7e17b55968885b757851ddf4d53685ff93f5f8ceae009e2f8743baa00",
+              "sourceHash": "6b354be9dbedd296d201761d20a91b4c93fab9d722dadd68e127da1b7478c8cd",
+              "sourceAssetId": "emotion_834225cfc4954c8e96608467af5fab75",
+              "sourceStoragePath": "runtime/media/characters/character_83a607819dc341f39857de803ced66ba/emotion_834225cfc4954c8e96608467af5fab75",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_83a607819dc341f39857de803ced66ba/emotion_834225cfc4954c8e96608467af5fab75"
+            }
+          ]
+        }
+      ],
+      "dresses": []
+    },
+    {
+      "id": "character_7d18c4cc93d24dfaa3417580f2cdc4c4",
+      "name": "Aren",
+      "slug": "aren",
+      "bio": "Prince Aren Valamere of Valestria",
+      "defaultEmotionKey": "default",
+      "defaultEmotionImagePath": "runtime/media/characters/character_7d18c4cc93d24dfaa3417580f2cdc4c4/emotion_e6ad031a0afe439a90e062903567a025",
+      "emotions": [
+        {
+          "key": "default",
+          "label": "Default",
+          "imagePath": "runtime/media/characters/character_7d18c4cc93d24dfaa3417580f2cdc4c4/emotion_e6ad031a0afe439a90e062903567a025",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_e6ad031a0afe439a90e062903567a025/cee1db4c24491414.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "0f6952fd5f90607ece13c7a52d1982c4c450b56b05b7258edbf3fde8e33eb6b5",
+              "sourceHash": "cee1db4c244914149544ed5712f0bcfa1ccd65bbcade61ad8a7649d3cec4d807",
+              "sourceAssetId": "emotion_e6ad031a0afe439a90e062903567a025",
+              "sourceStoragePath": "runtime/media/characters/character_7d18c4cc93d24dfaa3417580f2cdc4c4/emotion_e6ad031a0afe439a90e062903567a025",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_7d18c4cc93d24dfaa3417580f2cdc4c4/emotion_e6ad031a0afe439a90e062903567a025"
+            }
+          ]
+        }
+      ],
+      "dresses": []
+    },
+    {
+      "id": "character_aabef196d5fe4905af93acc234d506e4",
+      "name": "Body of Arys",
+      "slug": "body-of-arys",
+      "bio": null,
+      "defaultEmotionKey": "default",
+      "defaultEmotionImagePath": "runtime/media/characters/character_aabef196d5fe4905af93acc234d506e4/emotion_4bd94e4918fa40bdb0219bef444a14f4",
+      "emotions": [
+        {
+          "key": "default",
+          "label": "Default",
+          "imagePath": "runtime/media/characters/character_aabef196d5fe4905af93acc234d506e4/emotion_4bd94e4918fa40bdb0219bef444a14f4",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_4bd94e4918fa40bdb0219bef444a14f4/2d01be765c1896fb.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 632,
+              "height": 949,
+              "hash": "86c79f095b7a372ce813ddd1b89a8dd748109f0fda2218439cbb919149f1fffe",
+              "sourceHash": "2d01be765c1896fb708b60906d77106400e188c34de58feb8f8d68c0b7c5735a",
+              "sourceAssetId": "emotion_4bd94e4918fa40bdb0219bef444a14f4",
+              "sourceStoragePath": "runtime/media/characters/character_aabef196d5fe4905af93acc234d506e4/emotion_4bd94e4918fa40bdb0219bef444a14f4",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_aabef196d5fe4905af93acc234d506e4/emotion_4bd94e4918fa40bdb0219bef444a14f4"
+            }
+          ]
+        }
+      ],
+      "dresses": []
+    },
+    {
+      "id": "character_03374245d97b49a8a3911b6e5de9d59d",
+      "name": "Castellan",
+      "slug": "castellan",
+      "bio": "Ser Coren, Castellan of Hollowpine",
+      "defaultEmotionKey": "default",
+      "defaultEmotionImagePath": "runtime/media/characters/character_03374245d97b49a8a3911b6e5de9d59d/emotion_7c0eb53f9cb6432a9c93106c32a793c5/file_3c8691f3ad104564b3f0d9d9429763fa",
+      "emotions": [
+        {
+          "key": "default",
+          "label": "Default",
+          "imagePath": "runtime/media/characters/character_03374245d97b49a8a3911b6e5de9d59d/emotion_7c0eb53f9cb6432a9c93106c32a793c5/file_3c8691f3ad104564b3f0d9d9429763fa",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_7c0eb53f9cb6432a9c93106c32a793c5/ab239036bd252d08.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "96ed09622c457faa56965eed6230e1d261630bcd7e20887b28de95ed758e8862",
+              "sourceHash": "ab239036bd252d080cc1ee70eebddb9c54b73cf0172cdd15b6109c82c04f9aa3",
+              "sourceAssetId": "emotion_7c0eb53f9cb6432a9c93106c32a793c5",
+              "sourceStoragePath": "runtime/media/characters/character_03374245d97b49a8a3911b6e5de9d59d/emotion_7c0eb53f9cb6432a9c93106c32a793c5/file_3c8691f3ad104564b3f0d9d9429763fa",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_03374245d97b49a8a3911b6e5de9d59d/emotion_7c0eb53f9cb6432a9c93106c32a793c5/file_3c8691f3ad104564b3f0d9d9429763fa"
+            }
+          ]
+        }
+      ],
+      "dresses": []
+    },
+    {
+      "id": "character_c1ab9ad6f3314598969e3d0e1bfee237",
+      "name": "Elira",
+      "slug": "ocnoer-s-maid",
+      "bio": "Elira, Ocnoer's Maid in Valestria",
+      "defaultEmotionKey": "default",
+      "defaultEmotionImagePath": "runtime/media/characters/character_c1ab9ad6f3314598969e3d0e1bfee237/emotion_00693b0e2a7d4e818e8ecfd3697fa52d/file_c027bed497c041ee95384de2fd00aeaa",
+      "emotions": [
+        {
+          "key": "default",
+          "label": "Default",
+          "imagePath": "runtime/media/characters/character_c1ab9ad6f3314598969e3d0e1bfee237/emotion_00693b0e2a7d4e818e8ecfd3697fa52d/file_c027bed497c041ee95384de2fd00aeaa",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_00693b0e2a7d4e818e8ecfd3697fa52d/8699ce0f7cdcbe14.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "5b8de924ef745fc350c82633392f3701544d34171c8297f8b4f026191c26e539",
+              "sourceHash": "8699ce0f7cdcbe14275be10b6ceabdde51a72defe9875e5a62d78fb65ccb8b17",
+              "sourceAssetId": "emotion_00693b0e2a7d4e818e8ecfd3697fa52d",
+              "sourceStoragePath": "runtime/media/characters/character_c1ab9ad6f3314598969e3d0e1bfee237/emotion_00693b0e2a7d4e818e8ecfd3697fa52d/file_c027bed497c041ee95384de2fd00aeaa",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_c1ab9ad6f3314598969e3d0e1bfee237/emotion_00693b0e2a7d4e818e8ecfd3697fa52d/file_c027bed497c041ee95384de2fd00aeaa"
+            }
+          ]
+        },
+        {
+          "key": "neutral",
+          "label": "Neutral",
+          "imagePath": "runtime/media/characters/character_c1ab9ad6f3314598969e3d0e1bfee237/emotion_58cfe3f9e32941c8aa1bc5238e368721",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_58cfe3f9e32941c8aa1bc5238e368721/a00e052ca92c0c1a.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "300e6aef15468d9d6255950c95f181ceb3317d6068049c1a14591c678f3e5b1f",
+              "sourceHash": "a00e052ca92c0c1a0ebb303e46e9df43a5308d49d52747a90fc3639787ba5d03",
+              "sourceAssetId": "emotion_58cfe3f9e32941c8aa1bc5238e368721",
+              "sourceStoragePath": "runtime/media/characters/character_c1ab9ad6f3314598969e3d0e1bfee237/emotion_58cfe3f9e32941c8aa1bc5238e368721",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_c1ab9ad6f3314598969e3d0e1bfee237/emotion_58cfe3f9e32941c8aa1bc5238e368721"
+            }
+          ]
+        }
+      ],
+      "dresses": []
+    },
+    {
+      "id": "character_8f15ea5138e343218fbde179f6198c71",
+      "name": "Father",
+      "slug": "father",
+      "bio": "King Maedric Valamere of Valestria",
+      "defaultEmotionKey": "default",
+      "defaultEmotionImagePath": "runtime/media/characters/character_8f15ea5138e343218fbde179f6198c71/emotion_669cf70831d04686a9ff7c3675ad20a3",
+      "emotions": [
+        {
+          "key": "default",
+          "label": "Default",
+          "imagePath": "runtime/media/characters/character_8f15ea5138e343218fbde179f6198c71/emotion_669cf70831d04686a9ff7c3675ad20a3",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_669cf70831d04686a9ff7c3675ad20a3/7b0cc5638ee06a3f.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 856,
+              "height": 1285,
+              "hash": "4d97f790faa1c8e0572e8771b92bdfddcd756adee2d33dfedebea89eef862ebf",
+              "sourceHash": "7b0cc5638ee06a3f94ed8bc701ea9b3ecbe66762444f3f2e637d6bbf087e25f5",
+              "sourceAssetId": "emotion_669cf70831d04686a9ff7c3675ad20a3",
+              "sourceStoragePath": "runtime/media/characters/character_8f15ea5138e343218fbde179f6198c71/emotion_669cf70831d04686a9ff7c3675ad20a3",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_8f15ea5138e343218fbde179f6198c71/emotion_669cf70831d04686a9ff7c3675ad20a3"
+            }
+          ]
+        }
+      ],
+      "dresses": []
+    },
+    {
+      "id": "character_86d41fd66179450e9198c59803ecf263",
+      "name": "Jorren",
+      "slug": "jorren",
+      "bio": "Prince Jorren Valamere of Valestria",
+      "defaultEmotionKey": "default",
+      "defaultEmotionImagePath": "runtime/media/characters/character_86d41fd66179450e9198c59803ecf263/emotion_f90baa02aac44739b1f209e6ed20c6b7/file_387a678fdf87480bb336d680d6562f25",
+      "emotions": [
+        {
+          "key": "default",
+          "label": "Default",
+          "imagePath": "runtime/media/characters/character_86d41fd66179450e9198c59803ecf263/emotion_f90baa02aac44739b1f209e6ed20c6b7/file_387a678fdf87480bb336d680d6562f25",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_f90baa02aac44739b1f209e6ed20c6b7/eb32f688ab816e33.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 735,
+              "height": 904,
+              "hash": "336b23f591e016583647a9d7b49385e29b5a2997ee0289ebd4920a9f11a86a0c",
+              "sourceHash": "eb32f688ab816e33eda75bc564297cf6667ded3c813d96f1b1ee98ad7e279b9f",
+              "sourceAssetId": "emotion_f90baa02aac44739b1f209e6ed20c6b7",
+              "sourceStoragePath": "runtime/media/characters/character_86d41fd66179450e9198c59803ecf263/emotion_f90baa02aac44739b1f209e6ed20c6b7/file_387a678fdf87480bb336d680d6562f25",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_86d41fd66179450e9198c59803ecf263/emotion_f90baa02aac44739b1f209e6ed20c6b7/file_387a678fdf87480bb336d680d6562f25"
+            }
+          ]
+        }
+      ],
+      "dresses": []
+    },
+    {
+      "id": "character_65255174e8044b4ab5b421c1c025a2bc",
+      "name": "Lucair",
+      "slug": "lucair",
+      "bio": "Prince Lucair Velyr of Mirath",
+      "defaultEmotionKey": "default",
+      "defaultEmotionImagePath": "runtime/media/characters/character_65255174e8044b4ab5b421c1c025a2bc/emotion_d328394ab98e42c1a925045871656ab5",
+      "emotions": [
+        {
+          "key": "date-clothes",
+          "label": "Date Clothes",
+          "imagePath": "runtime/media/characters/character_65255174e8044b4ab5b421c1c025a2bc/emotion_dfd89954e8934f9ab628824d7217fb70",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_dfd89954e8934f9ab628824d7217fb70/1cd1964f50a3d2c0.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "e3ed63d098ea414472b91e39ffd4d4535f8ff8010bd37d87e97d2fc4b9401af4",
+              "sourceHash": "1cd1964f50a3d2c0b5a9f7cee72e521266f6025618e32383e100a78d062fb455",
+              "sourceAssetId": "emotion_dfd89954e8934f9ab628824d7217fb70",
+              "sourceStoragePath": "runtime/media/characters/character_65255174e8044b4ab5b421c1c025a2bc/emotion_dfd89954e8934f9ab628824d7217fb70",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_65255174e8044b4ab5b421c1c025a2bc/emotion_dfd89954e8934f9ab628824d7217fb70"
+            }
+          ]
+        },
+        {
+          "key": "default",
+          "label": "Default",
+          "imagePath": "runtime/media/characters/character_65255174e8044b4ab5b421c1c025a2bc/emotion_d328394ab98e42c1a925045871656ab5",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_d328394ab98e42c1a925045871656ab5/9c8640d0c1e9e840.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 922,
+              "height": 1384,
+              "hash": "9c039dcf5321ad3e9699c4862039786762678d0013a569c13364d873f7d02870",
+              "sourceHash": "9c8640d0c1e9e84055e925f522ed8058c6b0a042d320cf0d39239af12984799f",
+              "sourceAssetId": "emotion_d328394ab98e42c1a925045871656ab5",
+              "sourceStoragePath": "runtime/media/characters/character_65255174e8044b4ab5b421c1c025a2bc/emotion_d328394ab98e42c1a925045871656ab5",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_65255174e8044b4ab5b421c1c025a2bc/emotion_d328394ab98e42c1a925045871656ab5"
+            }
+          ]
+        }
+      ],
+      "dresses": []
+    },
+    {
+      "id": "character_46052d93a1b3449ca3480e0fec6e410f",
+      "name": "Maesters",
+      "slug": "maesters",
+      "bio": "Maesters in Valestria",
+      "defaultEmotionKey": "default",
+      "defaultEmotionImagePath": "runtime/media/characters/character_46052d93a1b3449ca3480e0fec6e410f/emotion_964d30b37fc44c6cba4a4f9c2e43810c",
+      "emotions": [
+        {
+          "key": "default",
+          "label": "Default",
+          "imagePath": "runtime/media/characters/character_46052d93a1b3449ca3480e0fec6e410f/emotion_964d30b37fc44c6cba4a4f9c2e43810c",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_964d30b37fc44c6cba4a4f9c2e43810c/b74e646bf2e8a3bf.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "ed063ada703a1b4991c8d154f6588ebd03a8e01833ac4fda4b28f875c1c143a0",
+              "sourceHash": "b74e646bf2e8a3bff396af907d1400ed76b86c36747b7ea3c37155c7062116b6",
+              "sourceAssetId": "emotion_964d30b37fc44c6cba4a4f9c2e43810c",
+              "sourceStoragePath": "runtime/media/characters/character_46052d93a1b3449ca3480e0fec6e410f/emotion_964d30b37fc44c6cba4a4f9c2e43810c",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_46052d93a1b3449ca3480e0fec6e410f/emotion_964d30b37fc44c6cba4a4f9c2e43810c"
+            }
+          ]
+        },
+        {
+          "key": "whispering",
+          "label": "Whispering",
+          "imagePath": "runtime/media/characters/character_46052d93a1b3449ca3480e0fec6e410f/emotion_1ac5d1ddfb4542d6a686c06715ac07dd",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_1ac5d1ddfb4542d6a686c06715ac07dd/ae6997a938ffd484.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "bcc26a260f0ed26aa07611398ffff8c802b3ff678bcd7154af43f9875d6e2c7c",
+              "sourceHash": "ae6997a938ffd48401e96a3fd2eab485d515310691fdfc0f0d484f61bec42be2",
+              "sourceAssetId": "emotion_1ac5d1ddfb4542d6a686c06715ac07dd",
+              "sourceStoragePath": "runtime/media/characters/character_46052d93a1b3449ca3480e0fec6e410f/emotion_1ac5d1ddfb4542d6a686c06715ac07dd",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_46052d93a1b3449ca3480e0fec6e410f/emotion_1ac5d1ddfb4542d6a686c06715ac07dd"
+            }
+          ]
+        }
+      ],
+      "dresses": []
+    },
+    {
+      "id": "character_0e3bd6483bf94897854333dd58fe2d8e",
+      "name": "Man",
+      "slug": "man",
+      "bio": "Unknown man speaking to Zareen",
+      "defaultEmotionKey": "default",
+      "defaultEmotionImagePath": "runtime/media/characters/character_0e3bd6483bf94897854333dd58fe2d8e/emotion_2229b0d35e5041278cd5f9775ab92b44/file_ad2ea45d7dce48fda82288bd0c378c6c",
+      "emotions": [
+        {
+          "key": "default",
+          "label": "Default",
+          "imagePath": "runtime/media/characters/character_0e3bd6483bf94897854333dd58fe2d8e/emotion_2229b0d35e5041278cd5f9775ab92b44/file_ad2ea45d7dce48fda82288bd0c378c6c",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_2229b0d35e5041278cd5f9775ab92b44/67487f35d9e6a030.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "ce12d00238ab7ed2dcd25415370552a4a72c9801bccae833cd570cbfbf370265",
+              "sourceHash": "67487f35d9e6a0304934e5e1ff081271213636570ad1330dfd50f95c1f1579ad",
+              "sourceAssetId": "emotion_2229b0d35e5041278cd5f9775ab92b44",
+              "sourceStoragePath": "runtime/media/characters/character_0e3bd6483bf94897854333dd58fe2d8e/emotion_2229b0d35e5041278cd5f9775ab92b44/file_ad2ea45d7dce48fda82288bd0c378c6c",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_0e3bd6483bf94897854333dd58fe2d8e/emotion_2229b0d35e5041278cd5f9775ab92b44/file_ad2ea45d7dce48fda82288bd0c378c6c"
+            }
+          ]
+        }
+      ],
+      "dresses": []
+    },
+    {
+      "id": "character_f5779ea4e2434bb0ab31e2960889eae8",
+      "name": "Mother",
+      "slug": "mother",
+      "bio": "Queen Maelis Valamere of House Cassivar in Valestria, a lady wife to King Maedric Valamere",
+      "defaultEmotionKey": "default",
+      "defaultEmotionImagePath": "runtime/media/characters/character_f5779ea4e2434bb0ab31e2960889eae8/emotion_ce7b1edc5cff48aead8b1bd527a20207/file_0316a045370040fdb543fb3df33e2be5",
+      "emotions": [
+        {
+          "key": "default",
+          "label": "Default",
+          "imagePath": "runtime/media/characters/character_f5779ea4e2434bb0ab31e2960889eae8/emotion_ce7b1edc5cff48aead8b1bd527a20207/file_0316a045370040fdb543fb3df33e2be5",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_ce7b1edc5cff48aead8b1bd527a20207/2a3f3f0c083b3d4b.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 893,
+              "height": 1340,
+              "hash": "874b885d9a2fa85ba1a96e2b96af00c2f2b911181d303fddb14f723a8641f352",
+              "sourceHash": "2a3f3f0c083b3d4bfeec85b7910f07f10d70c59bd467849cc4164910afd72636",
+              "sourceAssetId": "emotion_ce7b1edc5cff48aead8b1bd527a20207",
+              "sourceStoragePath": "runtime/media/characters/character_f5779ea4e2434bb0ab31e2960889eae8/emotion_ce7b1edc5cff48aead8b1bd527a20207/file_0316a045370040fdb543fb3df33e2be5",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_f5779ea4e2434bb0ab31e2960889eae8/emotion_ce7b1edc5cff48aead8b1bd527a20207/file_0316a045370040fdb543fb3df33e2be5"
+            }
+          ]
+        }
+      ],
+      "dresses": []
+    },
+    {
+      "id": "character_58f6fff5e15f481ba6c3ff56a2cb3e88",
+      "name": "Ocnoer",
+      "slug": "ocnoer",
+      "bio": "Princess Ocnoer Valamere of Valestria",
+      "defaultEmotionKey": "default",
+      "defaultEmotionImagePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_4eee2bab3e2641beafda49ca180e5624",
+      "emotions": [
+        {
+          "key": "calling-out",
+          "label": "calling out",
+          "imagePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_96904d385f1c45aabd38ce80a15d16af",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_96904d385f1c45aabd38ce80a15d16af/86181716c6ee14fa.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "6d0bf10d016760ad57cd1b1d318dd8458141b6a5ad4c13e960f48e6056b0efc4",
+              "sourceHash": "86181716c6ee14fa0ea18b88038a1ad7032d4430d40e8acab3398ccc02295c63",
+              "sourceAssetId": "emotion_96904d385f1c45aabd38ce80a15d16af",
+              "sourceStoragePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_96904d385f1c45aabd38ce80a15d16af",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_96904d385f1c45aabd38ce80a15d16af"
+            }
+          ]
+        },
+        {
+          "key": "default",
+          "label": "Default",
+          "imagePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_4eee2bab3e2641beafda49ca180e5624",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_4eee2bab3e2641beafda49ca180e5624/287840856d4c2e0f.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "a40c8134ca3174c4f0640ea68d1b1300b35a57d92f847ec42a8fbccf2e4ab927",
+              "sourceHash": "287840856d4c2e0f58359e7283f6d6a9cafd7ea8281e52c93c24404d1b991f22",
+              "sourceAssetId": "emotion_4eee2bab3e2641beafda49ca180e5624",
+              "sourceStoragePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_4eee2bab3e2641beafda49ca180e5624",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_4eee2bab3e2641beafda49ca180e5624"
+            }
+          ]
+        },
+        {
+          "key": "disgust",
+          "label": "Disgust",
+          "imagePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_cc09dedbb79a483a89845ebf36eff137",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_cc09dedbb79a483a89845ebf36eff137/7c2714cee3d0131f.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "9449d680a7f9ac2de8e659b305efac3c40b3c47909ccf2024ee601761948f7a2",
+              "sourceHash": "7c2714cee3d0131f6b6c71c0ee922dde52eb84a96f8308ca3936e3e87e920e8d",
+              "sourceAssetId": "emotion_cc09dedbb79a483a89845ebf36eff137",
+              "sourceStoragePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_cc09dedbb79a483a89845ebf36eff137",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_cc09dedbb79a483a89845ebf36eff137"
+            }
+          ]
+        },
+        {
+          "key": "fear",
+          "label": "Fear",
+          "imagePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_4ea72771f71a44a5bb879bfb2a185b66",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_4ea72771f71a44a5bb879bfb2a185b66/2f46cf0e83c96b36.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "a26201f2eae99fcfefe5a12ca01192815a47cad46d5e9cf4900fe04d24626ad1",
+              "sourceHash": "2f46cf0e83c96b3613b22b972992fe233c3b8bfa0c7abd9c521cc198bead180f",
+              "sourceAssetId": "emotion_4ea72771f71a44a5bb879bfb2a185b66",
+              "sourceStoragePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_4ea72771f71a44a5bb879bfb2a185b66",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_4ea72771f71a44a5bb879bfb2a185b66"
+            }
+          ]
+        },
+        {
+          "key": "heartbreak",
+          "label": "Heartbreak",
+          "imagePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_71497c4e648844bdae7683a2e85b98b3",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_71497c4e648844bdae7683a2e85b98b3/a2100e351e278ea5.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "3729b322fe649595ab83085569bbbabb3737a06d3faa34bd02721b865a449287",
+              "sourceHash": "a2100e351e278ea5eeb444410e872c691799e4220eb26c97cd003eb4372cd24f",
+              "sourceAssetId": "emotion_71497c4e648844bdae7683a2e85b98b3",
+              "sourceStoragePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_71497c4e648844bdae7683a2e85b98b3",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_71497c4e648844bdae7683a2e85b98b3"
+            }
+          ]
+        },
+        {
+          "key": "in-blouse",
+          "label": "In Blouse",
+          "imagePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_6fdba1a212ec4b7a94118866781da1b5",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_6fdba1a212ec4b7a94118866781da1b5/5bf4767fda1d3fa0.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "914e71e857ac7db67aa64915f4a36ca69780d819c45d027f6618b16876d2674b",
+              "sourceHash": "5bf4767fda1d3fa07e331e02a1a8920a8c76711e9ca200612589dcdedf2d3766",
+              "sourceAssetId": "emotion_6fdba1a212ec4b7a94118866781da1b5",
+              "sourceStoragePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_6fdba1a212ec4b7a94118866781da1b5",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_6fdba1a212ec4b7a94118866781da1b5"
+            }
+          ]
+        },
+        {
+          "key": "in-blouse-neutral",
+          "label": "In Blouse - Neutral",
+          "imagePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_f207bc1d6cc64e7d9772eb1d93bc588a",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_f207bc1d6cc64e7d9772eb1d93bc588a/efa20e98a468c2e9.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "cd28fdba7e62622159d92bf7e1e035b0f2a0f8d1803cc32bfb0373ac70dccd60",
+              "sourceHash": "efa20e98a468c2e925c0d8709995e49cc587ed24e447ed4260a50ec36c1424c3",
+              "sourceAssetId": "emotion_f207bc1d6cc64e7d9772eb1d93bc588a",
+              "sourceStoragePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_f207bc1d6cc64e7d9772eb1d93bc588a",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_f207bc1d6cc64e7d9772eb1d93bc588a"
+            }
+          ]
+        },
+        {
+          "key": "in-blouse-surprised",
+          "label": "In Blouse - Surprised",
+          "imagePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_2e68e8ad3bfd4303b0785f30df11e1d8",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_2e68e8ad3bfd4303b0785f30df11e1d8/918e04f3c053f821.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "bf36e720f0a3a26b3b1a51198a3b4151973d311d8f4ad8a9f0dd1fb113ecce8a",
+              "sourceHash": "918e04f3c053f8212cdf13612e269cecbe9612f801e662ff4737d7c5dc6d6486",
+              "sourceAssetId": "emotion_2e68e8ad3bfd4303b0785f30df11e1d8",
+              "sourceStoragePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_2e68e8ad3bfd4303b0785f30df11e1d8",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_2e68e8ad3bfd4303b0785f30df11e1d8"
+            }
+          ]
+        },
+        {
+          "key": "in-mourning-attire",
+          "label": "In Mourning Attire",
+          "imagePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_3c0e77464d3e4b37aa311443519b1dea",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_3c0e77464d3e4b37aa311443519b1dea/de64ae8d57d32e4a.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "9f829fdca3f71ee39d05e3123c9d240b81a54f993de92541d7053c48f0a6d34d",
+              "sourceHash": "de64ae8d57d32e4a2f04b2f92e0fe15a03d7da06838d4b5f812fa508b4a29e3a",
+              "sourceAssetId": "emotion_3c0e77464d3e4b37aa311443519b1dea",
+              "sourceStoragePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_3c0e77464d3e4b37aa311443519b1dea",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_3c0e77464d3e4b37aa311443519b1dea"
+            }
+          ]
+        },
+        {
+          "key": "neutral",
+          "label": "Neutral, still, natural",
+          "imagePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_363741958e0c4e5c8fa2a916ff1c1bfd",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_363741958e0c4e5c8fa2a916ff1c1bfd/35f36ba8674e9595.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "0b203dcaa7fc7e216d63b9b3609a78a41e87258bc31c6d082c1d3e83e1d1bd73",
+              "sourceHash": "35f36ba8674e9595a44055a7304cfb154b83846bfa0738f13482162889208273",
+              "sourceAssetId": "emotion_363741958e0c4e5c8fa2a916ff1c1bfd",
+              "sourceStoragePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_363741958e0c4e5c8fa2a916ff1c1bfd",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_363741958e0c4e5c8fa2a916ff1c1bfd"
+            }
+          ]
+        },
+        {
+          "key": "sad",
+          "label": "Sad",
+          "imagePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_63d2fc4cbf554744b8058e66dafc5c5c",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_63d2fc4cbf554744b8058e66dafc5c5c/b0d3fd62ded36a14.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "602de0843e7be375a1a6a8c8dbd8630b554efb34a004650916afbe999e6ef7c1",
+              "sourceHash": "b0d3fd62ded36a142cb6c41878ec7014a3e3be7e551fe5350f95a28689c1d1f0",
+              "sourceAssetId": "emotion_63d2fc4cbf554744b8058e66dafc5c5c",
+              "sourceStoragePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_63d2fc4cbf554744b8058e66dafc5c5c",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_63d2fc4cbf554744b8058e66dafc5c5c"
+            }
+          ]
+        },
+        {
+          "key": "shock",
+          "label": "Shock",
+          "imagePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_2d76cded54174ed687671b58c0c1091a",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_2d76cded54174ed687671b58c0c1091a/548533a5770a1231.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "0e5983e25afeac1488e7f509d98962dc8f328cdcec3ec9f7df5daa918af25f62",
+              "sourceHash": "548533a5770a1231766d7bdf42487a494eda2d0a53e188c078bedaa0dd7473c0",
+              "sourceAssetId": "emotion_2d76cded54174ed687671b58c0c1091a",
+              "sourceStoragePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_2d76cded54174ed687671b58c0c1091a",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_2d76cded54174ed687671b58c0c1091a"
+            }
+          ]
+        },
+        {
+          "key": "surprised",
+          "label": "Surprised",
+          "imagePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_c1255ed4fac1401eacd6d6b11b6b25a7",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_c1255ed4fac1401eacd6d6b11b6b25a7/098945a15ac893fd.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "7087b1559091f3148a64bf10d8b6a710185491b58a62cc540be6f293e4718e35",
+              "sourceHash": "098945a15ac893fd6a7578c15d4de80045d6054968f7b9c690df6a60fe4f8e55",
+              "sourceAssetId": "emotion_c1255ed4fac1401eacd6d6b11b6b25a7",
+              "sourceStoragePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_c1255ed4fac1401eacd6d6b11b6b25a7",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/emotion_c1255ed4fac1401eacd6d6b11b6b25a7"
+            }
+          ]
+        }
+      ],
+      "dresses": [
+        {
+          "key": "blue-gown",
+          "label": "Blue Gown",
+          "emotionOverrides": [
+            {
+              "emotionKey": "default",
+              "imagePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/dresses/dress_82e56be83bf44810a37bc25850752e48/dress_override_7531b4d3202549c38e4abed60110a633/file_f0dfd834755248df8f3f55eefd3d5c87",
+              "imageDerivatives": [
+                {
+                  "storagePath": "runtime/runtime/portrait-derivatives/dress_override_7531b4d3202549c38e4abed60110a633/689971134bea288b.reader.webp",
+                  "contentType": "image/webp",
+                  "renderKind": "bitmap",
+                  "targetPlatform": "ios",
+                  "cacheVersion": 2,
+                  "renderVersion": "ios-portrait-bitmap-v1",
+                  "width": 1024,
+                  "height": 1536,
+                  "hash": "e37e27b4ebbfd23039a6c5d1ee778cadcffa120f7784e77e4a35248f33fafd50",
+                  "sourceHash": "689971134bea288b392556109bbcbc2454778488c83e13e4b81523f161cc6b66",
+                  "sourceAssetId": "dress_override_7531b4d3202549c38e4abed60110a633",
+                  "sourceStoragePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/dresses/dress_82e56be83bf44810a37bc25850752e48/dress_override_7531b4d3202549c38e4abed60110a633/file_f0dfd834755248df8f3f55eefd3d5c87",
+                  "sourceRenderKind": "svg",
+                  "derivativeOf": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/dresses/dress_82e56be83bf44810a37bc25850752e48/dress_override_7531b4d3202549c38e4abed60110a633/file_f0dfd834755248df8f3f55eefd3d5c87"
+                }
+              ]
+            },
+            {
+              "emotionKey": "fear",
+              "imagePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/dresses/dress_82e56be83bf44810a37bc25850752e48/override_0ae523f7770f4c4f9fb75e8b60bc4be4",
+              "imageDerivatives": [
+                {
+                  "storagePath": "runtime/runtime/portrait-derivatives/dress_override_d0252923b14a4235a8d1417289cc5a4f/0e7d714a8e9d361a.reader.webp",
+                  "contentType": "image/webp",
+                  "renderKind": "bitmap",
+                  "targetPlatform": "ios",
+                  "cacheVersion": 2,
+                  "renderVersion": "ios-portrait-bitmap-v1",
+                  "width": 1024,
+                  "height": 1536,
+                  "hash": "1f441c32b88b796205820693bdd8221bd667d4e920eb45fda5ea5cf7768ae3cf",
+                  "sourceHash": "0e7d714a8e9d361a4a06514c0d279cae91b1b466b027522ace5a224cc11c61e7",
+                  "sourceAssetId": "dress_override_d0252923b14a4235a8d1417289cc5a4f",
+                  "sourceStoragePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/dresses/dress_82e56be83bf44810a37bc25850752e48/override_0ae523f7770f4c4f9fb75e8b60bc4be4",
+                  "sourceRenderKind": "svg",
+                  "derivativeOf": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/dresses/dress_82e56be83bf44810a37bc25850752e48/override_0ae523f7770f4c4f9fb75e8b60bc4be4"
+                }
+              ]
+            },
+            {
+              "emotionKey": "neutral",
+              "imagePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/dresses/dress_82e56be83bf44810a37bc25850752e48/override_1b6ac0d3d4064a25b52326d139f59a35",
+              "imageDerivatives": [
+                {
+                  "storagePath": "runtime/runtime/portrait-derivatives/dress_override_7fa3bd5d117e4bcd82195a607e9d0a61/0610623bbf31a4cb.reader.webp",
+                  "contentType": "image/webp",
+                  "renderKind": "bitmap",
+                  "targetPlatform": "ios",
+                  "cacheVersion": 2,
+                  "renderVersion": "ios-portrait-bitmap-v1",
+                  "width": 1024,
+                  "height": 1536,
+                  "hash": "04e4aa19e8d99d2a3da9be004b3e8b769253a21d99974a1b05611e50e7a9a6ee",
+                  "sourceHash": "0610623bbf31a4cb732c793de532b40c82970b1c10d900613dc624a9311ccc3a",
+                  "sourceAssetId": "dress_override_7fa3bd5d117e4bcd82195a607e9d0a61",
+                  "sourceStoragePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/dresses/dress_82e56be83bf44810a37bc25850752e48/override_1b6ac0d3d4064a25b52326d139f59a35",
+                  "sourceRenderKind": "svg",
+                  "derivativeOf": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/dresses/dress_82e56be83bf44810a37bc25850752e48/override_1b6ac0d3d4064a25b52326d139f59a35"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "key": "green-gown",
+          "label": "Green Gown",
+          "emotionOverrides": [
+            {
+              "emotionKey": "default",
+              "imagePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/dresses/dress_802c3960bec340de91e4f8c73c453c3f/override_6525f59bacf34489aa42451456151269",
+              "imageDerivatives": [
+                {
+                  "storagePath": "runtime/runtime/portrait-derivatives/dress_override_97c784b68c1b422fb01ee9e97bedded6/03acd8e63f5aabee.reader.webp",
+                  "contentType": "image/webp",
+                  "renderKind": "bitmap",
+                  "targetPlatform": "ios",
+                  "cacheVersion": 2,
+                  "renderVersion": "ios-portrait-bitmap-v1",
+                  "width": 1024,
+                  "height": 1536,
+                  "hash": "07fdcbbd743fe8a36c54b553241921efa8f4e9fe729ba3f337358be88172ea65",
+                  "sourceHash": "03acd8e63f5aabee3bbbbd3450832b465345be8387dc478c88666db7360e28c5",
+                  "sourceAssetId": "dress_override_97c784b68c1b422fb01ee9e97bedded6",
+                  "sourceStoragePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/dresses/dress_802c3960bec340de91e4f8c73c453c3f/override_6525f59bacf34489aa42451456151269",
+                  "sourceRenderKind": "svg",
+                  "derivativeOf": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/dresses/dress_802c3960bec340de91e4f8c73c453c3f/override_6525f59bacf34489aa42451456151269"
+                }
+              ]
+            },
+            {
+              "emotionKey": "fear",
+              "imagePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/dresses/dress_802c3960bec340de91e4f8c73c453c3f/override_9035b6622d064c24ae85128941f631d7",
+              "imageDerivatives": [
+                {
+                  "storagePath": "runtime/runtime/portrait-derivatives/dress_override_44dd67a8987c4f518a391bbdb25e8ae5/52e01c12951a8fd2.reader.webp",
+                  "contentType": "image/webp",
+                  "renderKind": "bitmap",
+                  "targetPlatform": "ios",
+                  "cacheVersion": 2,
+                  "renderVersion": "ios-portrait-bitmap-v1",
+                  "width": 1024,
+                  "height": 1536,
+                  "hash": "4e99e91b7b9cf1314a8c51f328ac659291c31c918b191e714b38cce028e0d60b",
+                  "sourceHash": "52e01c12951a8fd2bc64a8d062415092bd4d9137d2d7205182e5c08a845981ba",
+                  "sourceAssetId": "dress_override_44dd67a8987c4f518a391bbdb25e8ae5",
+                  "sourceStoragePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/dresses/dress_802c3960bec340de91e4f8c73c453c3f/override_9035b6622d064c24ae85128941f631d7",
+                  "sourceRenderKind": "svg",
+                  "derivativeOf": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/dresses/dress_802c3960bec340de91e4f8c73c453c3f/override_9035b6622d064c24ae85128941f631d7"
+                }
+              ]
+            },
+            {
+              "emotionKey": "neutral",
+              "imagePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/dresses/dress_802c3960bec340de91e4f8c73c453c3f/override_cbd2e11525a542a79b59aad721b1a10b",
+              "imageDerivatives": [
+                {
+                  "storagePath": "runtime/runtime/portrait-derivatives/dress_override_e41700322c094d8b9c97e26ade47d2bf/ad426f2503c24d56.reader.webp",
+                  "contentType": "image/webp",
+                  "renderKind": "bitmap",
+                  "targetPlatform": "ios",
+                  "cacheVersion": 2,
+                  "renderVersion": "ios-portrait-bitmap-v1",
+                  "width": 1024,
+                  "height": 1536,
+                  "hash": "de1108c72fe64efd0fa7071c820ea60d6ed5815c42e32100e087f1b474b3c5a7",
+                  "sourceHash": "ad426f2503c24d560a124e632f3752b5be9b8c461e9a7702f1275e0f2aba431a",
+                  "sourceAssetId": "dress_override_e41700322c094d8b9c97e26ade47d2bf",
+                  "sourceStoragePath": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/dresses/dress_802c3960bec340de91e4f8c73c453c3f/override_cbd2e11525a542a79b59aad721b1a10b",
+                  "sourceRenderKind": "svg",
+                  "derivativeOf": "runtime/media/characters/character_58f6fff5e15f481ba6c3ff56a2cb3e88/dresses/dress_802c3960bec340de91e4f8c73c453c3f/override_cbd2e11525a542a79b59aad721b1a10b"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "character_e052ecc44441425191d2621c1e0bd07e",
+      "name": "Pascal",
+      "slug": "the-hand",
+      "bio": "Lord Pascal Varron, The Hand of the King in Valestria",
+      "defaultEmotionKey": "default",
+      "defaultEmotionImagePath": "runtime/media/characters/character_e052ecc44441425191d2621c1e0bd07e/emotion_6d9e8bb95f0d43718f3125fe4979aa9a/file_b7f7cfb303064051b12fcf86555ba039",
+      "emotions": [
+        {
+          "key": "default",
+          "label": "Default",
+          "imagePath": "runtime/media/characters/character_e052ecc44441425191d2621c1e0bd07e/emotion_6d9e8bb95f0d43718f3125fe4979aa9a/file_b7f7cfb303064051b12fcf86555ba039",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_6d9e8bb95f0d43718f3125fe4979aa9a/7ef0c5a3d0fc568d.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 611,
+              "height": 916,
+              "hash": "73b73631c206ceac18ec459bbbfacf00c704f83a6c9f390588de5a913464207f",
+              "sourceHash": "7ef0c5a3d0fc568df269e1e7998f401f5139dd97ec7f520a2f502d55ddc406d8",
+              "sourceAssetId": "emotion_6d9e8bb95f0d43718f3125fe4979aa9a",
+              "sourceStoragePath": "runtime/media/characters/character_e052ecc44441425191d2621c1e0bd07e/emotion_6d9e8bb95f0d43718f3125fe4979aa9a/file_b7f7cfb303064051b12fcf86555ba039",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_e052ecc44441425191d2621c1e0bd07e/emotion_6d9e8bb95f0d43718f3125fe4979aa9a/file_b7f7cfb303064051b12fcf86555ba039"
+            }
+          ]
+        }
+      ],
+      "dresses": []
+    },
+    {
+      "id": "character_52af36f214f749da940b1bbe8d699a0c",
+      "name": "Razin",
+      "slug": "razin",
+      "bio": "Prince Razin Saffryn in Azdara",
+      "defaultEmotionKey": "default",
+      "defaultEmotionImagePath": "runtime/media/characters/character_52af36f214f749da940b1bbe8d699a0c/emotion_3bd405fe4a264adca1608c9a421f5999/file_e7bb0eb9ebad4c18a0baa1134249b344",
+      "emotions": [
+        {
+          "key": "default",
+          "label": "Default",
+          "imagePath": "runtime/media/characters/character_52af36f214f749da940b1bbe8d699a0c/emotion_3bd405fe4a264adca1608c9a421f5999/file_e7bb0eb9ebad4c18a0baa1134249b344",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_3bd405fe4a264adca1608c9a421f5999/5892179f3c701b62.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 918,
+              "height": 1377,
+              "hash": "5f10489560097593e5ec7e565e0067df217ea6dfb38befb6e4d96b8e45a86c0e",
+              "sourceHash": "5892179f3c701b621c77794ea06506cf20bbfd1fcf81fec4feaad730299546ea",
+              "sourceAssetId": "emotion_3bd405fe4a264adca1608c9a421f5999",
+              "sourceStoragePath": "runtime/media/characters/character_52af36f214f749da940b1bbe8d699a0c/emotion_3bd405fe4a264adca1608c9a421f5999/file_e7bb0eb9ebad4c18a0baa1134249b344",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_52af36f214f749da940b1bbe8d699a0c/emotion_3bd405fe4a264adca1608c9a421f5999/file_e7bb0eb9ebad4c18a0baa1134249b344"
+            }
+          ]
+        }
+      ],
+      "dresses": []
+    },
+    {
+      "id": "character_95c4cf8955864aa698feabd233bad2b7",
+      "name": "Stranger",
+      "slug": "stranger",
+      "bio": null,
+      "defaultEmotionKey": "default",
+      "defaultEmotionImagePath": "runtime/media/characters/character_95c4cf8955864aa698feabd233bad2b7/emotion_0f1c07ffafbe41f88d72532d3d9318cc",
+      "emotions": [
+        {
+          "key": "default",
+          "label": "Default",
+          "imagePath": "runtime/media/characters/character_95c4cf8955864aa698feabd233bad2b7/emotion_0f1c07ffafbe41f88d72532d3d9318cc",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_0f1c07ffafbe41f88d72532d3d9318cc/0aa5ffe9af17b60e.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 912,
+              "height": 1369,
+              "hash": "766fab147440e9484dc9c306430f7ce25abe12edc146fbb427da899c43fd4b19",
+              "sourceHash": "0aa5ffe9af17b60ee143085af077cc4ea57e73c52d925a3f1f3d556460ba37f1",
+              "sourceAssetId": "emotion_0f1c07ffafbe41f88d72532d3d9318cc",
+              "sourceStoragePath": "runtime/media/characters/character_95c4cf8955864aa698feabd233bad2b7/emotion_0f1c07ffafbe41f88d72532d3d9318cc",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_95c4cf8955864aa698feabd233bad2b7/emotion_0f1c07ffafbe41f88d72532d3d9318cc"
+            }
+          ]
+        }
+      ],
+      "dresses": []
+    },
+    {
+      "id": "character_f145c8e736694f939675db322539c753",
+      "name": "Vaelan",
+      "slug": "vaelan",
+      "bio": "King Vaelan Valamere in Valestria, uncle to Princess Ocnoer",
+      "defaultEmotionKey": "default",
+      "defaultEmotionImagePath": "runtime/media/characters/character_f145c8e736694f939675db322539c753/emotion_6de8be1e0a1548d6b970fe58a64be70b/file_4437f3deef1b44f3918b694cecfe865c",
+      "emotions": [
+        {
+          "key": "angry",
+          "label": "Angry",
+          "imagePath": "runtime/media/characters/character_f145c8e736694f939675db322539c753/emotion_41dc5eb636cd4903a65aa1950ff06f96",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_41dc5eb636cd4903a65aa1950ff06f96/bbfd892ac34ff2d1.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "632de945c8665c6d119a1c08a8f8e9ecc936fea054bd4dabf8776f7ddb1b4dc3",
+              "sourceHash": "bbfd892ac34ff2d1f990ce03bf87854d0394b2eab0b48f4b92a6933f83414931",
+              "sourceAssetId": "emotion_41dc5eb636cd4903a65aa1950ff06f96",
+              "sourceStoragePath": "runtime/media/characters/character_f145c8e736694f939675db322539c753/emotion_41dc5eb636cd4903a65aa1950ff06f96",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_f145c8e736694f939675db322539c753/emotion_41dc5eb636cd4903a65aa1950ff06f96"
+            }
+          ]
+        },
+        {
+          "key": "default",
+          "label": "Default",
+          "imagePath": "runtime/media/characters/character_f145c8e736694f939675db322539c753/emotion_6de8be1e0a1548d6b970fe58a64be70b/file_4437f3deef1b44f3918b694cecfe865c",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_6de8be1e0a1548d6b970fe58a64be70b/ec5058667fdf46e2.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 809,
+              "height": 1213,
+              "hash": "6508abeefcd84a527eb4a820b0160f802d3121e9b7343e03f8899fcd6a0393bb",
+              "sourceHash": "ec5058667fdf46e23e0b05fa2ac08aef0786d3933f43bd5560b5806b84175d1d",
+              "sourceAssetId": "emotion_6de8be1e0a1548d6b970fe58a64be70b",
+              "sourceStoragePath": "runtime/media/characters/character_f145c8e736694f939675db322539c753/emotion_6de8be1e0a1548d6b970fe58a64be70b/file_4437f3deef1b44f3918b694cecfe865c",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_f145c8e736694f939675db322539c753/emotion_6de8be1e0a1548d6b970fe58a64be70b/file_4437f3deef1b44f3918b694cecfe865c"
+            }
+          ]
+        },
+        {
+          "key": "disgusted",
+          "label": "Disgusted",
+          "imagePath": "runtime/media/characters/character_f145c8e736694f939675db322539c753/emotion_7872e70cbfa74d398a055a3927290388",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_7872e70cbfa74d398a055a3927290388/18410f3902ef5883.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 1024,
+              "height": 1536,
+              "hash": "86256d195c140ca4c3ed7e4e495ab6dbd56cf29d98559a344c7f1bdd6b63ff1d",
+              "sourceHash": "18410f3902ef58831118519eb3a17bf80c21c3a513f44371f57a348c2e7e1e86",
+              "sourceAssetId": "emotion_7872e70cbfa74d398a055a3927290388",
+              "sourceStoragePath": "runtime/media/characters/character_f145c8e736694f939675db322539c753/emotion_7872e70cbfa74d398a055a3927290388",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_f145c8e736694f939675db322539c753/emotion_7872e70cbfa74d398a055a3927290388"
+            }
+          ]
+        }
+      ],
+      "dresses": []
+    },
+    {
+      "id": "character_9fb158550e724f989e68b871e0c90862",
+      "name": "Zareen",
+      "slug": "zareen",
+      "bio": "Queen Zareen Valamere of House Saffryn from Azdara in Valestria, a lady wife to the new King Vaelan Valamere in Valestria",
+      "defaultEmotionKey": "default",
+      "defaultEmotionImagePath": "runtime/media/characters/character_9fb158550e724f989e68b871e0c90862/emotion_e0a45ade670f4fd0aee5ad20dd4a9232/file_5661de30a1a24f87a1c28a8a9c42475e",
+      "emotions": [
+        {
+          "key": "blurred",
+          "label": "Blurred",
+          "imagePath": "runtime/media/characters/character_9fb158550e724f989e68b871e0c90862/emotion_759c9b4d65e44f038aac9772222de967/file_4083d5a87d4449ba920733d5d95f7177",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_759c9b4d65e44f038aac9772222de967/3adc94d707116bd2.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 929,
+              "height": 1394,
+              "hash": "510705c9400f2adf0a91c03a31e06595f47d2d59e4a76e68d0062343f78661ee",
+              "sourceHash": "3adc94d707116bd21f018981bdcddf54e39d138b329eeb11467605e881c44da4",
+              "sourceAssetId": "emotion_759c9b4d65e44f038aac9772222de967",
+              "sourceStoragePath": "runtime/media/characters/character_9fb158550e724f989e68b871e0c90862/emotion_759c9b4d65e44f038aac9772222de967/file_4083d5a87d4449ba920733d5d95f7177",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_9fb158550e724f989e68b871e0c90862/emotion_759c9b4d65e44f038aac9772222de967/file_4083d5a87d4449ba920733d5d95f7177"
+            }
+          ]
+        },
+        {
+          "key": "default",
+          "label": "Default",
+          "imagePath": "runtime/media/characters/character_9fb158550e724f989e68b871e0c90862/emotion_e0a45ade670f4fd0aee5ad20dd4a9232/file_5661de30a1a24f87a1c28a8a9c42475e",
+          "imageDerivatives": [
+            {
+              "storagePath": "runtime/runtime/portrait-derivatives/emotion_e0a45ade670f4fd0aee5ad20dd4a9232/d03a66447ba757b8.reader.webp",
+              "contentType": "image/webp",
+              "renderKind": "bitmap",
+              "targetPlatform": "ios",
+              "cacheVersion": 2,
+              "renderVersion": "ios-portrait-bitmap-v1",
+              "width": 929,
+              "height": 1394,
+              "hash": "8b14b5ef529d0cab01580f37efa23fed2301cd4eadad84838a120bf4de9ca1ac",
+              "sourceHash": "d03a66447ba757b8557dfe20d3ba8ba6067a659bb624295996c4cb41b3597148",
+              "sourceAssetId": "emotion_e0a45ade670f4fd0aee5ad20dd4a9232",
+              "sourceStoragePath": "runtime/media/characters/character_9fb158550e724f989e68b871e0c90862/emotion_e0a45ade670f4fd0aee5ad20dd4a9232/file_5661de30a1a24f87a1c28a8a9c42475e",
+              "sourceRenderKind": "svg",
+              "derivativeOf": "runtime/media/characters/character_9fb158550e724f989e68b871e0c90862/emotion_e0a45ade670f4fd0aee5ad20dd4a9232/file_5661de30a1a24f87a1c28a8a9c42475e"
+            }
+          ]
+        }
+      ],
+      "dresses": []
+    }
+  ]
+}

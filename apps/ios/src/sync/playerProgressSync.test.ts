@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("react-native", () => ({
   NativeModules: {
@@ -25,8 +25,16 @@ import {
   MOBILE_API_CONNECTION_ERROR_MESSAGE
 } from "../api/mobileApiClient";
 import { createPlayerProgressClient } from "../api/playerProgressClient";
-import { saveProgressByPlayerId } from "../storage/playerProgressStorage";
-import { saveSyncedPlayerProgress } from "./playerProgressSync";
+import {
+  clearProgressByPlayerId,
+  loadProgressByPlayerId,
+  saveProgressByPlayerId
+} from "../storage/playerProgressStorage";
+import {
+  clearSyncedPlayerProgress,
+  loadSyncedPlayerProgress,
+  saveSyncedPlayerProgress
+} from "./playerProgressSync";
 
 const progress: PlayerProgress = {
   schemaVersion: 1,
@@ -43,6 +51,11 @@ const saveProgressByPlayerIdMock = vi.mocked(saveProgressByPlayerId);
 describe("saveSyncedPlayerProgress", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("EXPO_PUBLIC_OCNOER_CONTENT_MODE", "remote");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   it("keeps transient backend failures out of reader UI after local save", async () => {
@@ -90,5 +103,60 @@ describe("saveSyncedPlayerProgress", () => {
     ).resolves.toEqual({
       warning: "Invalid progress."
     });
+  });
+});
+
+describe("offline player progress", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv("EXPO_PUBLIC_OCNOER_CONTENT_MODE", undefined);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it("loads saved device progress without creating an API client", async () => {
+    vi.mocked(loadProgressByPlayerId).mockResolvedValue(progress);
+
+    await expect(
+      loadSyncedPlayerProgress({ playerId: "offline-reader", token: "local" })
+    ).resolves.toEqual({
+      progress,
+      source: "local-cache",
+      warning: null
+    });
+    expect(loadProgressByPlayerId).toHaveBeenCalledWith("offline-reader");
+    expect(createPlayerProgressClient).not.toHaveBeenCalled();
+  });
+
+  it("starts cleanly when no device progress has been saved", async () => {
+    vi.mocked(loadProgressByPlayerId).mockResolvedValue(null);
+
+    await expect(
+      loadSyncedPlayerProgress({ playerId: "offline-reader", token: "local" })
+    ).resolves.toEqual({ progress: null, source: "none", warning: null });
+    expect(createPlayerProgressClient).not.toHaveBeenCalled();
+  });
+
+  it("saves and resets progress locally without creating an API client", async () => {
+    await expect(
+      saveSyncedPlayerProgress({
+        playerId: "offline-reader",
+        token: "local",
+        progress
+      })
+    ).resolves.toEqual({ warning: null });
+    await clearSyncedPlayerProgress({
+      playerId: "offline-reader",
+      token: "local"
+    });
+
+    expect(saveProgressByPlayerId).toHaveBeenCalledWith(
+      "offline-reader",
+      progress
+    );
+    expect(clearProgressByPlayerId).toHaveBeenCalledWith("offline-reader");
+    expect(createPlayerProgressClient).not.toHaveBeenCalled();
   });
 });

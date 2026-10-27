@@ -6,6 +6,12 @@ import type {
   MobilePlayerSessionPayload
 } from "../api/playerSessionTypes";
 import { createPlayerSessionClient } from "../api/playerSessionClient";
+import { isOfflineMode } from "../config/contentMode";
+import {
+  createOfflinePlayerSession,
+  loadOfflinePlayerSession,
+  saveOfflinePlayerSession
+} from "../storage/offlinePlayerStorage";
 import {
   clearStoredPlayerSession,
   loadStoredPlayerSession,
@@ -64,6 +70,8 @@ export function usePlayerSession() {
   }, []);
 
   useEffect(() => {
+    mountedRef.current = true;
+
     return () => {
       mountedRef.current = false;
     };
@@ -71,6 +79,21 @@ export function usePlayerSession() {
 
   useEffect(() => {
     async function restoreSession() {
+      if (isOfflineMode()) {
+        const storedSession = await loadOfflinePlayerSession().catch(() =>
+          createOfflinePlayerSession()
+        );
+
+        setMountedState({
+          status: "signed-in",
+          storedSession,
+          error: null,
+          isCredentialError: false,
+          isSubmitting: false
+        });
+        return;
+      }
+
       try {
         const storedSession = await loadStoredPlayerSession();
 
@@ -114,7 +137,7 @@ export function usePlayerSession() {
   }, [setMountedState]);
 
   useEffect(() => {
-    if (!sessionToken) {
+    if (isOfflineMode() || !sessionToken) {
       return undefined;
     }
 
@@ -133,6 +156,17 @@ export function usePlayerSession() {
 
   const signIn = useCallback(
     async (secret: string) => {
+      if (isOfflineMode()) {
+        setMountedState({
+          status: "signed-in",
+          storedSession: await loadOfflinePlayerSession(),
+          error: null,
+          isCredentialError: false,
+          isSubmitting: false
+        });
+        return;
+      }
+
       setMountedState({
         status: "signed-out",
         error: null,
@@ -164,6 +198,10 @@ export function usePlayerSession() {
   );
 
   const signOut = useCallback(async () => {
+    if (isOfflineMode()) {
+      return;
+    }
+
     const token =
       state.status === "signed-in" ? state.storedSession.session.token : null;
 
@@ -201,7 +239,9 @@ export function usePlayerSession() {
         session: state.storedSession.session,
         player
       };
-      const storedSession = await saveStoredPlayerSession(payload);
+      const storedSession = isOfflineMode()
+        ? await saveOfflinePlayerSession(player)
+        : await saveStoredPlayerSession(payload);
 
       setMountedState({
         ...state,

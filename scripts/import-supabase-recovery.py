@@ -54,7 +54,16 @@ def import_recovery(database, storage, output, project_ref):
     db_bytes = database.read_bytes()
     sql = gzip.decompress(db_bytes).decode("utf-8")
     tables = read_tables(sql)
-    buckets = {row["id"]: row for row in tables["storage.buckets"]}
+    buckets = {}
+    for row in tables["storage.buckets"]:
+        bucket = row["id"]
+        if (not isinstance(bucket, str) or not bucket or bucket in (".", "..")
+                or PurePosixPath(bucket).name != bucket or "\\" in bucket
+                or any(ord(char) < 32 for char in bucket)):
+            raise ValueError("Unsafe Storage bucket ID")
+        if bucket in buckets:
+            raise ValueError("Duplicate Storage bucket ID")
+        buckets[bucket] = row
     expected = {}
     for row in tables["storage.objects"]:
         key = f'{row["bucket_id"]}/{row["name"]}'

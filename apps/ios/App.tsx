@@ -5,6 +5,8 @@ import type { PlayerProgress } from "@ocnoer/story-core";
 
 import { createPlayerSessionClient } from "./src/api/playerSessionClient";
 import { useAudioPreferences } from "./src/audio/useAudioPreferences";
+import { isOfflineMode } from "./src/config/contentMode";
+import { withOfflineCatName } from "./src/storage/offlinePlayerStorage";
 import type { StoredPlayerSession } from "./src/storage/playerSessionStorage";
 import { usePlayerSession } from "./src/hooks/usePlayerSession";
 import { useRuntimeBootstrap } from "./src/hooks/useRuntimeBootstrap";
@@ -146,6 +148,12 @@ function AuthenticatedRuntimeShell(props: AuthenticatedRuntimeShellProps) {
     setCatNameError(null);
 
     try {
+      if (isOfflineMode()) {
+        const player = withOfflineCatName(props.storedSession.player, catName);
+        await props.onPlayerUpdated(player);
+        return player;
+      }
+
       const result = await createPlayerSessionClient().updateCatName(
         props.storedSession.session.token,
         catName

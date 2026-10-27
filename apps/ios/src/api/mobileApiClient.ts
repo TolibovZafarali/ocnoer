@@ -1,4 +1,5 @@
 import { getMobileApiConfig, type MobileApiConfig } from "../config/api";
+import { isOfflineMode } from "../config/contentMode";
 
 export const MOBILE_API_CONNECTION_ERROR_MESSAGE =
   "Connection is taking longer than expected. Please check your internet and try again.";
@@ -136,7 +137,7 @@ export type MobileApiClient = {
 };
 
 export function createMobileApiClient(
-  config: MobileApiConfig = getMobileApiConfig(),
+  config?: MobileApiConfig,
   clientOptions: MobileApiClientOptions = {}
 ): MobileApiClient {
   const fetcher = clientOptions.fetcher ?? fetch;
@@ -146,8 +147,16 @@ export function createMobileApiClient(
 
   return {
     requestJson: async <T>(path: string, options: RequestJsonOptions = {}) => {
+      if (isOfflineMode()) {
+        throw new MobileApiError(
+          "Remote requests are disabled in offline mode.",
+          0
+        );
+      }
+
+      const resolvedConfig = config ?? getMobileApiConfig();
       let response: Response | null = null;
-      const url = `${config.baseUrl}${path}`;
+      const url = `${resolvedConfig.baseUrl}${path}`;
       const requestInit: RequestInit = {
         method: options.method ?? "GET",
         headers: {
@@ -173,7 +182,7 @@ export function createMobileApiClient(
           if (retryDelayMs != null) {
             logMobileApiRetry({
               attempt: attempt + 1,
-              baseUrl: config.baseUrl,
+              baseUrl: resolvedConfig.baseUrl,
               detail: technicalMessage,
               path,
               retryDelayMs
@@ -184,7 +193,7 @@ export function createMobileApiClient(
 
           logMobileApiFailure({
             attempts: attempt + 1,
-            baseUrl: config.baseUrl,
+            baseUrl: resolvedConfig.baseUrl,
             detail: technicalMessage,
             path
           });
@@ -203,7 +212,7 @@ export function createMobileApiClient(
 
           logMobileApiRetry({
             attempt: attempt + 1,
-            baseUrl: config.baseUrl,
+            baseUrl: resolvedConfig.baseUrl,
             detail: `HTTP ${response.status}`,
             path,
             retryDelayMs
@@ -226,7 +235,7 @@ export function createMobileApiClient(
 
         logMobileApiFailure({
           attempts: retryDelaysMs.length + 1,
-          baseUrl: config.baseUrl,
+          baseUrl: resolvedConfig.baseUrl,
           detail: technicalMessage,
           path
         });

@@ -1,321 +1,88 @@
-# iOS Release Prep
+# iOS release prep
 
-This document prepares the Ocnoer iOS app for a real TestFlight-ready build. It
-does not submit anything to Apple and does not add Android support.
+The default iPhone app uses bundled story content and a fictional local player.
+It does not require an active Supabase project, a web API, or a GitHub connection
+to play. The website and all API routes are deactivated while their source is
+preserved.
 
-## Current App Identity
+This guide covers preparing and verifying a new native build. Editing or
+pushing source files does not update an already-installed app. Build and install
+a new binary to deliver the offline implementation and packaged assets.
 
-Configured in `apps/ios/app.json`:
+## App identity and build profiles
 
-- Display name: `Ocnoer`
+Keep the existing identity in `apps/ios/app.json`:
+
+- App name: `Ocnoer`
 - Expo slug: `ocnoer-ios`
-- URL scheme: `ocnoer`
 - iOS bundle identifier: `com.ocnoer.player`
-- Version: `1.0.1`
-- iOS build number: `6`
-- Orientation: portrait
-- Platforms: iOS only
-- Tablet support: disabled
-- Icon: `apps/ios/assets/icon.png`
-- Splash image: `apps/ios/assets/splash.png`
+- URL scheme: `ocnoer`
+- iPhone only, portrait orientation
 
-The bundle identifier is already present in the repo, so it has been preserved.
-Before creating the App Store Connect record, confirm that `com.ocnoer.player`
-is the final bundle ID you want permanently associated with this app. Bundle IDs
-are hard to change once the App Store app record and uploaded builds exist.
+Read the current version and build number from that file. Increment
+`expo.ios.buildNumber` before each subsequent upload to App Store Connect.
 
-The icon and splash files are the current branded mobile assets. Recheck them
-against App Store presentation requirements before public App Store submission.
+`apps/ios/eas.json` defines these profiles:
 
-## Prerequisites
+- `development`: development client for a registered iPhone.
+- `preview`: internal distribution without development-client tooling.
+- `production`: App Store Connect/TestFlight build.
 
-- Apple Developer Program membership. A free Apple ID is not enough for
-  TestFlight distribution.
-- App Store Connect access with permission to create app records, manage
-  TestFlight, and manage app metadata.
-- Expo account and EAS project access.
-- EAS CLI available through the pinned `pnpm dlx eas-cli@18.9.1` scripts in
-  this repo, or installed separately if preferred.
-- Production Next.js deployment URL for the mobile API. TestFlight builds must
-  not point at `localhost`, `127.0.0.1`, `::1`, or a Mac LAN IP.
-- Production Supabase project and public runtime storage already populated.
+Run EAS from `apps/ios` or use the root scripts below. Keep the existing EAS
+project association. A development client normally gets JavaScript and assets
+from Metro; use preview or production binaries for the final offline check.
 
-Expo monorepo note: run EAS commands from `apps/ios`, or use the root scripts
-added in `package.json`. The EAS config lives in `apps/ios/eas.json` because the
-Expo app root is `apps/ios`.
+## Offline configuration
 
-## EAS Build Profiles
+Leave `EXPO_PUBLIC_OCNOER_CONTENT_MODE` unset or set it to `offline`.
+Only the exact value `remote` selects the previous online implementation.
+Verify the effective build profile and EAS environment before building so a
+remote-mode value is not inherited accidentally.
 
-Configured in `apps/ios/eas.json`:
-
-- `development`: iOS internal distribution with `developmentClient: true`, for
-  installing a development client on a registered iPhone.
-- `preview`: iOS internal distribution without dev-client tooling, for
-  production-like internal device testing outside TestFlight.
-- `production`: iOS App Store/TestFlight build profile.
-
-No Android profile or Android release workflow is configured.
-
-## Environment Configuration
-
-The iOS app reads only public Expo variables:
+Offline builds do not need any of these legacy settings:
 
 - `EXPO_PUBLIC_OCNOER_API_BASE_URL`
 - `EXPO_PUBLIC_OCNOER_SUPABASE_URL`
 - `EXPO_PUBLIC_OCNOER_RUNTIME_MANIFEST_PATH`
 
-Do not put secrets in mobile env files. Do not expose Supabase service-role
-keys, database URLs, admin passwords, App Store credentials, or private signing
-material to the iOS app. `EXPO_PUBLIC_*` values are bundled into the app and
-must be treated as public.
+The mock player is fixed to the fictional `Reader` / `offline-reader` identity.
+Its local session marker is not a server credential. Progress, choices, cat
+name, and audio preferences stay on the device. There are no login, heartbeat,
+profile-update, or progress-sync requests in offline mode.
 
-### Local Simulator
+Keep real credentials and recovery-archive decryption keys outside the source
+and mobile bundle. The app does not need database URLs, service-role keys,
+admin passwords, or signing secrets in `EXPO_PUBLIC_*` variables.
 
-Use `apps/ios/.env.local`:
+## Preparing the content
 
-```bash
-EXPO_PUBLIC_OCNOER_API_BASE_URL=http://localhost:3000
-EXPO_PUBLIC_OCNOER_SUPABASE_URL=https://YOUR_PROJECT.supabase.co
-EXPO_PUBLIC_OCNOER_RUNTIME_MANIFEST_PATH=runtime/runtime/manifest.json
-```
-
-Run the web backend with:
+Use the verified Storage export described in [offline archive](offline-archive.md).
+Preserve the complete export independently; the playable bundle contains only
+runtime JSON and media, not database records, drafts, or authoring history.
 
 ```bash
-corepack pnpm dev
+node scripts/bundle-ios-story.mjs /absolute/path/to/storage-export
 ```
 
-### Physical iPhone Local Testing
+The source directory must contain the full Storage export and its root
+`manifest.json`. The generator validates source sizes and SHA-256 checksums,
+checks runtime/media references, and writes the asset files and registry under:
 
-Run the web backend on the LAN:
+- `apps/ios/assets/story/`
+- `apps/ios/src/runtime/generated/storyRegistry.ts`
+- `apps/ios/src/runtime/generated/storyManifest.json`
 
-```bash
-corepack pnpm dev:mobile-api
-```
+Commit the generated assets and registry together. Inspect the generated
+manifest to confirm the expected source and file counts. Build from that commit
+so the same content is packaged in the installed application.
 
-Then set the mobile API URL to the Mac LAN address:
+The app resolves the imported media to local file URIs with `expo-asset`.
+Expo serves local assets over HTTP during development and packages imported
+assets into production binaries. See [Expo asset documentation](https://docs.expo.dev/develop/user-interface/assets/).
 
-```bash
-EXPO_PUBLIC_OCNOER_API_BASE_URL=http://YOUR_MAC_LAN_IP:3000
-```
+## Local checks
 
-Keep the Supabase URL and runtime manifest path pointed at the same public
-runtime data you are testing. A LAN URL is only acceptable for local device
-testing and must not be used for TestFlight.
-
-### TestFlight And Production
-
-Use EAS environment variables for the `production` environment:
-
-```bash
-cd apps/ios
-corepack pnpm dlx eas-cli@18.9.1 env:create \
-  --name EXPO_PUBLIC_OCNOER_API_BASE_URL \
-  --value https://YOUR_PRODUCTION_WEB_DOMAIN \
-  --environment production \
-  --visibility plaintext
-corepack pnpm dlx eas-cli@18.9.1 env:create \
-  --name EXPO_PUBLIC_OCNOER_SUPABASE_URL \
-  --value https://YOUR_PROJECT.supabase.co \
-  --environment production \
-  --visibility plaintext
-corepack pnpm dlx eas-cli@18.9.1 env:create \
-  --name EXPO_PUBLIC_OCNOER_RUNTIME_MANIFEST_PATH \
-  --value runtime/runtime/manifest.json \
-  --environment production \
-  --visibility plaintext
-```
-
-Expected production API URL format:
-
-```text
-https://your-production-domain.example
-```
-
-Do not include `/api` at the end; the mobile clients append route paths such as
-`/api/mobile/player/session`. Avoid a trailing slash. The production URL must be
-publicly reachable from Apple devices and App Store review devices.
-
-For `development` and `preview` EAS environments, set the same variable names to
-public URLs that match the build's purpose. Preview/internal builds should use a
-real HTTPS backend unless you are intentionally making an ad hoc build for LAN
-testing only.
-
-## Development Build
-
-Development builds include `expo-dev-client` and are meant for your registered
-iPhone, not TestFlight.
-
-```bash
-corepack pnpm ios:eas:build:development
-corepack pnpm dev:ios:client
-```
-
-EAS will need Apple Developer access to create or use development signing
-credentials and register devices for internal distribution. Handle those prompts
-yourself.
-
-## Preview Build
-
-Preview builds are internal, production-like iOS builds without dev-client
-tooling.
-
-```bash
-corepack pnpm ios:eas:build:preview
-```
-
-Install through the EAS internal distribution flow after the build completes.
-This is useful before TestFlight because it exercises a release-style binary
-without uploading to App Store Connect.
-
-## Production/TestFlight Build
-
-Production builds are the binaries intended for App Store Connect and
-TestFlight.
-
-```bash
-corepack pnpm ios:eas:build:production
-```
-
-Before each upload after the first one, increment `expo.ios.buildNumber` in
-`apps/ios/app.json`. Keep `expo.version` aligned with the user-facing release
-version you want in App Store Connect.
-
-## EAS Submit
-
-`apps/ios/eas.json` includes an empty iOS submit profile so EAS can prompt for
-Apple details without committing account-specific values.
-
-After a production build exists and you are ready to upload it to App Store
-Connect, run:
-
-```bash
-cd apps/ios
-corepack pnpm dlx eas-cli@18.9.1 submit --platform ios --profile production --latest
-```
-
-Uploading to App Store Connect/TestFlight is not the same as submitting for App
-Store Review. Do not submit for review until metadata, privacy disclosures,
-screenshots, and QA are complete.
-
-## Apple Developer And App Store Connect Steps
-
-Do these manually:
-
-1. Enroll in or confirm Apple Developer Program membership.
-2. In Apple Developer, create or confirm the explicit App ID for
-   `com.ocnoer.player`.
-3. In App Store Connect, create a new iOS app record using the final app name
-   and exact bundle ID.
-4. Choose the SKU. A simple internal value such as `ocnoer-ios` is fine.
-5. Complete agreements, tax, and banking prompts if Apple blocks TestFlight or
-   App Store Connect features.
-6. Add internal testers in App Store Connect. Internal testers must be App Store
-   Connect users with access to the app.
-7. After uploading the build, wait for Apple processing, then add the build to
-   an internal TestFlight group.
-
-## Expo/EAS Steps
-
-Do these manually:
-
-1. Log in to Expo:
-   ```bash
-   cd apps/ios
-   corepack pnpm dlx eas-cli@18.9.1 login
-   ```
-2. Link or create the EAS project:
-   ```bash
-   corepack pnpm dlx eas-cli@18.9.1 init
-   ```
-   Commit the resulting `extra.eas.projectId` if EAS adds one to
-   `apps/ios/app.json`.
-3. Configure `development`, `preview`, and `production` EAS environment
-   variables for the three `EXPO_PUBLIC_OCNOER_*` values.
-4. Run the development, preview, and production builds only when the correct
-   public URLs are set.
-5. Let EAS manage iOS credentials, or provide your own certificates and
-   provisioning profiles when prompted.
-
-## App Store Submission Prep
-
-- App name: confirm final public name. Current binary display name is `Ocnoer`.
-- Subtitle: `A Cinematic Fantasy Tale`
-- Description:
-  Ocnoer is a cinematic medieval fantasy story built around atmosphere, choices,
-  and discovery. Step into a quiet world of castles, secrets, journeys, and
-  characters shaped by fate. Read through immersive scenes, follow the unfolding
-  mystery, and experience a polished storybook rhythm with an elegant visual
-  style.
-- Keywords:
-  `fantasy,story,interactive,medieval,cinematic,narrative,mystery,adventure,castle`
-- Support URL: required; use a public HTTPS page or support email landing page.
-- Privacy policy URL: required; use a public HTTPS privacy policy covering the
-  web app, mobile app, Supabase/backend processing, media loading, and progress
-  sync.
-- Screenshots: prepare 1-10 PNG/JPG screenshots for iPhone. Since the app is
-  iPhone-only, iPad screenshots should not be required unless Apple reports the
-  binary as supporting iPad. Use current App Store Connect screenshot
-  specifications when generating final sizes.
-- Category recommendation: `Games` if you want the story reader positioned as an
-  interactive game; otherwise `Entertainment` is the conservative fallback for a
-  cinematic interactive story app.
-- Age rating notes: complete Apple's questionnaire based on actual story
-  content. Consider fantasy themes, conflict, fear, violence, profanity,
-  medical content, gambling, web access, and user-generated content
-  honestly. The current app has no open user-generated public feed.
-- Export compliance: the app uses standard platform/network encryption only
-  based on the current code. `ITSAppUsesNonExemptEncryption` is set to `false`,
-  but confirm this remains accurate before upload.
-
-### Privacy/Data Disclosure Notes
-
-Based on the current app behavior, disclose data used for app functionality:
-
-- Player sign-in/session token. The mobile token is stored on device with
-  `expo-secure-store` and sent to the Next.js backend as a bearer token.
-- Player profile fields returned to mobile: player ID, first name, cat name,
-  and cat-name lock state.
-- Cat name if the player enters one.
-- Reading progress synced with the backend.
-- Runtime, media, and audio requests to Supabase/public storage and the backend.
-
-Current code does not show:
-
-- Push notifications
-- In-app purchases
-- Third-party analytics SDKs
-- Ad tracking
-- Android support
-
-If those are added later, update this document and the App Store privacy
-answers before submitting.
-
-## Pre-TestFlight QA Checklist
-
-- Sign in with the player credential.
-- Relaunch the app and verify session restore.
-- Load the runtime manifest and first playable chapter from production URLs.
-- Start from the beginning.
-- Continue from saved progress.
-- Restart/clear progress.
-- Confirm web-to-iOS progress sync.
-- Confirm iOS-to-web progress sync.
-- Mute and unmute audio.
-- Send the app to background and foreground during audio playback; verify the
-  current behavior is acceptable and does not crash.
-- Move through scene transitions.
-- Verify character staging and portrait rendering.
-- Complete the cat-name prompt.
-- Complete the dress prompt.
-- Complete the ending flow.
-- Sign out and verify the next launch requires sign-in.
-- Test bad network behavior. Full offline play is not currently guaranteed; the
-  expected release behavior is graceful loading/error states and no crashes.
-
-## Verification Commands
-
-Run before the first production/TestFlight build:
+From the repository root:
 
 ```bash
 corepack pnpm typecheck
@@ -325,34 +92,84 @@ corepack pnpm ios:config
 corepack pnpm --filter @ocnoer/ios exec expo install --check
 ```
 
-Then build in this order:
+A successful web build verifies the retained Next.js source and shutdown gate;
+it does not verify iPhone rendering, audio, or native asset packaging.
+
+For development:
+
+```bash
+EXPO_PUBLIC_OCNOER_CONTENT_MODE=offline corepack pnpm dev:ios
+```
+
+If using the registered-device development client:
 
 ```bash
 corepack pnpm ios:eas:build:development
+corepack pnpm dev:ios:client
+```
+
+## Native build and installation
+
+Create an internal preview build for device verification:
+
+```bash
 corepack pnpm ios:eas:build:preview
+```
+
+Install the resulting build using its internal distribution link. For an App
+Store Connect/TestFlight binary:
+
+```bash
 corepack pnpm ios:eas:build:production
 ```
 
-Only upload to App Store Connect when the production build uses real production
-URLs and the App Store Connect app record exists.
+These workflows require the configured Expo account and appropriate Apple
+signing access. Check the actual build result before reporting a native build
+as ready.
 
-## References
+After a production build is complete, upload that verified build to App Store
+Connect when a release is intended:
 
-- Expo EAS monorepo setup:
-  https://docs.expo.dev/build-reference/build-with-monorepos/
-- Expo `eas.json` build profiles:
-  https://docs.expo.dev/build/eas-json/
-- Expo EAS environment variables:
-  https://docs.expo.dev/eas/environment-variables/
-- Expo splash screen and icon:
-  https://docs.expo.dev/develop/user-interface/splash-screen-and-app-icon/
-- Expo EAS Submit:
-  https://docs.expo.dev/submit/introduction/
-- Apple TestFlight:
-  https://developer.apple.com/testflight/
-- Apple internal testers:
-  https://developer.apple.com/help/app-store-connect/test-a-beta-version/add-internal-testers/
-- Apple screenshot specifications:
-  https://developer.apple.com/help/app-store-connect/reference/screenshot-specifications/
-- Apple export compliance:
-  https://developer.apple.com/help/app-store-connect/manage-app-information/overview-of-export-compliance/
+```bash
+cd apps/ios
+corepack pnpm dlx eas-cli@18.9.1 submit --platform ios --profile production --latest
+```
+
+Check that `--latest` identifies the binary just verified before using it.
+An upload, a TestFlight installation, App Review submission, and public release
+are separate states. Record which one has actually completed.
+
+## Offline device acceptance
+
+Use an installed preview or production binary and stop Metro. Disable Wi-Fi
+and cellular data before its first launch so prior network caches cannot hide
+missing assets.
+
+- Cold launch enters the story without requesting a login or backend.
+- Open every chapter and check portraits, backgrounds, and music.
+- Complete player choices, including cat name and dress selection.
+- Close and relaunch the app; reading progress and choices persist locally.
+- Restart reading and reset progress; both work without a network.
+- Mute/unmute audio and background/foreground the app during playback.
+- Complete the ending flow.
+- Confirm that no Supabase, web API, or GitHub request is required.
+
+Recheck after changing the content snapshot or native dependencies. Keep any
+simulator-only results distinct from physical-device evidence.
+
+## Website and future restoration
+
+Every web path, including `/`, `/play`, `/admin`, and all APIs, returns `410 Gone`
+under the shutdown middleware. See [website deactivation](website-deactivation.md)
+for deployment verification. The offline iPhone build is independent of this
+website.
+
+To deliberately revive the online application later, restore the exported data
+and backend services, change the web gate in source, and build the iPhone app
+with `EXPO_PUBLIC_OCNOER_CONTENT_MODE=remote` and the appropriate legacy URLs.
+The complete former release guide remains in
+[historical remote-mode release reference](ios-remote-release-reference.md).
+
+For a future App Store release, review privacy answers for the actual offline
+binary and provide reachable support/privacy destinations appropriate to that
+release. The deactivated website cannot serve those pages.

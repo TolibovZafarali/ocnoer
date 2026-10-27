@@ -2,6 +2,7 @@ import { useState } from "react";
 import { SafeAreaView, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { MOBILE_RUNTIME_ENV_VARS } from "../config/runtime";
+import { isOfflineMode } from "../config/contentMode";
 import type { RuntimeBootstrapState } from "../hooks/useRuntimeBootstrap";
 import {
   getRuntimeStoryTitle,
@@ -79,7 +80,9 @@ function getProgressSummary(input: {
   isLoadingProgress: boolean;
 }) {
   if (input.isLoadingProgress) {
-    return "Checking synced progress...";
+    return isOfflineMode()
+      ? "Loading saved progress..."
+      : "Checking synced progress...";
   }
 
   if (!input.savedProgress) {
@@ -112,7 +115,7 @@ export function BootstrapScreen(props: BootstrapScreenProps) {
             />
             <OcnoerSurface style={styles.card} variant="glass">
               <OcnoerInfoRow
-                label="Signed in as"
+                label={isOfflineMode() ? "Player" : "Signed in as"}
                 value={props.player.firstName}
               />
               <OcnoerInfoRow
@@ -120,22 +123,26 @@ export function BootstrapScreen(props: BootstrapScreenProps) {
                 value={props.player.catName ?? "Not set"}
               />
             </OcnoerSurface>
-            <OcnoerSurface style={styles.card} variant="quiet">
-              <Text style={styles.cardTitle}>Required public config</Text>
-              {MOBILE_RUNTIME_ENV_VARS.map((name) => (
-                <Text key={name} style={styles.codeText}>
-                  {name}
-                </Text>
-              ))}
-            </OcnoerSurface>
+            {!isOfflineMode() ? (
+              <OcnoerSurface style={styles.card} variant="quiet">
+                <Text style={styles.cardTitle}>Required public config</Text>
+                {MOBILE_RUNTIME_ENV_VARS.map((name) => (
+                  <Text key={name} style={styles.codeText}>
+                    {name}
+                  </Text>
+                ))}
+              </OcnoerSurface>
+            ) : null}
             <OcnoerButton label="Retry" onPress={props.onRetry} />
-            <OcnoerButton
-              disabled={props.isSigningOut}
-              label={props.isSigningOut ? "Signing Out" : "Sign Out"}
-              onPress={props.onSignOut}
-              style={styles.stackedButton}
-              variant="secondary"
-            />
+            {!isOfflineMode() ? (
+              <OcnoerButton
+                disabled={props.isSigningOut}
+                label={props.isSigningOut ? "Signing Out" : "Sign Out"}
+                onPress={props.onSignOut}
+                style={styles.stackedButton}
+                variant="secondary"
+              />
+            ) : null}
           </ScrollView>
         </OcnoerScreenBackground>
       </SafeAreaView>
@@ -170,13 +177,15 @@ export function BootstrapScreen(props: BootstrapScreenProps) {
                   onToggleMuted={props.onToggleAudioMuted}
                 />
               </View>
-              <OcnoerButton
-                disabled={props.isSigningOut}
-                label={props.isSigningOut ? "Signing Out" : "Sign Out"}
-                onPress={props.onSignOut}
-                style={styles.homeChromeButton}
-                variant="ghost"
-              />
+              {!isOfflineMode() ? (
+                <OcnoerButton
+                  disabled={props.isSigningOut}
+                  label={props.isSigningOut ? "Signing Out" : "Sign Out"}
+                  onPress={props.onSignOut}
+                  style={styles.homeChromeButton}
+                  variant="ghost"
+                />
+              ) : null}
             </View>
 
             <OcnoerSurface style={styles.homePanel} variant="glass">
@@ -191,7 +200,7 @@ export function BootstrapScreen(props: BootstrapScreenProps) {
 
               <View style={styles.homeMeta}>
                 <OcnoerInfoRow
-                  label="Signed in as"
+                  label={isOfflineMode() ? "Player" : "Signed in as"}
                   value={props.player.firstName}
                 />
                 <OcnoerInfoRow

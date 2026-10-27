@@ -8,10 +8,13 @@ const mockParse = vi.fn(() => ({
 }));
 
 function joinUri(parts: Array<string | { uri: string }>) {
-  return parts
+  const joined = parts
     .map((part) => (typeof part === "string" ? part : part.uri))
-    .join("/")
-    .replace(/([^:]\/)\/+/g, "$1");
+    .join("/");
+
+  return joined.startsWith("file://")
+    ? `file://${joined.slice("file://".length).replace(/\/{2,}/g, "/")}`
+    : joined.replace(/\/{2,}/g, "/");
 }
 
 class MockDirectory {
@@ -167,6 +170,43 @@ describe("reader asset cache", () => {
     delete globalThis.__OCNOER_READER_FORCE_ALL_CHARACTER_PORTRAITS_TO_LOCAL_TEST_BITMAP;
     delete globalThis.__OCNOER_READER_STRICT_BITMAP_DERIVATIVES;
     delete globalThis.__OCNOER_READER_CLEAR_ASSET_CACHE;
+  });
+
+  it("prepares bundled scene images and SVG portraits with fetch unavailable", async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error("Network is unavailable.");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const backgroundUri = "file:///app/story/background.png";
+    const portraitUri = "file:///app/story/portrait.svg";
+    mockFiles.set(backgroundUri, createPngBytes());
+    mockFiles.set(portraitUri, '<svg><path d="M0 0" /></svg>');
+    const { ensureSceneAssetsReady, getCachedAssetUri, getAssetRenderMode } =
+      await import("./imagePreload");
+    const background = {
+      role: "background" as const,
+      url: backgroundUri,
+      storagePath: backgroundUri,
+      cacheKey: "bundled-background"
+    };
+    const portrait = {
+      role: "portrait" as const,
+      url: portraitUri,
+      storagePath: portraitUri,
+      cacheKey: "bundled-portrait",
+      sourceRenderKind: "svg" as const
+    };
+
+    const result = await ensureSceneAssetsReady("bundled-scene", [
+      background,
+      portrait
+    ]);
+
+    expect(result.status).toBe("success");
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(getCachedAssetUri(background)).toBe(backgroundUri);
+    expect(getCachedAssetUri(portrait)).toBe(portraitUri);
+    expect(getAssetRenderMode(portrait)).toBe("source-svg-image");
   });
 
   it("dedupes extensionless remote bitmap downloads and stores a local uri", async () => {

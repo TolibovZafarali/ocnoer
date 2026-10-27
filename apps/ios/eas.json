@@ -10,16 +10,25 @@
       "environment": "development",
       "ios": {
         "simulator": false
+      },
+      "env": {
+        "EXPO_PUBLIC_OCNOER_CONTENT_MODE": "offline"
       }
     },
     "preview": {
       "distribution": "internal",
       "environment": "preview",
-      "ios": {}
+      "ios": {},
+      "env": {
+        "EXPO_PUBLIC_OCNOER_CONTENT_MODE": "offline"
+      }
     },
     "production": {
       "environment": "production",
-      "ios": {}
+      "ios": {},
+      "env": {
+        "EXPO_PUBLIC_OCNOER_CONTENT_MODE": "offline"
+      }
     }
   },
   "submit": {

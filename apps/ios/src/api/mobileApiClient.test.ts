@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 vi.mock("react-native", () => ({
   NativeModules: {
@@ -24,8 +24,24 @@ function jsonResponse(body: unknown, status = 200) {
 }
 
 describe("createMobileApiClient", () => {
+  beforeEach(() => {
+    vi.stubEnv("EXPO_PUBLIC_OCNOER_CONTENT_MODE", "remote");
+  });
+
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllEnvs();
+  });
+
+  it("blocks API requests before reading config or calling fetch in offline mode", async () => {
+    vi.stubEnv("EXPO_PUBLIC_OCNOER_CONTENT_MODE", undefined);
+    const fetcher = vi.fn<typeof fetch>();
+    const client = createMobileApiClient(undefined, { fetcher });
+
+    await expect(client.requestJson("/api/player/activity")).rejects.toThrow(
+      "Remote requests are disabled in offline mode."
+    );
+    expect(fetcher).not.toHaveBeenCalled();
   });
 
   it("retries a transient network failure before surfacing an error", async () => {
@@ -44,10 +60,11 @@ describe("createMobileApiClient", () => {
       }
     );
 
-    await expect(client.requestJson<{ ok: boolean }>("/api/player/activity"))
-      .resolves.toEqual({
-        ok: true
-      });
+    await expect(
+      client.requestJson<{ ok: boolean }>("/api/player/activity")
+    ).resolves.toEqual({
+      ok: true
+    });
     expect(fetcher).toHaveBeenCalledTimes(2);
   });
 
@@ -78,9 +95,12 @@ describe("createMobileApiClient", () => {
       .requestJson<{ ok: boolean }>("/api/player/activity")
       .catch((error: unknown) => {
         expect(error).toBeInstanceOf(MobileApiError);
-        const developerBackendHint = ["Start", "the", "Next.js", "backend"].join(
-          " "
-        );
+        const developerBackendHint = [
+          "Start",
+          "the",
+          "Next.js",
+          "backend"
+        ].join(" ");
         const developerReachabilityHint = [
           "Unable",
           "to",
@@ -100,16 +120,14 @@ describe("createMobileApiClient", () => {
   });
 
   it("does not retry or hide fatal auth errors", async () => {
-    const fetcher = vi
-      .fn<typeof fetch>()
-      .mockResolvedValue(
-        jsonResponse(
-          {
-            error: "Invalid player access."
-          },
-          401
-        )
-      );
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(
+      jsonResponse(
+        {
+          error: "Invalid player access."
+        },
+        401
+      )
+    );
     const client = createMobileApiClient(
       {
         baseUrl: "https://ocnoer.vercel.app"

@@ -1,0 +1,77 @@
+{
+  "formatVersion": 1,
+  "projectRef": "hkngkchhdpwrjwoqpjpw",
+  "downloadedOn": "2026-10-27",
+  "providerDatabaseBackup": "db_cluster-29-07-2026@09-38-12.backup.gz",
+  "encryption": "age X25519",
+  "recipient": "age1rpxz0tjk9szg5ftlnvulxvzpyp2d2xr34f7l8qxmayh9lgec9ccq5snxcf",
+  "archiveSha256": "6291c41ab46cc8d29cd5b6b7dbac3b104ce8995fa71b72627dc91b9baebb3baf",
+  "archiveBytes": 268476600,
+  "parts": [
+    {
+      "file": "recovery.tar.age.part01",
+      "bytes": 41943040,
+      "sha256": "dbce2e6532349bfb8eb52025e6be623f2f07b6bd4dca64d24a6303570a5975e5"
+    },
+    {
+      "file": "recovery.tar.age.part02",
+      "bytes": 41943040,
+      "sha256": "6936b5db0a677be06c7faecd3cb7bb6118fb884f8fb5b1c696d469a9ff58f661"
+    },
+    {
+      "file": "recovery.tar.age.part03",
+      "bytes": 41943040,
+      "sha256": "ad87ab771ac648b42af663b5790c1c4dceaab88897d87cc4bf27d23fd83f2602"
+    },
+    {
+      "file": "recovery.tar.age.part04",
+      "bytes": 41943040,
+      "sha256": "2b75dfd3a225661502806d4c20a1ebe31994c1129f1207b929e6bfc98ee5a50b"
+    },
+    {
+      "file": "recovery.tar.age.part05",
+      "bytes": 41943040,
+      "sha256": "e24aeecf17c21ee4399dfe005d3351c71ae59d7ed7be61bebf0997b6873e6331"
+    },
+    {
+      "file": "recovery.tar.age.part06",
+      "bytes": 41943040,
+      "sha256": "5f21e2e4684f691b4306cc3dea7c3a6b227f95a4e57c2ab63d671cc960ae0e23"
+    },
+    {
+      "file": "recovery.tar.age.part07",
+      "bytes": 16818360,
+      "sha256": "2811c2cd6d0aff15246cfd4d9927b0dad28b71d54fff1e4458af13876209b685"
+    }
+  ],
+  "contents": [
+    {
+      "file": "database.backup.gz",
+      "bytes": 106443,
+      "sha256": "70175951ca0add762723d83c6775b332c7baa46f0df0a9d20e20e2a521f1b4db"
+    },
+    {
+      "file": "storage.zip",
+      "bytes": 268290116,
+      "sha256": "2ceca309bc27cd5ade0769ff0ba72818d069a142db44687cfcbb16fcd24b1f07"
+    },
+    {
+      "file": "inventory.json",
+      "bytes": 2393,
+      "sha256": "6b84c9d0af0d60937aa0c89a535f764d769063c05e11794a2829de3df9be718f"
+    },
+    {
+      "file": "restore-verification.json",
+      "bytes": 2044,
+      "sha256": "e10c7de976b87c82d679246ed429ea65badbdc2a5c5ad85934e88e27e404a868"
+    }
+  ],
+  "verification": {
+    "storageBuckets": 1,
+    "storageObjects": 546,
+    "storageObjectSetMatchesDatabase": true,
+    "storageSizesMatchDatabase": true,
+    "restoredTableCountsMatch": 50,
+    "decryptionRoundTripPassed": true
+  }
+}

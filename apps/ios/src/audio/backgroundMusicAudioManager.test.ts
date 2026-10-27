@@ -295,6 +295,34 @@ describe("NativeBackgroundMusicAudioManager", () => {
     vi.unstubAllGlobals();
   });
 
+  it("plays bundled audio without fetching metadata or downloading files", async () => {
+    const fetchMock = vi.fn(async () => {
+      throw new Error("Network is unavailable.");
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const manager = new NativeBackgroundMusicAudioManager();
+    const playing = waitForManagerState(manager, "playing");
+    const targetUrl = "file:///app/story/theme.m4a";
+
+    manager.setTarget({
+      cue: { key: "scene:bundled", label: "Theme", url: targetUrl },
+      sessionId: "offline-reader",
+      shouldPlay: true,
+      volume: 0.7,
+      fadeMs: 0
+    });
+
+    await playing;
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(fileSystemMock.File.downloadFileAsync).not.toHaveBeenCalled();
+    expect(audioMock.createAudioPlayer).toHaveBeenCalledWith(
+      { uri: targetUrl },
+      expect.objectContaining({ downloadFirst: false })
+    );
+    expect(audioMock.players[0]?.play).toHaveBeenCalledTimes(1);
+  });
+
   it("caches extensionless runtime music before creating the iOS player", async () => {
     const manager = new NativeBackgroundMusicAudioManager();
     const playing = waitForManagerState(manager, "playing");

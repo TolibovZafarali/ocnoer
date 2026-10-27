@@ -9,7 +9,8 @@
       "distribution": "internal",
       "environment": "development",
       "ios": {
-        "simulator": false
+        "simulator": false,
+        "image": "sdk-54"
       },
       "env": {
         "EXPO_PUBLIC_OCNOER_CONTENT_MODE": "offline"
@@ -18,14 +19,18 @@
     "preview": {
       "distribution": "internal",
       "environment": "preview",
-      "ios": {},
+      "ios": {
+        "image": "sdk-54"
+      },
       "env": {
         "EXPO_PUBLIC_OCNOER_CONTENT_MODE": "offline"
       }
     },
     "production": {
       "environment": "production",
-      "ios": {},
+      "ios": {
+        "image": "sdk-54"
+      },
       "env": {
         "EXPO_PUBLIC_OCNOER_CONTENT_MODE": "offline"
       }

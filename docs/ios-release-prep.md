@@ -28,6 +28,11 @@ Read the current version and build number from that file. Increment
 - `preview`: internal distribution without development-client tooling.
 - `production`: App Store Connect/TestFlight build.
 
+The iOS profiles pin `image` to `sdk-54`. Keep that SDK-compatible image until
+the Expo native lifecycle is upgraded and verified separately. Xcode 27 images
+require UIKit scene support when launching on iOS 27; the preserved Expo 54
+application uses the earlier lifecycle. See [Expo build infrastructure](https://docs.expo.dev/build-reference/infrastructure/).
+
 Run EAS from `apps/ios` or use the root scripts below. Keep the existing EAS
 project association. A development client normally gets JavaScript and assets
 from Metro; use preview or production binaries for the final offline check.
@@ -79,6 +84,19 @@ so the same content is packaged in the installed application.
 The app resolves the imported media to local file URIs with `expo-asset`.
 Expo serves local assets over HTTP during development and packages imported
 assets into production binaries. See [Expo asset documentation](https://docs.expo.dev/develop/user-interface/assets/).
+
+The repository-root `.easignore` preserves the `.gitignore` exclusions and
+excludes recovery archives, local checkouts, and Git metadata from EAS uploads.
+The bundled story assets, generated registry, shared story package, and `lore`
+remain included. Keep these rules synchronized when adding ignore patterns;
+EAS uses `.easignore` in place of `.gitignore`.
+
+To inspect the upload locally without starting a build, run from `apps/ios`
+with a new output directory outside the repository:
+
+```bash
+corepack pnpm dlx eas-cli@18.9.1 build:inspect --platform ios --profile preview --stage archive --output /absolute/path/to/upload-inspection
+```
 
 ## Local checks
 

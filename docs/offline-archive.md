@@ -88,14 +88,30 @@ and makes no content, authentication, presence, or progress requests. A new
 native app build must be installed to receive this behavior and these assets.
 See [iOS release preparation](ios-release-prep.md) for build and verification.
 
+A native Release build was verified on an isolated iPhone 17 Pro simulator
+running iOS 26.5, without Metro. The chapter artwork, text, world map, and appendix
+rendered, and the reading position survived terminating and relaunching the app.
+All 113 distinct media hashes matched the files packaged in the native app.
+Separate integration tests exercised the bundled runtime with network requests
+blocked; simulator networking itself remained enabled. No physical-device build
+or App Store submission was performed.
+
+The local Xcode 27 build cannot launch on iOS 27 because the existing Expo SDK 54
+native template lacks the required scene lifecycle. EAS profiles explicitly use
+the compatible `sdk-54` image, as recommended by Expo for this SDK. A native SDK
+upgrade remains a separate future change.
+
 ## Website state
 
 On October 27, the `ocnoer` production project was paused on Vercel. The public
 domains `ocnoer.com`, `www.ocnoer.com`, and `ocnoer.vercel.app`, together with the
 current production deployment URL, returned `503 DEPLOYMENT_PAUSED` for the
 homepage, admin, and mobile API routes. The older `ocnoer-wait-page` production
-project was also paused and its public URL returned the same response. Preview deployments have separate hosting
-access controls; project pausing applies to production traffic.
+project was also paused and its public URL returned the same response. Existing
+preview deployments have separate hosting access controls; project pausing
+applies to production traffic. Standard Vercel authentication protects the main
+project's preview deployments. New deployments are blocked while the project is
+paused; the Vercel check on this change reports that expected state.
 
 The preserved source now returns a blank `410 Gone` for all web paths and
 methods, including static assets, admin, reader, APIs, and server actions.
